@@ -1,0 +1,11 @@
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.env
+logs/
+*.log
+backups/
+exportacoes/
+# Não incluir a BD local — será criada/carregada no volume do Railway
+sistema.db
