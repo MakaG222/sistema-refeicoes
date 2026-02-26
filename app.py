@@ -758,6 +758,7 @@ def login():
         return redirect(url_for('dashboard'))
     error = None
     if request.method == 'POST':
+        db_u = None
         nii = request.form.get('nii','').strip()[:32]
         pw  = request.form.get('pw','').strip()[:256]
         perfis = {**sr.PERFIS_ADMIN, **sr.PERFIS_TESTE}
