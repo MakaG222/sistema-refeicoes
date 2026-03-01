@@ -3,25 +3,17 @@ Sistema de Refeições — Interface Web (Flask)
 ============================================
 Corre com:  python app.py
 Acede em:   http://localhost:8080
-
-Credenciais:
-  admin / admin123
-  cozinha / cozinha123
-  oficialdia / oficial123
-  cmd1..4 / cmd1..4 123
-  teste1 / teste1  (aluno)
 """
 
-import os, sys, secrets, logging, time, threading, smtplib, json
-from typing import Optional
-from logging.handlers import RotatingFileHandler
+import os, sys, secrets, logging, json, io
 from pathlib import Path
 from datetime import date, datetime, timedelta
 from functools import wraps
-from email.mime.text import MIMEText
-from email.mime.multipart import MIMEMultipart
+import time
 
 from markupsafe import Markup, escape
+from werkzeug.security import generate_password_hash, check_password_hash
+from werkzeug.middleware.proxy_fix import ProxyFix
 from flask import (
     Flask, Response, render_template_string, request,
     redirect, url_for, session, flash, send_file, g, abort,
@@ -29,22 +21,13 @@ from flask import (
 
 sys.path.insert(0, os.path.dirname(__file__))
 import sistema_refeicoes_v8_4 as sr
+import config as cfg
 
-# Garantir schema de notificações logo no arranque (mesmo sem __main__)
-def _ensure_notif_schema():
-    """Garante que a tabela de notificações, colunas extra e FTS estão correctos."""
+# Garantir colunas extra e FTS no arranque
+def _ensure_extra_schema():
+    """Garante colunas extra e FTS5 nos utilizadores."""
     try:
         with sr.db() as conn:
-            # Tabela de notificações enviadas
-            conn.execute("""CREATE TABLE IF NOT EXISTS notificacoes_enviadas (
-                id INTEGER PRIMARY KEY,
-                utilizador_id INTEGER NOT NULL,
-                data TEXT NOT NULL,
-                tipo TEXT NOT NULL DEFAULT 'prazo',
-                enviado_em TEXT,
-                UNIQUE(utilizador_id, data, tipo)
-            )""")
-            # Colunas extra em utilizadores
             cols = [r['name'] for r in conn.execute("PRAGMA table_info(utilizadores)").fetchall()]
             if 'email' not in cols:
                 conn.execute("ALTER TABLE utilizadores ADD COLUMN email TEXT")
@@ -53,20 +36,20 @@ def _ensure_notif_schema():
             if 'is_active' not in cols:
                 conn.execute("ALTER TABLE utilizadores ADD COLUMN is_active INTEGER NOT NULL DEFAULT 1")
 
-            # Verificar e reparar FTS5 se necessário
+            # Verificar e reparar FTS5 se necessário (sem writable_schema)
             try:
                 conn.execute("SELECT COUNT(*) FROM utilizadores_fts").fetchone()
             except Exception:
-                # FTS está corrompida — recriar
-                app.logger.warning("[AVISO] FTS corrompida — a recriar...")
+                print("[AVISO] FTS corrompida — a recriar...", flush=True)
+                for trg in ('utilizadores_ai_fts','utilizadores_ad_fts','utilizadores_au_fts'):
+                    try:
+                        conn.execute(f"DROP TRIGGER IF EXISTS {trg}")
+                    except Exception:
+                        pass
                 try:
-                    conn.execute("PRAGMA writable_schema = ON")
-                    conn.execute("DELETE FROM sqlite_master WHERE name='utilizadores_fts' AND type='table'")
-                    conn.execute("DELETE FROM sqlite_master WHERE name IN ('utilizadores_ai_fts','utilizadores_ad_fts','utilizadores_au_fts') AND type='trigger'")
-                    conn.execute("PRAGMA writable_schema = OFF")
-                    conn.commit()
+                    conn.execute("DROP TABLE IF EXISTS utilizadores_fts")
                 except Exception as e2:
-                    app.logger.warning(f"[AVISO] writable_schema: {e2}")
+                    print(f"[AVISO] DROP utilizadores_fts: {e2}", flush=True)
 
                 conn.execute("""CREATE VIRTUAL TABLE IF NOT EXISTS utilizadores_fts
 USING fts5(Nome_completo, content='utilizadores', content_rowid='id')""")
@@ -84,90 +67,112 @@ AFTER UPDATE OF Nome_completo ON utilizadores BEGIN
   INSERT INTO utilizadores_fts(utilizadores_fts, rowid) VALUES('delete', OLD.id);
   INSERT INTO utilizadores_fts(rowid, Nome_completo) VALUES (NEW.id, NEW.Nome_completo);
 END""")
-                app.logger.info("[INFO] FTS recriada com sucesso.")
+                print("[INFO] FTS recriada com sucesso.", flush=True)
 
+            _bootstrap_dev_system_accounts(conn)
             conn.commit()
     except Exception as e:
-        # Usa print porque app.logger pode não estar inicializado ainda
-        print(f"[ERRO] _ensure_notif_schema: {e}", flush=True)
+        print(f"[ERRO] _ensure_extra_schema: {e}", flush=True)
 
-_ensure_notif_schema()
 
 # ═══════════════════════════════════════════════════════════════════════════
 # CONFIG
 # ═══════════════════════════════════════════════════════════════════════════
 
 app = Flask(__name__)
-app.secret_key = os.environ.get("SECRET_KEY", "escola-naval-secret-2024")
-app.config.update(SESSION_COOKIE_HTTPONLY=True, SESSION_COOKIE_SAMESITE="Lax")
+app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1)
+app.config.from_object(cfg.Config)
+cfg.configure_logging(app)
 
-DIAS_ANTECEDENCIA = 15   # alunos podem marcar até N dias à frente (inclui fins de semana)
+# Expor constantes de config usadas localmente
+_is_production = cfg.is_production
+CRON_API_TOKEN = cfg.CRON_API_TOKEN
+DIAS_ANTECEDENCIA = cfg.DIAS_ANTECEDENCIA
 
-# ─── Configuração de Notificações (Email/SMS) ─────────────────────────────
-# Edita estas variáveis ou usa variáveis de ambiente para activar notificações.
-SMTP_HOST     = os.environ.get('SMTP_HOST', '')          # ex: 'smtp.gmail.com'
-SMTP_PORT     = int(os.environ.get('SMTP_PORT', '587'))
-SMTP_USER     = os.environ.get('SMTP_USER', '')          # ex: 'refeicoes@escolanaval.pt'
-SMTP_PASSWORD = os.environ.get('SMTP_PASSWORD', '')
-SMTP_FROM     = os.environ.get('SMTP_FROM', SMTP_USER)
-# Twilio SMS (opcional — deixar vazio para desactivar)
-TWILIO_SID    = os.environ.get('TWILIO_SID', '')
-TWILIO_TOKEN  = os.environ.get('TWILIO_TOKEN', '')
-TWILIO_FROM   = os.environ.get('TWILIO_FROM', '')        # ex: '+351XXXXXXXXX'
+_APP_BOOTSTRAPPED = False
 
-NOTIF_HORAS_AVISO = 24   # avisar X horas antes do prazo expirar
-NOTIF_INTERVALO_SCHEDULER = 3600  # verificar a cada 60 min (em segundos)
+def _init_app_once() -> None:
+    """Inicialização segura para app.py importado via gunicorn ou execução direta."""
+    global _APP_BOOTSTRAPPED
+    if _APP_BOOTSTRAPPED:
+        return
+    sr.ensure_schema()
+    _ensure_extra_schema()
+    _APP_BOOTSTRAPPED = True
 
-log_dir = Path(__file__).resolve().parent / "logs"
-log_dir.mkdir(exist_ok=True)
-fmt_log = logging.Formatter("%(asctime)s %(levelname)s: %(message)s")
-fh = RotatingFileHandler(log_dir / "app.log", maxBytes=1_000_000, backupCount=3, encoding="utf-8")
-fh.setFormatter(fmt_log)
-app.logger.addHandler(fh)
-app.logger.setLevel(logging.INFO)
 
-# ─── Scheduler automático de avisos ───────────────────────────────────────
-# Corre em background, sem dependências extra. Verifica e envia avisos de
-# prazo a cada NOTIF_INTERVALO_SCHEDULER segundos.
-# Só arranca se pelo menos um canal (SMTP ou Twilio) estiver configurado.
-_scheduler_timer: Optional[threading.Timer] = None
+def _verify_cron_token() -> bool:
+    """Verifica o token Bearer no header Authorization para endpoints de cron."""
+    auth = request.headers.get("Authorization", "")
+    if not auth.startswith("Bearer "):
+        return False
+    token = auth[len("Bearer "):]
+    if not CRON_API_TOKEN:
+        # Sem token configurado: bloquear em produção, avisar fora
+        if _is_production:
+            return False
+        app.logger.warning("CRON_API_TOKEN não definido — endpoint de cron desprotegido!")
+        return True  # permite apenas fora de produção sem token
+    return secrets.compare_digest(token, CRON_API_TOKEN)
 
-def _scheduler_loop():
-    """Loop periódico de envio de avisos. Reagenda-se automaticamente."""
-    global _scheduler_timer
+
+def _client_ip() -> str:
+    """IP do cliente (com ProxyFix activo atrás de proxy)."""
     try:
-        # Só executa se houver pelo menos um canal de notificação ativo
-        if (SMTP_HOST and SMTP_USER and SMTP_PASSWORD) or (TWILIO_SID and TWILIO_TOKEN and TWILIO_FROM):
-            _verificar_e_enviar_avisos()
-    except Exception as e:
-        try:
-            app.logger.error(f"Scheduler de avisos falhou: {e}")
-        except Exception:
-            pass
-    finally:
-        # Reagenda independentemente de erros
-        _scheduler_timer = threading.Timer(NOTIF_INTERVALO_SCHEDULER, _scheduler_loop)
-        _scheduler_timer.daemon = True
-        _scheduler_timer.start()
-
-def _iniciar_scheduler():
-    """Inicia o scheduler de avisos em background (chamado no arranque)."""
-    global _scheduler_timer
-    if _scheduler_timer is not None:
-        return  # já está a correr
-    # Primeiro disparo com 30s de delay para dar tempo ao Flask de arrancar
-    _scheduler_timer = threading.Timer(30, _scheduler_loop)
-    _scheduler_timer.daemon = True
-    _scheduler_timer.start()
-    try:
-        app.logger.info(
-            f"📬 Scheduler de avisos iniciado "
-            f"(intervalo: {NOTIF_INTERVALO_SCHEDULER//60}min, "
-            f"aviso: {NOTIF_HORAS_AVISO}h antes do prazo)"
-        )
+        if request.access_route:
+            return str(request.access_route[0])[:64]
     except Exception:
         pass
+    return str(request.remote_addr or "")[:64]
 
+
+def _bootstrap_dev_system_accounts(conn=None) -> None:
+    """Sincroniza PERFIS_ADMIN/PERFIS_TESTE para a BD em desenvolvimento (passwords hashed)."""
+    if _is_production:
+        return
+    perfis = {**getattr(sr, 'PERFIS_ADMIN', {}), **getattr(sr, 'PERFIS_TESTE', {})}
+    if not perfis:
+        return
+    owns_conn = conn is None
+    try:
+        if owns_conn:
+            conn = sr.db()
+        cols = {r['name'] for r in conn.execute("PRAGMA table_info(utilizadores)").fetchall()}
+        if not cols:
+            return
+        for nii, p in perfis.items():
+            row = conn.execute("SELECT id, Palavra_chave FROM utilizadores WHERE NII=?", (nii,)).fetchone()
+            pw_hash = generate_password_hash(p.get('senha', ''))
+            nome = p.get('nome', nii)
+            perfil = p.get('perfil', 'aluno')
+            ano = str(p.get('ano', '') or '')
+            if row is None:
+                conn.execute(
+                    """INSERT INTO utilizadores
+                    (NII,NI,Nome_completo,Palavra_chave,ano,perfil,must_change_password,password_updated_at,is_active)
+                    VALUES (?,?,?,?,?,?,0,datetime('now','localtime'),1)""",
+                    (nii, nii, nome, pw_hash, ano, perfil),
+                )
+            else:
+                stored = (row['Palavra_chave'] or '')
+                if stored == p.get('senha', ''):
+                    conn.execute(
+                        "UPDATE utilizadores SET Palavra_chave=?, password_updated_at=datetime('now','localtime') WHERE id=?",
+                        (pw_hash, row['id'])
+                    )
+        if owns_conn:
+            conn.commit()
+    except Exception as exc:
+        app.logger.warning(f"_bootstrap_dev_system_accounts falhou: {exc}")
+    finally:
+        if owns_conn and conn is not None:
+            try:
+                conn.close()
+            except Exception:
+                pass
+
+
+_init_app_once()
 
 # ═══════════════════════════════════════════════════════════════════════════
 # HELPERS DE NEGÓCIO
@@ -196,6 +201,27 @@ def _audit(actor: str, action: str, detail: str = '') -> None:
     except Exception as exc:
         app.logger.warning(f"_audit falhou [{action}]: {exc}")
 
+def _check_password(stored_hash: str, password: str) -> bool:
+    """Verifica password — suporta hashes werkzeug e passwords em claro (migração transparente)."""
+    if not stored_hash:
+        return False
+    if stored_hash.startswith(("pbkdf2:", "scrypt:", "argon2:")):
+        return check_password_hash(stored_hash, password)
+    # Password em claro (legado) — comparação simples + migração automática ao login
+    return password == stored_hash
+
+
+def _migrate_password_hash(uid: int, plain_password: str) -> None:
+    """Migra password em claro para hash werkzeug na BD (chamado após login bem-sucedido)."""
+    try:
+        new_hash = generate_password_hash(plain_password)
+        with sr.db() as conn:
+            conn.execute("UPDATE utilizadores SET Palavra_chave=? WHERE id=?", (new_hash, uid))
+            conn.commit()
+    except Exception as exc:
+        app.logger.warning(f"_migrate_password_hash uid={uid}: {exc}")
+
+
 def _alterar_password(nii, old, new):
     uid = sr.user_id_by_nii(nii)
     if not uid:
@@ -204,16 +230,15 @@ def _alterar_password(nii, old, new):
         row = conn.execute("SELECT Palavra_chave FROM utilizadores WHERE id=?", (uid,)).fetchone()
     if not row:
         return False, "Utilizador não encontrado."
-    ph = row['Palavra_chave']
-    ok = sr.verify_password(old, ph) if sr.is_hash(ph or '') else (old == (ph or ''))
-    if not ok:
+    ph = row['Palavra_chave'] or ''
+    if not _check_password(ph, old):
         return False, "Password atual incorreta."
     if len(new) < 6:
         return False, "A nova password deve ter pelo menos 6 caracteres."
-    nh = sr.hash_password(new)
+    new_hash = generate_password_hash(new)
     with sr.db() as conn:
         conn.execute("""UPDATE utilizadores SET Palavra_chave=?, must_change_password=0,
-                        password_updated_at=datetime('now','localtime') WHERE id=?""", (nh, uid))
+                        password_updated_at=datetime('now','localtime') WHERE id=?""", (new_hash, uid))
         conn.commit()
     return True, ""
 
@@ -223,7 +248,7 @@ def _criar_utilizador(nii, ni, nome, ano, perfil, pw):
             return False, "Todos os campos são obrigatórios."
         if len(pw) < 4:
             return False, "Password deve ter pelo menos 4 caracteres."
-        pw_hash = sr.hash_password(pw)
+        pw_hash = generate_password_hash(pw)
         with sr.db() as conn:
             conn.execute("""INSERT INTO utilizadores
               (NII,NI,Nome_completo,Palavra_chave,ano,perfil,must_change_password,password_updated_at)
@@ -240,14 +265,14 @@ def _reset_pw(nii, nova_pw=None):
     import random, string
     if not nova_pw:
         nova_pw = ''.join(random.choices(string.ascii_letters + string.digits, k=10))
-    nh = sr.hash_password(nova_pw)
+    nova_hash = generate_password_hash(nova_pw)
     with sr.db() as conn:
         cur = conn.execute("""UPDATE utilizadores SET Palavra_chave=?, must_change_password=1,
-                              password_updated_at=datetime('now','localtime') WHERE NII=?""", (nh, nii))
+                              password_updated_at=datetime('now','localtime') WHERE NII=?""", (nova_hash, nii))
         conn.commit()
     if cur.rowcount:
         _audit("sistema", "reset_password", f"NII={nii}")
-        return True, nova_pw
+        return True, nova_pw  # devolve a password em claro para mostrar ao admin
     return False, "NII não encontrado."
 
 def _unblock_user(nii):
@@ -322,20 +347,6 @@ def _tem_ausencia_ativa(uid, d=None):
                            (uid, d_str, d_str)).fetchone()
     return bool(row)
 
-def _tem_detencao_ativa(uid: int, dt: date) -> bool:
-    try:
-        ds = dt.isoformat()
-        with sr.db() as conn:
-          r = conn.execute("""
-              SELECT 1 FROM detencoes
-              WHERE utilizador_id=?
-                AND detido_de<=?
-                AND detido_ate>=?
-              LIMIT 1""", (uid, ds, ds)).fetchone()
-        return bool(r)
-    except Exception:
-      return False
-
 def _dia_editavel_aluno(d):
     """Editável pelo aluno: futuro, dentro de DIAS_ANTECEDENCIA, prazo ok. Fins de semana permitidos."""
     hoje = date.today()
@@ -345,119 +356,6 @@ def _dia_editavel_aluno(d):
         return False, f"Só é possível marcar com {DIAS_ANTECEDENCIA} dias de antecedência."
     return sr.refeicao_editavel(d)
 
-# ─── Notificações (Email / SMS) ───────────────────────────────────────────
-
-def _send_email(to_addr: str, subject: str, body_html: str, body_text: str = '') -> bool:
-    """Envia email via SMTP. Retorna True se enviou com sucesso."""
-    if not SMTP_HOST or not SMTP_USER or not SMTP_PASSWORD or not to_addr:
-        return False
-    try:
-        msg = MIMEMultipart('alternative')
-        msg['Subject'] = subject
-        msg['From']    = SMTP_FROM or SMTP_USER
-        msg['To']      = to_addr
-        if body_text:
-            msg.attach(MIMEText(body_text, 'plain', 'utf-8'))
-        msg.attach(MIMEText(body_html, 'html', 'utf-8'))
-        with smtplib.SMTP(SMTP_HOST, SMTP_PORT, timeout=8) as s:
-            s.starttls()
-            s.login(SMTP_USER, SMTP_PASSWORD)
-            s.sendmail(msg['From'], [to_addr], msg.as_string())
-        return True
-    except Exception as e:
-        app.logger.warning(f"Email falhou para {to_addr}: {e}")
-        return False
-
-def _send_sms(to_number: str, body: str) -> bool:
-    """Envia SMS via Twilio. Retorna True se enviou."""
-    if not TWILIO_SID or not TWILIO_TOKEN or not TWILIO_FROM or not to_number:
-        return False
-    try:
-        import urllib.request, urllib.parse, base64
-        data = urllib.parse.urlencode({'From': TWILIO_FROM, 'To': to_number, 'Body': body}).encode()
-        url  = f'https://api.twilio.com/2010-04-01/Accounts/{TWILIO_SID}/Messages.json'
-        creds = base64.b64encode(f'{TWILIO_SID}:{TWILIO_TOKEN}'.encode()).decode()
-        req  = urllib.request.Request(url, data=data, headers={'Authorization': f'Basic {creds}'})
-        urllib.request.urlopen(req, timeout=8)
-        return True
-    except Exception as e:
-        app.logger.warning(f"SMS falhou para {to_number}: {e}")
-        return False
-
-def _notif_prazo_aluno(uid: int, nome: str, email: str, telef: str, d: date):
-    """Envia notificação de prazo a um aluno (email e/ou SMS)."""
-    prazo_dt = datetime(d.year, d.month, d.day) - timedelta(hours=sr.PRAZO_LIMITE_HORAS or 48)
-    prazo_str = prazo_dt.strftime('%d/%m/%Y às %H:%M')
-    d_str = d.strftime('%d/%m/%Y')
-
-    html = f"""
-    <div style="font-family:sans-serif;max-width:520px;margin:0 auto;border:1px solid #dde3ea;border-radius:12px;overflow:hidden">
-      <div style="background:#0a2d4e;padding:1.2rem 1.5rem;color:#fff;display:flex;align-items:center;gap:.7rem">
-        <span style="font-size:1.4rem">⚓</span>
-        <span style="font-weight:800;font-size:1.1rem">Escola Naval — Refeições</span>
-      </div>
-      <div style="padding:1.5rem">
-        <p>Olá <strong>{nome}</strong>,</p>
-        <p style="margin-top:.8rem">O prazo para alterar as tuas refeições de <strong>{d_str}</strong> expira em:</p>
-        <div style="background:#fef9e7;border:1.5px solid #f9e79f;border-radius:10px;padding:.9rem 1.1rem;margin:1rem 0;font-size:1.1rem;font-weight:800;color:#9a7d0a;text-align:center">
-          ⏰ {prazo_str}
-        </div>
-        <p>Se ainda queres alterar as tuas refeições, <a href="http://localhost:8080/aluno" style="color:#0a2d4e;font-weight:700">acede ao sistema</a> antes do prazo.</p>
-        <p style="margin-top:1rem;font-size:.83rem;color:#6c757d">Após o prazo, apenas o Oficial de Dia pode fazer alterações.</p>
-      </div>
-    </div>"""
-    text = f"[Escola Naval] Prazo para alterar refeições de {d_str} expira em {prazo_str}. Acede ao sistema antes desta hora."
-
-    def _async():
-        if email:
-            _send_email(email, f"[Escola Naval] Prazo de refeições a expirar — {d_str}", html, text)
-        if telef:
-            _send_sms(telef, text)
-    threading.Thread(target=_async, daemon=True).start()
-
-def _verificar_e_enviar_avisos():
-    """Verifica alunos com prazo a expirar nas próximas NOTIF_HORAS_AVISO horas e envia aviso."""
-    if not sr.PRAZO_LIMITE_HORAS:
-        return
-    agora = datetime.now()
-    hoje  = agora.date()
-    enviados = 0
-    for i in range(1, DIAS_ANTECEDENCIA + 1):
-        d = hoje + timedelta(days=i)
-        if sr.dia_operacional(d) in ('feriado','exercicio'):
-            continue
-        prazo_dt = datetime(d.year, d.month, d.day) - timedelta(hours=sr.PRAZO_LIMITE_HORAS)
-        janela_inicio = prazo_dt - timedelta(hours=NOTIF_HORAS_AVISO)
-        if not (janela_inicio <= agora < prazo_dt):
-            continue
-        # Notificar alunos que têm refeições marcadas nesse dia
-        with sr.db() as conn:
-            rows = conn.execute("""
-                SELECT u.id, u.Nome_completo, u.email, u.telemovel
-                FROM utilizadores u
-                JOIN refeicoes r ON r.utilizador_id=u.id AND r.data=?
-                WHERE u.perfil='aluno'
-                  AND (u.email IS NOT NULL OR u.telemovel IS NOT NULL)
-                  AND NOT EXISTS (
-                      SELECT 1 FROM notificacoes_enviadas n
-                      WHERE n.utilizador_id=u.id AND n.data=? AND n.tipo='prazo'
-                  )
-            """, (d.isoformat(), d.isoformat())).fetchall()
-        for row in rows:
-            _notif_prazo_aluno(row['id'], row['Nome_completo'],
-                               row['email'] or '', row['telemovel'] or '', d)
-            try:
-                with sr.db() as conn:
-                    conn.execute("""INSERT OR IGNORE INTO notificacoes_enviadas
-                                   (utilizador_id, data, tipo, enviado_em)
-                                   VALUES (?,?,?,datetime('now','localtime'))""",
-                                 (row['id'], d.isoformat(), 'prazo'))
-                    conn.commit()
-            except Exception:
-                pass
-            enviados += 1
-    if enviados:
-        app.logger.info(f"Avisos de prazo enviados: {enviados}")
 
 # ═══════════════════════════════════════════════════════════════════════════
 # TEMPLATE BASE
@@ -636,7 +534,10 @@ BASE = """
     {% if session.user.perfil == 'aluno' %}
     <a class="nav-link" href="{{ url_for('aluno_perfil') }}">👤 Perfil</a>
     {% endif %}
-    <a class="nav-link" href="{{ url_for('logout') }}">Sair</a>
+    <form method="post" action="{{ url_for('logout') }}" style="display:inline;margin:0">
+      <input type="hidden" name="csrf_token" value="{{ session.get('_csrf_token','') }}">
+      <button type="submit" class="nav-link" style="background:none;border:none;cursor:pointer;padding:0;font:inherit;color:inherit">Sair</button>
+    </form>
   </div>
 </nav>
 {% endif %}
@@ -671,6 +572,13 @@ def _parse_date(s, default=None):
         return datetime.strptime(s, "%Y-%m-%d").date()
     except Exception:
         return default or date.today()
+
+
+def _parse_date_strict(s):
+    try:
+        return datetime.strptime((s or '').strip(), "%Y-%m-%d").date()
+    except Exception:
+        return None
 
 def _bar_html(val, cap):
     if cap is None or cap <= 0:
@@ -708,6 +616,9 @@ def login_required(f):
     def d(*a, **kw):
         if 'user' not in session:
             return redirect(url_for('login'))
+        if session.get('must_change_password') and f.__name__ != 'aluno_password':
+            flash("Deves alterar a tua password antes de continuar.", "warn")
+            return redirect(url_for('aluno_password'))
         return f(*a, **kw)
     return d
 
@@ -734,6 +645,9 @@ def before():
         t = session.get("_csrf_token", "")
         ft = request.form.get("csrf_token", "")
         if not t or not ft or not secrets.compare_digest(t, ft):
+            if request.endpoint not in {None, 'login'} and 'user' not in session:
+                flash('A sessão expirou. Inicia sessão novamente e repete a operação.', 'warn')
+                return redirect(url_for('login'))
             abort(400)
 
 @app.after_request
@@ -745,7 +659,7 @@ def after(r):
 @app.errorhandler(400)
 def err400(e):
     return render("<div class='container'><div class='page-header'><div class='page-title'>⚠️ Pedido inválido</div></div>"
-                  "<div class='card'><p>Sessão expirada ou erro de validação.</p><br>"
+                  "<div class='card'><p>Token CSRF inválido ou pedido malformado. Se a sessão expirou, volta a iniciar sessão.</p><br>"
                   "<a class='btn btn-primary' href='/'>Início</a></div></div>", 400)
 
 @app.errorhandler(404)
@@ -758,7 +672,7 @@ def err404(e):
 def err500(e):
     app.logger.exception("Erro 500")
     return render("<div class='container'><div class='page-header'><div class='page-title'>💥 Erro interno</div></div>"
-                  "<div class='card'><p>Erro inesperado. Consulta <code>logs/app.log</code>.</p><br>"
+                  "<div class='card'><p>Erro inesperado. Consulta os logs do servidor para detalhes.</p><br>"
                   "<a class='btn btn-primary' href='/'>Início</a></div></div>", 500)
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -766,24 +680,27 @@ def err500(e):
 # ═══════════════════════════════════════════════════════════════════════════
 
 @app.route('/', methods=['GET', 'POST'])
+@app.route('/login', methods=['GET', 'POST'])
 def login():
     if 'user' in session:
         return redirect(url_for('dashboard'))
     error = None
     if request.method == 'POST':
         nii = request.form.get('nii','').strip()[:32]
-        pw  = request.form.get('pw','').strip()[:256]
-        perfis = {**sr.PERFIS_ADMIN, **sr.PERFIS_TESTE}
+        pw  = request.form.get('pw', request.form.get('password','')).strip()[:256]
+        # Autenticação via BD (contas de sistema sincronizadas para a BD em desenvolvimento)
+        perfis = {}
         u = None
-        if nii in perfis:
-            if pw == perfis[nii]['senha']:
-                p = perfis[nii]
-                u = {'id': 0, 'nii': nii, 'ni': '', 'nome': p.get('nome',''),
-                     'ano': str(p.get('ano','')), 'perfil': p.get('perfil','aluno')}
-            else:
-                error = 'Password incorreta.'
-        elif not sr.existe_admin() and nii == sr.FALLBACK_ADMIN['nii'] and pw == sr.FALLBACK_ADMIN['pw']:
+        db_u = None
+        if False and nii in perfis:
+            error = 'Login legado desativado.'
+        elif (not _is_production
+              and not sr.existe_admin()
+              and nii == sr.FALLBACK_ADMIN['nii']
+              and pw == sr.FALLBACK_ADMIN['pw']):
             u = {'id': 0, 'nii': nii, 'ni': '', 'nome': sr.FALLBACK_ADMIN['nome'], 'ano': '', 'perfil': 'admin'}
+            sr.reg_login(nii, 1, ip=_client_ip())
+            app.logger.warning(f"Login via FALLBACK_ADMIN: NII={nii} IP={_client_ip()}")
         else:
             db_u = sr.user_by_nii(nii)
             if db_u:
@@ -794,36 +711,43 @@ def login():
                         if lock_dt > datetime.now():
                             mins = max(1, int((lock_dt - datetime.now()).total_seconds() / 60))
                             error = f'Conta bloqueada por demasiadas tentativas falhadas. Tenta novamente em {mins} min.'
-                            app.logger.warning(f"Login bloqueado: NII={nii} IP={request.remote_addr}")
+                            app.logger.warning(f"Login bloqueado: NII={nii} IP={_client_ip()}")
                             db_u = None
                     except ValueError:
                         pass
                 if db_u:
-                    ph = db_u.get('Palavra_chave','')
-                    ok = sr.verify_password(pw, ph) if sr.is_hash(ph or '') else (pw == (ph or ''))
+                    ph = db_u.get('Palavra_chave', '') or ''
+                    ok = _check_password(ph, pw)
                     if ok:
                         u = {'id': db_u['id'], 'nii': db_u['NII'], 'ni': db_u['NI'],
                              'nome': db_u['Nome_completo'], 'ano': str(db_u['ano']),
                              'perfil': db_u['perfil'] or 'aluno'}
-                        sr.reg_login(nii, 1)
-                        app.logger.info(f"Login OK: NII={nii} perfil={u['perfil']} IP={request.remote_addr}")
+                        sr.reg_login(nii, 1, ip=_client_ip())
+                        app.logger.info(f"Login OK: NII={nii} perfil={u['perfil']} IP={_client_ip()}")
+                        # Migração transparente: se ainda é plain-text, converter para hash
+                        if not ph.startswith(("pbkdf2:", "scrypt:", "argon2:")):
+                            _migrate_password_hash(db_u['id'], pw)
                     else:
-                        sr.reg_login(nii, 0)
+                        sr.reg_login(nii, 0, ip=_client_ip())
                         falhas = sr.recent_failures(nii, 10)
                         if falhas >= 5:
                             sr.block_user(nii, 15)
                             error = 'Conta bloqueada por 15 minutos após 5 tentativas falhadas.'
-                            app.logger.warning(f"Conta bloqueada: NII={nii} IP={request.remote_addr}")
+                            app.logger.warning(f"Conta bloqueada: NII={nii} IP={_client_ip()}")
                         else:
                             restam = max(0, 5 - falhas)
                             error = f'Password incorreta. ({restam} tentativa(s) restante(s) antes de bloqueio)'
             else:
+                sr.reg_login(nii, 0, ip=_client_ip())
                 error = 'NII não encontrado.'
         if u:
             session['user'] = u
-            # Registo de auditoria só para perfis de sistema (perfis_admin já não passam por reg_login)
-            if nii not in {**sr.PERFIS_ADMIN, **sr.PERFIS_TESTE}:
-                _audit(nii, "login", f"perfil={u['perfil']} IP={request.remote_addr}")
+            _audit(nii, "login", f"perfil={u['perfil']} IP={_client_ip()}")
+            # Forçar alteração de password se necessário
+            if db_u and db_u.get('must_change_password'):
+                session['must_change_password'] = True
+                flash("Por segurança, deves alterar a tua password antes de continuar.", "warn")
+                return redirect(url_for('aluno_password'))
             return redirect(url_for('dashboard'))
 
     ANCORA = """<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 120" width="54" height="65">
@@ -861,8 +785,13 @@ def login():
     </div>"""
     return render(content)
 
-@app.route('/logout')
+@app.route('/logout', methods=['POST'])
 def logout():
+    # Verifica CSRF para logout via POST
+    t = session.get("_csrf_token", "")
+    ft = request.form.get("csrf_token", "")
+    if not t or not secrets.compare_digest(t, ft):
+        abort(403)
     session.clear()
     return redirect(url_for('login'))
 
@@ -919,7 +848,6 @@ def aluno_home():
         ok_edit, _ = _dia_editavel_aluno(d)
         prazo = _prazo_label(d)
         ausente_d = uid and _tem_ausencia_ativa(uid, d)
-        detido_d = uid and _tem_detencao_ativa(uid, d)
         is_weekend = d.weekday() >= 5
         is_off = tipo in ('feriado', 'exercicio')
 
@@ -935,7 +863,6 @@ def aluno_home():
             continue
 
         aus_chip = '<span class="meal-chip chip-type" style="background:#fef3cd;color:#856404;margin-bottom:.3rem;display:block">⚓ Ausente</span>' if ausente_d else ''
-        det_chip = '<span class="meal-chip chip-type" style="background:#fdecea;color:#7a1c1c;margin-bottom:.3rem;display:block">🚫 Detido</span>' if detido_d else ''
         alm_t = r.get('almoco'); jan_t = r.get('jantar_tipo')
         meals = f"""<div class="week-meals">
             {chip(r.get('pequeno_almoco'),'PA')}
@@ -954,7 +881,7 @@ def aluno_home():
         <div class="week-card {card_cls}">
           <div class="week-dow {dow_cls}">{ABREV_DIAS[d.weekday()]}</div>
           <div class="week-date">{d.strftime('%d/%m/%Y')}</div>
-          {aus_chip}{det_chip}{meals}{btn}
+          {aus_chip}{meals}{btn}
         </div>"""
 
     stats_html = ''
@@ -1020,14 +947,13 @@ def aluno_editar(d):
     r = sr.refeicao_get(uid, dt)
     occ = _get_ocupacao_dia(dt)
     is_weekend = dt.weekday() >= 5
-    detido = _tem_detencao_ativa(uid, dt)
 
     if request.method == 'POST':
         pa = 1 if request.form.get('pa') else 0
         lanche = 1 if request.form.get('lanche') else 0
         alm = request.form.get('almoco') or ''
         jan = request.form.get('jantar') or ''
-        sai = 0 if detido else (1 if request.form.get('sai') else 0)
+        sai = 1 if request.form.get('sai') else 0
         if _refeicao_set(uid, dt, pa, lanche, alm, jan, sai, alterado_por=u['nii']):
             flash("Refeições atualizadas!", "ok")
         else:
@@ -1047,18 +973,6 @@ def aluno_editar(d):
 
     wknd_badge = ''
     wknd_note = '<div class="alert alert-info" style="margin-bottom:.8rem">Fim de semana — refeições opcionais conforme disponibilidade.</div>' if is_weekend else ''
-
-    detido = _tem_detencao_ativa(uid, dt)
-
-    sai_disabled = 'disabled' if detido else ''
-    sai_checked = 'checked' if (r.get('jantar_sai_unidade') and not detido) else ''
-
-    sai_note = (
-        '<div class="alert alert-warn" style="margin-top:.6rem">'
-        '🚫 Estás detido neste dia. Não podes sair da unidade após o jantar.'
-        '</div>'
-        if detido else ''
-    )
 
     content = f"""
     <div class="container">
@@ -1088,11 +1002,7 @@ def aluno_editar(d):
             </div>
           </div>
           <div style="margin-top:.8rem">
-            <label style="display:flex;align-items:center;gap:.6rem;cursor:pointer;padding:.6rem;border:1.5px solid var(--border);border-radius:9px;{('background:#fef937;border-color:#f9e79f' if detido else '')}">
-              <input type="checkbox" name="sai" {sai_checked} {sai_disabled}> 
-              🚪 Sai da unidade após o jantar
-            </label>
-            {sai_note}
+            {chk_label('sai', r.get('jantar_sai_unidade'), '🚪', 'Sai da unidade após o jantar', 'background:#fef9e7;border-color:#f9e79f')}
           </div>
           <hr>
           <div class="gap-btn">
@@ -1276,7 +1186,9 @@ def aluno_password():
         else:
             ok, err = _alterar_password(u['nii'], old, new)
             flash("Password alterada!" if ok else (err or "Erro."), "ok" if ok else "error")
-            if ok: return redirect(url_for('aluno_home'))
+            if ok:
+                session.pop('must_change_password', None)
+                return redirect(url_for('aluno_home'))
 
     content = f"""
     <div class="container">
@@ -1353,7 +1265,7 @@ def aluno_perfil():
           </div>
         </div>
         <div class="card">
-          <div class="card-title">✉️ Contactos <span class="text-muted small">(para notificações)</span></div>
+          <div class="card-title">✉️ Contactos</div>
           <form method="post">
             {csrf_input()}
             <div class="form-group">
@@ -1363,9 +1275,6 @@ def aluno_perfil():
             <div class="form-group">
               <label>📱 Telemóvel</label>
               <input type="tel" name="telemovel" value="{esc(row.get('telemovel') or '')}" placeholder="+351XXXXXXXXX">
-            </div>
-            <div class="alert alert-info" style="margin-bottom:.8rem;font-size:.81rem">
-              📌 O email e telemóvel são usados para receberes avisos quando o prazo de edição de refeições se aproxima.
             </div>
             <div class="gap-btn">
               <button class="btn btn-ok">💾 Guardar contactos</button>
@@ -1461,7 +1370,6 @@ def painel_dia():
         acoes.append(f'<a class="btn btn-ghost" href="{url_for("lista_alunos_ano",ano=u["ano"],d=d_str)}">👥 Lista do {u["ano"]}º Ano</a>')
         acoes.append(f'<a class="btn btn-ghost" href="{url_for("imprimir_ano",ano=u["ano"],d=d_str)}" target="_blank">🖨 Imprimir mapa</a>')
         acoes.append(f'<a class="btn btn-gold" href="{url_for("ausencias_cmd")}">🚫 Ausências do {u["ano"]}º Ano</a>')
-        acoes.append(f'<a class="btn btn-ghost" href="{url_for("detencoes_cmd")}">🚫 Detenções do {u["ano"]}º Ano</a>')
         acoes.append(f'<a class="btn btn-ghost" href="{url_for("calendario_publico")}">📅 Calendário</a>')
 
     backup_btn = ''
@@ -2272,153 +2180,6 @@ def ausencias_cmd():
     return render(content)
 
 # ═══════════════════════════════════════════════════════════════════════════
-# DETENÇÕES 
-# ═══════════════════════════════════════════════════════════════════════════
-
-@app.route('/cmd/detencoes', methods=['GET','POST'])
-@role_required('cmd','admin')
-def detencoes_cmd():
-    u = current_user()
-    perfil = u.get('perfil')
-    ano_cmd = int(u.get('ano', 0)) if perfil == 'cmd' else 0
-
-    # Garantir tabela
-    with sr.db() as conn:
-        conn.execute("""CREATE TABLE IF NOT EXISTS detencoes (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            utilizador_id INTEGER NOT NULL REFERENCES utilizadores(id) ON DELETE CASCADE,
-            detido_de TEXT NOT NULL,
-            detido_ate TEXT NOT NULL,
-            motivo TEXT,
-            criado_em TEXT NOT NULL DEFAULT (datetime('now','localtime')),
-            criado_por TEXT
-        )""")
-        conn.execute("CREATE INDEX IF NOT EXISTS idx_detencoes_uid ON detencoes(utilizador_id)")
-        conn.execute("CREATE INDEX IF NOT EXISTS idx_detencoes_datas ON detencoes(detido_de, detido_ate)")
-        conn.commit()
-
-    if request.method == 'POST':
-        acao = request.form.get('acao','')
-
-        if acao == 'remover':
-            did = request.form.get('id','')
-            with sr.db() as conn:
-                ok = conn.execute("""SELECT d.id FROM detencoes d
-                    JOIN utilizadores uu ON uu.id=d.utilizador_id
-                    WHERE d.id=? AND (uu.ano=? OR ?=1)""",
-                    (did, ano_cmd, 1 if perfil=='admin' else 0)).fetchone()
-                if ok:
-                    conn.execute("DELETE FROM detencoes WHERE id=?", (did,))
-                    conn.commit()
-                    flash("Detenção removida.", "ok")
-                else:
-                    flash("Não autorizado.", "error")
-            return redirect(url_for('detencoes_cmd'))
-
-        # criar
-        nii = request.form.get('nii','').strip()
-        de  = request.form.get('de','').strip()
-        ate = request.form.get('ate','').strip()
-        motivo = request.form.get('motivo','').strip()
-
-        db_u = sr.user_by_nii(nii)
-        if not db_u:
-            flash("Utilizador não encontrado.", "error")
-            return redirect(url_for('detencoes_cmd'))
-
-        if perfil == 'cmd' and int(db_u.get('ano',0)) != ano_cmd:
-            flash(f"Só podes registar detenções para alunos do {ano_cmd}º ano.", "error")
-            return redirect(url_for('detencoes_cmd'))
-
-        # validar datas
-        try:
-            d1 = _parse_date(de)
-            d2 = _parse_date(ate)
-            if d2 < d1:
-                flash("A data 'Até' tem de ser igual ou posterior à data 'De'.", "error")
-                return redirect(url_for('detencoes_cmd'))
-        except Exception:
-            flash("Datas inválidas.", "error")
-            return redirect(url_for('detencoes_cmd'))
-
-        with sr.db() as conn:
-            conn.execute("""INSERT INTO detencoes(utilizador_id, detido_de, detido_ate, motivo, criado_por)
-                            VALUES(?,?,?,?,?)""",
-                         (db_u['id'], d1.isoformat(), d2.isoformat(), motivo or None, u['nii']))
-            conn.commit()
-
-        flash(f"Detenção registada para {db_u['Nome_completo']}.", "ok")
-        return redirect(url_for('detencoes_cmd'))
-
-    filtro_ano = f"AND uu.ano={ano_cmd}" if perfil == 'cmd' else ""
-    with sr.db() as conn:
-        rows = [dict(r) for r in conn.execute(f"""
-            SELECT d.id, uu.NII, uu.Nome_completo, uu.NI, uu.ano,
-                   d.detido_de, d.detido_ate, d.motivo
-            FROM detencoes d
-            JOIN utilizadores uu ON uu.id=d.utilizador_id
-            WHERE uu.perfil='aluno' {filtro_ano}
-            ORDER BY d.detido_de DESC
-        """).fetchall()]
-
-    # datalist alunos do ano (para cmd)
-    with sr.db() as conn:
-        alunos_ano = [dict(r) for r in conn.execute(
-            "SELECT NII, NI, Nome_completo FROM utilizadores WHERE perfil='aluno' AND ano=? ORDER BY NI",
-            (ano_cmd,)).fetchall()] if perfil == 'cmd' else []
-
-    hoje = date.today().isoformat()
-    rows_html = ''.join(f"""
-      <tr>
-        <td><strong>{esc(r['Nome_completo'])}</strong><br><span class="text-muted small">{esc(r['NII'])} · {r['ano']}º ano</span></td>
-        <td>{r['detido_de']}</td><td>{r['detido_ate']}</td>
-        <td>{esc(r['motivo'] or '—')}</td>
-        <td>{'<span class="badge badge-warn">Atual</span>' if r['detido_de'] <= hoje <= r['detido_ate'] else '<span class="badge badge-muted">Inativa</span>'}</td>
-        <td><form method="post" style="display:inline">{csrf_input()}<input type="hidden" name="acao" value="remover"><input type="hidden" name="id" value="{r['id']}"><button class="btn btn-danger btn-sm">🗑</button></form></td>
-      </tr>""" for r in rows)
-
-    alunos_options = ''.join(
-        f'<option value="{esc(a["NII"])}">{esc(a["NI"])} — {esc(a["Nome_completo"])}</option>'
-        for a in alunos_ano
-    )
-    alunos_datalist = (f'<datalist id="alunos_list">{alunos_options}</datalist>' if alunos_ano else '')
-
-    titulo = f'⛔ Detenções — {ano_cmd}º Ano' if perfil == 'cmd' else '⛔ Detenções (todos os anos)'
-    back_url = url_for('painel_dia')
-
-    content = f"""
-    <div class="container">
-      <div class="page-header">{_back_btn(back_url)}<div class="page-title">{titulo}</div></div>
-      <div class="card">
-        <div class="card-title">Registar detenção</div>
-        {alunos_datalist}
-        <form method="post">
-          {csrf_input()}
-          <div class="grid grid-2">
-            <div class="form-group">
-              <label>NII do aluno</label>
-              <input type="text" name="nii" required placeholder="NII" list="alunos_list">
-            </div>
-            <div class="form-group"><label>Motivo (opcional)</label><input type="text" name="motivo" placeholder="Ex: detido por..."></div>
-            <div class="form-group"><label>De</label><input type="date" name="de" required value="{hoje}"></div>
-            <div class="form-group"><label>Até</label><input type="date" name="ate" required value="{hoje}"></div>
-          </div>
-          <button class="btn btn-ok">⛔ Registar detenção</button>
-        </form>
-      </div>
-      <div class="card">
-        <div class="card-title">Detenções registadas</div>
-        <div class="table-wrap">
-          <table>
-            <thead><tr><th>Aluno</th><th>De</th><th>Até</th><th>Motivo</th><th>Estado</th><th>Ações</th></tr></thead>
-            <tbody>{rows_html or '<tr><td colspan="6" class="text-muted center" style="padding:1.5rem">Sem detenções.</td></tr>'}</tbody>
-          </table>
-        </div>
-      </div>
-    </div>"""
-    return render(content)
-
-# ═══════════════════════════════════════════════════════════════════════════
 # ADMIN
 # ═══════════════════════════════════════════════════════════════════════════
 
@@ -2440,12 +2201,10 @@ def admin_home():
         (url_for('admin_audit'),       '🔐', 'Auditoria de Ações',   'Logins e alterações admin'),
         (url_for('admin_calendario'),  '⚙️', 'Gerir Calendário',      'Dias operacionais'),
         (url_for('ausencias'),         '🚫', 'Ausências',            'Gerir ausências'),
-        (url_for('admin_notificacoes'),'🔔', 'Notificações',         'Email & SMS'),
         (url_for('calendario_publico'),   '📅', 'Calendário',           'Ver calendário'),
         (url_for('admin_companhias'),       '⚓', 'Gestão de Companhias', 'Turmas, promoções e cursos'),
         (url_for('controlo_presencas'),    '🎯', 'Controlo Presenças',    'Pesquisa rápida por NI'),
         (url_for('admin_importar_csv'),    '📥', 'Importar CSV',          'Criar alunos em massa'),
-        (url_for('detencoes_cmd'),          '⛔', 'Detenções',             'Gerir alunos em detenção'),
     ]
 
     anos = _get_anos_disponiveis()
@@ -2511,9 +2270,8 @@ def admin_utilizadores():
                                  (nome_e, ni_e, ano_e, perfil_e, email_e or None, tel_e or None, nii_e))
                     conn.commit()
                 if pw_e:
-                    _nh = sr.hash_password(pw_e)
                     with sr.db() as conn:
-                        conn.execute("UPDATE utilizadores SET Palavra_chave=?,must_change_password=1 WHERE NII=?", (_nh, nii_e))
+                        conn.execute("UPDATE utilizadores SET Palavra_chave=?,must_change_password=1 WHERE NII=?", (pw_e, nii_e))
                         conn.commit()
                 _audit(current_user().get('nii','admin'), "editar_utilizador", f"NII={nii_e}")
                 flash("Utilizador atualizado.", "ok")
@@ -2636,9 +2394,6 @@ def admin_utilizadores():
               <a class="btn btn-ghost" href="{url_for('admin_utilizadores')}">Cancelar</a>
             </div>
           </form>
-          <div style="margin-top:.6rem;font-size:.78rem;color:var(--muted)">
-            📌 O email e telemóvel são usados para envio de notificações de prazo.
-          </div>
         </div>"""
 
     content = f"""
@@ -2682,7 +2437,7 @@ def admin_utilizadores():
       </div>
       <div class="card">
         <div class="card-title">Lista
-          <span style="font-size:.74rem;font-weight:400;color:var(--muted);margin-left:.5rem">Clica em ✉️ para editar email/telemóvel (necessário para notificações)</span>
+<span style="font-size:.74rem;font-weight:400;color:var(--muted);margin-left:.5rem">Clica em ✉️ para editar email/telemóvel</span>
         </div>
         <div class="table-wrap">
           <table>
@@ -3689,190 +3444,6 @@ def dashboard_semanal():
 # CONFIGURAÇÕES DE NOTIFICAÇÕES (Admin)
 # ═══════════════════════════════════════════════════════════════════════════
 
-@app.route('/admin/notificacoes', methods=['GET','POST'])
-@role_required('admin')
-def admin_notificacoes():
-    msg_ok = msg_err = ''
-    if request.method == 'POST':
-        acao = request.form.get('acao','')
-        if acao == 'test_email':
-            dest = request.form.get('email_teste','').strip()
-            if dest:
-                ok = _send_email(dest,
-                    '⚓ Escola Naval — Teste de notificações',
-                    '<h2>✅ Email de teste</h2><p>As notificações por email estão a funcionar correctamente!</p>',
-                    'Escola Naval: teste de email OK.')
-                flash('Email de teste enviado!' if ok else 'Falha ao enviar — verifica as configurações SMTP.', 'ok' if ok else 'error')
-            else:
-                flash('Introduz um endereço de email para teste.', 'warn')
-        elif acao == 'test_sms':
-            num = request.form.get('sms_teste','').strip()
-            if num:
-                ok = _send_sms(num, '[Escola Naval] SMS de teste — notificações OK!')
-                flash('SMS enviado!' if ok else 'Falha ao enviar SMS — verifica as configurações Twilio.', 'ok' if ok else 'error')
-            else:
-                flash('Introduz um número para o SMS de teste.', 'warn')
-        elif acao == 'enviar_avisos':
-            _verificar_e_enviar_avisos()
-            flash('Verificação de avisos executada. Consulta os logs para detalhes.', 'ok')
-        return redirect(url_for('admin_notificacoes'))
-
-    smtp_ok = bool(SMTP_HOST and SMTP_USER and SMTP_PASSWORD)
-    twilio_ok = bool(TWILIO_SID and TWILIO_TOKEN and TWILIO_FROM)
-    scheduler_ativo = _scheduler_timer is not None and _scheduler_timer.is_alive()
-    canal_ok = smtp_ok or twilio_ok
-
-    # Stats de notificações enviadas
-    try:
-        with sr.db() as conn:
-            notif_count = conn.execute("SELECT COUNT(*) c FROM notificacoes_enviadas").fetchone()['c']
-            notif_recentes = [dict(r) for r in conn.execute("""
-                SELECT n.enviado_em, u.Nome_completo, u.NII, n.data, n.tipo
-                FROM notificacoes_enviadas n
-                JOIN utilizadores u ON u.id=n.utilizador_id
-                ORDER BY n.enviado_em DESC LIMIT 20
-            """).fetchall()]
-            # Contar alunos sem email e sem telemóvel
-            sem_contacto = conn.execute(
-                "SELECT COUNT(*) c FROM utilizadores WHERE perfil='aluno' AND is_active=1 AND (email IS NULL OR email='') AND (telemovel IS NULL OR telemovel='')"
-            ).fetchone()['c']
-    except Exception:
-        notif_count = 0; notif_recentes = []; sem_contacto = 0
-
-    rows_notif = ''.join(f"""<tr>
-        <td class="small">{(r['enviado_em'] or '')[:16]}</td>
-        <td>{esc(r['Nome_completo'])}</td>
-        <td class="small text-muted">{esc(r['NII'])}</td>
-        <td>{r['data']}</td>
-        <td><span class="badge badge-info">{esc(r['tipo'])}</span></td>
-    </tr>""" for r in notif_recentes)
-
-    sched_badge = (
-        '<span class="badge badge-ok" style="margin-left:.5rem">✓ A correr</span>'
-        if scheduler_ativo else
-        '<span class="badge badge-warn" style="margin-left:.5rem">⏸ Inativo</span>'
-    )
-    sched_info = (
-        f'<div style="font-size:.82rem;color:var(--ok)">✅ Scheduler automático ativo — verifica a cada '
-        f'{NOTIF_INTERVALO_SCHEDULER//60} minutos.</div>'
-        if scheduler_ativo else
-        '<div style="font-size:.82rem;color:var(--warn)">⚠️ Scheduler não está ativo. '
-        'Certifica-te de que o servidor correu com <code>python app6.py</code>. '
-        'Em alternativa, usa o botão manual abaixo ou configura um cron job.</div>'
-    )
-
-    aviso_sem_contacto = (
-        f'<div class="alert alert-warn" style="margin-top:.6rem">⚠️ <strong>{sem_contacto} aluno(s)</strong> '
-        f'não têm email nem telemóvel registado — não receberão avisos. '
-        f'<a href="{url_for("admin_utilizadores")}">Editar utilizadores →</a></div>'
-        if sem_contacto else ''
-    )
-
-    content = f"""
-    <div class="container">
-      <div class="page-header">{_back_btn(url_for('admin_home'))}<div class="page-title">🔔 Notificações & Avisos</div></div>
-
-      {'<div class="alert alert-warn">⚠️ <strong>Nenhum canal configurado.</strong> Sem SMTP ou Twilio, não é possível enviar avisos automáticos. Segue o guia abaixo para ativar.</div>' if not canal_ok else '<div class="alert alert-ok">✅ Canal de notificações ativo e operacional.</div>'}
-
-      <!-- GUIA DE CONFIGURAÇÃO RÁPIDA -->
-      <div class="card" style="margin-bottom:.9rem">
-        <div class="card-title">📋 Guia de configuração rápida</div>
-        <div style="font-size:.85rem;line-height:1.75">
-          <p>As notificações funcionam via <strong>variáveis de ambiente</strong>. Define-as antes de arrancar o servidor:</p>
-          <div style="background:#f4f6f8;padding:.7rem 1rem;border-radius:8px;margin:.6rem 0;font-family:monospace;font-size:.82rem;line-height:2">
-            <strong style="font-family:sans-serif;font-size:.78rem;color:var(--primary)">Linux/Mac (terminal):</strong><br>
-            export SMTP_HOST=smtp.gmail.com<br>
-            export SMTP_PORT=587<br>
-            export SMTP_USER=o-teu-email@gmail.com<br>
-            export SMTP_PASSWORD=xxxx-xxxx-xxxx-xxxx &nbsp;<em style="font-family:sans-serif;font-size:.75rem;color:#6c757d"># App Password do Gmail</em><br>
-            export SMTP_FROM=o-teu-email@gmail.com<br>
-            python app6.py
-          </div>
-          <div style="background:#f4f6f8;padding:.7rem 1rem;border-radius:8px;margin:.6rem 0;font-family:monospace;font-size:.82rem;line-height:2">
-            <strong style="font-family:sans-serif;font-size:.78rem;color:var(--primary)">Windows (PowerShell):</strong><br>
-            $env:SMTP_HOST="smtp.gmail.com"<br>
-            $env:SMTP_USER="o-teu-email@gmail.com"<br>
-            $env:SMTP_PASSWORD="xxxx-xxxx-xxxx-xxxx"<br>
-            python app6.py
-          </div>
-          <p style="font-size:.8rem;color:#6c757d">💡 <strong>Gmail:</strong> Vai a <em>Conta Google → Segurança → Verificação em dois passos → Palavras-passe de aplicações</em> e gera uma App Password. Usa essa como SMTP_PASSWORD.</p>
-          <p style="font-size:.8rem;color:#6c757d">📌 <strong>Alternativa sem email:</strong> O sistema notifica visualmente no painel e os alunos veem o prazo nas suas páginas. O email é um extra.</p>
-        </div>
-      </div>
-
-      <!-- ESTADO DO SCHEDULER -->
-      <div class="card" style="margin-bottom:.9rem">
-        <div class="card-title">🤖 Scheduler automático {sched_badge}</div>
-        {sched_info}
-        <div style="font-size:.81rem;margin-top:.5rem;color:var(--muted)">
-          Prazo de edição: <strong>{sr.PRAZO_LIMITE_HORAS or '—'}h antes da refeição</strong> &nbsp;|&nbsp;
-          Aviso enviado: <strong>{NOTIF_HORAS_AVISO}h antes do prazo</strong>
-        </div>
-        {aviso_sem_contacto}
-        <div style="margin-top:.8rem;display:flex;gap:.5rem;flex-wrap:wrap">
-          <form method="post" style="display:inline">
-            {csrf_input()}<input type="hidden" name="acao" value="enviar_avisos">
-            <button class="btn btn-warn btn-sm">🔔 Verificar e enviar avisos agora</button>
-          </form>
-          <span style="font-size:.79rem;color:var(--muted);align-self:center">
-            Ou via cron: <code>curl "http://localhost:8080/api/avisos-cron?key={app.secret_key[:16]}"</code>
-          </span>
-        </div>
-      </div>
-
-      <!-- CANAIS -->
-      <div class="grid grid-2" style="margin-bottom:.9rem">
-        <div class="card">
-          <div class="card-title">📧 Email (SMTP)
-            <span class="badge {'badge-ok' if smtp_ok else 'badge-warn'}" style="margin-left:.4rem">{'✓ Configurado' if smtp_ok else '⚠ Não configurado'}</span>
-          </div>
-          {'<div style="font-size:.82rem;margin-bottom:.7rem"><div><strong>Host:</strong> '+esc(SMTP_HOST)+'</div><div><strong>Porta:</strong> '+str(SMTP_PORT)+'</div><div><strong>Utilizador:</strong> '+esc(SMTP_USER)+'</div></div>' if smtp_ok else ''}
-          <div style="font-size:.81rem;background:#f4f6f8;padding:.55rem .7rem;border-radius:8px;margin-bottom:.6rem;line-height:1.7">
-            <strong>Variáveis de ambiente a definir:</strong><br>
-            <code>SMTP_HOST=smtp.gmail.com</code><br>
-            <code>SMTP_PORT=587</code><br>
-            <code>SMTP_USER=refeicoes@escola.pt</code><br>
-            <code>SMTP_PASSWORD=app-password-aqui</code><br>
-            <code>SMTP_FROM=refeicoes@escola.pt</code><br>
-            <span class="text-muted" style="font-size:.77rem">💡 Gmail: activa 2FA e usa uma <em>App Password</em> (não a password normal).</span>
-          </div>
-          {'<form method="post" style="display:flex;gap:.4rem">'+str(csrf_input())+'<input type="hidden" name="acao" value="test_email"><input type="email" name="email_teste" placeholder="email@exemplo.com" style="flex:1"><button class="btn btn-primary btn-sm">📤 Testar</button></form>' if smtp_ok else '<div class="text-muted small">Define as variáveis acima e reinicia o servidor.</div>'}
-        </div>
-        <div class="card">
-          <div class="card-title">📱 SMS (Twilio)
-            <span class="badge {'badge-ok' if twilio_ok else 'badge-warn'}" style="margin-left:.4rem">{'✓ Configurado' if twilio_ok else '⚠ Não configurado'}</span>
-          </div>
-          {'<div style="font-size:.82rem;margin-bottom:.7rem"><div><strong>SID:</strong> '+esc(TWILIO_SID[:8])+'...</div><div><strong>From:</strong> '+esc(TWILIO_FROM)+'</div></div>' if twilio_ok else ''}
-          <div style="font-size:.81rem;background:#f4f6f8;padding:.55rem .7rem;border-radius:8px;margin-bottom:.6rem;line-height:1.7">
-            <strong>Variáveis de ambiente a definir:</strong><br>
-            <code>TWILIO_SID=ACxxxxxxxxxxxxxxxx</code><br>
-            <code>TWILIO_TOKEN=xxxxxxxxxxxxxxxx</code><br>
-            <code>TWILIO_FROM=+351XXXXXXXXX</code><br>
-            <span class="text-muted" style="font-size:.77rem">💡 Cria conta gratuita em <strong>twilio.com</strong>. O número de origem é fornecido pelo Twilio.</span>
-          </div>
-          {'<form method="post" style="display:flex;gap:.4rem">'+str(csrf_input())+'<input type="hidden" name="acao" value="test_sms"><input type="tel" name="sms_teste" placeholder="+351XXXXXXXXX" style="flex:1"><button class="btn btn-primary btn-sm">📤 Testar</button></form>' if twilio_ok else '<div class="text-muted small">Define as variáveis acima e reinicia o servidor.</div>'}
-        </div>
-      </div>
-
-      <!-- HISTÓRICO -->
-      <div class="card">
-        <div class="card-title">📋 Últimas notificações enviadas ({notif_count} total)</div>
-        <div class="table-wrap"><table>
-          <thead><tr><th>Quando</th><th>Utilizador</th><th>NII</th><th>Data Ref.</th><th>Tipo</th></tr></thead>
-          <tbody>{rows_notif or '<tr><td colspan="5" class="text-muted center" style="padding:1.2rem">Sem notificações enviadas ainda.</td></tr>'}</tbody>
-        </table></div>
-      </div>
-    </div>"""
-    return render(content)
-
-@app.route('/api/avisos-cron')
-def api_avisos_cron():
-    """Endpoint para cron job externo invocar verificação de avisos."""
-    key = request.args.get('key','')
-    if key != app.secret_key[:16]:
-        abort(403)
-    _verificar_e_enviar_avisos()
-    return {'status': 'ok', 'ts': datetime.now().isoformat()}
 
 # ═══════════════════════════════════════════════════════════════════════════
 # EXPORTAÇÕES
@@ -3883,8 +3454,12 @@ def api_avisos_cron():
 def exportar_dia():
     import io, csv as _csv
     d_str = request.args.get('d', date.today().isoformat())
-    fmt = request.args.get('fmt','csv')
-    dt = _parse_date(d_str)
+    fmt = (request.args.get('fmt','csv') or 'csv').strip().lower()
+    if fmt not in {'csv', 'xlsx'}:
+        abort(400)
+    dt = _parse_date_strict(d_str)
+    if dt is None:
+        abort(400)
     t = sr.get_totais_dia(dt.isoformat())
 
     # Tentar xlsx via openpyxl; cair para CSV se não disponível
@@ -3962,8 +3537,12 @@ def exportar_dia():
 def exportar_relatorio():
     import io, csv as _csv
     d0_str = request.args.get('d0', date.today().isoformat())
-    fmt = request.args.get('fmt','csv')
-    d0 = _parse_date(d0_str)
+    fmt = (request.args.get('fmt','csv') or 'csv').strip().lower()
+    if fmt not in {'csv', 'xlsx'}:
+        abort(400)
+    d0 = _parse_date_strict(d0_str)
+    if d0 is None:
+        abort(400)
     d1 = d0 + timedelta(days=6)
 
     dias_data = []
@@ -4602,13 +4181,39 @@ def admin_promover():
 
 
 
-@app.route('/api/backup-cron')
+@app.route('/health')
+def health():
+    """Health check — verifica BD e devolve JSON + 200 (ou 503 se falhar)."""
+    import time as _time
+    t0 = _time.monotonic()
+    try:
+        with sr.db() as conn:
+            row = conn.execute("SELECT COUNT(*) as n FROM utilizadores").fetchone()
+        latency_ms = round((_time.monotonic() - t0) * 1000, 1)
+        return {
+            "status": "ok",
+            "db": "ok",
+            "utilizadores": row["n"],
+            "db_path": sr.BASE_DADOS,
+            "latency_ms": latency_ms,
+            "ts": datetime.now().isoformat(),
+        }, 200
+    except Exception as exc:
+        app.logger.error(f"health: BD falhou — {exc}")
+        return {
+            "status": "error",
+            "db": "error",
+            "detail": str(exc),
+            "ts": datetime.now().isoformat(),
+        }, 503
+
+
+@app.route('/api/backup-cron', methods=['POST'])
 def api_backup_cron():
     """Endpoint para cron job externo invocar backup diário.
-    Uso: curl "http://localhost:8080/api/backup-cron?key=<primeiros 16 chars da SECRET_KEY>"
+    Uso: curl -X POST -H "Authorization: Bearer <CRON_API_TOKEN>" http://host/api/backup-cron
     """
-    key = request.args.get('key', '')
-    if key != app.secret_key[:16]:
+    if not _verify_cron_token():
         abort(403)
     try:
         sr.ensure_daily_backup()
@@ -4619,22 +4224,25 @@ def api_backup_cron():
         return {'status': 'error', 'msg': str(exc)}, 500
 
 
+@app.route('/api/autopreencher-cron', methods=['POST'])
+def api_autopreencher_cron():
+    """Endpoint para cron externo pré-preencher refeições semanalmente.
+    Uso: curl -X POST -H "Authorization: Bearer <CRON_API_TOKEN>" http://host/api/autopreencher-cron
+    """
+    if not _verify_cron_token():
+        abort(403)
+    try:
+        sr.autopreencher_refeicoes_semanais(DIAS_ANTECEDENCIA)
+        return {'status': 'ok', 'ts': datetime.now().isoformat()}
+    except Exception as exc:
+        app.logger.error(f"api_autopreencher_cron: {exc}")
+        return {'status': 'error', 'msg': str(exc)}, 500
+
+
 if __name__ == '__main__':
-    sr.ensure_schema()
-    sr.ensure_daily_backup()
-    sr.limpar_backups_antigos()
-    sr.autopreencher_refeicoes_semanais(DIAS_ANTECEDENCIA)
-    _iniciar_scheduler()
-    print("=" * 60)
-    print("⚓ Escola Naval — Sistema de Refeições")
-    print("  Acede em: http://localhost:8080")
-    print("  admin/admin123 | cozinha/cozinha123")
-    print("  oficialdia/oficial123 | teste1/teste1")
-    print()
-    print("  Endpoints de automação (cron jobs):")
-    sk16 = app.secret_key[:16]
-    print(f"    Backup:  curl 'http://localhost:8080/api/backup-cron?key={sk16}'")
-    print(f"    Avisos:  curl 'http://localhost:8080/api/avisos-cron?key={sk16}'")
-    print("=" * 60)
-    debug = os.environ.get('DEBUG', 'false').lower() == 'true'
-    app.run(debug=debug, host='0.0.0.0', port=int(os.environ.get('PORT', '8080')))
+    _init_app_once()
+    # Nota: backup e autopreencher NÃO são chamados aqui para evitar duplicação
+    # em ambientes multi-worker (gunicorn). Usa /api/backup-cron e /api/autopreencher-cron
+    # via cron externo (Railway Cron / crontab).
+    cfg.print_startup_banner(sr.BASE_DADOS)
+    app.run(debug=cfg.DEBUG, host='0.0.0.0', port=cfg.PORT)

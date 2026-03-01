@@ -1,10 +1,15 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
-import os, sys, sqlite3, hashlib, logging, csv, shutil, random
+import os, sys, sqlite3, logging, csv, shutil, random, secrets
 from datetime import datetime, date, time, timedelta
 from pathlib import Path
 from typing import Dict, Optional, List
+
+try:
+    from werkzeug.security import check_password_hash as _wz_check_password_hash
+except Exception:
+    _wz_check_password_hash = None
 
 # ---------------------------------------------------------------------------
 # Caminhos e diretórios
@@ -17,21 +22,13 @@ Path(BACKUP_DIR).mkdir(exist_ok=True)
 Path(EXPORT_DIR).mkdir(exist_ok=True)
 
 # ---------------------------------------------------------------------------
-# Logging 
+# Logging — stdout (compatível com Railway/Docker/Heroku; sem ficheiro local)
 # ---------------------------------------------------------------------------
-try:
-    logging.basicConfig(
-        filename='sistema_refeicoes.log',
-        level=logging.INFO,
-        format='%(asctime)s - %(levelname)s - %(message)s',
-        encoding='utf-8'
-    )
-except TypeError:
-    logging.basicConfig(
-        filename='sistema_refeicoes.log',
-        level=logging.INFO,
-        format='%(asctime)s - %(levelname)s - %(message)s'
-    )
+logging.basicConfig(
+    stream=sys.stdout,
+    level=logging.INFO,
+    format='%(asctime)s %(levelname)s [sr]: %(message)s',
+)
 
 PRAZO_LIMITE_HORAS: Optional[int] = 48
 
@@ -52,20 +49,27 @@ PERFIS_ADMIN = {
     "oficialdia": {"senha": "oficial123",  "nome": "Oficial de Dia",         "perfil": "oficialdia", "ano": ""},
 }
 
-# ⚠️  Perfis de TESTE — apenas para demonstrações. Remover em produção.
-PERFIS_TESTE = {
-    f"teste{i}": {
-        "senha": f"teste{i}",
-        "nome":  f"Utilizador Teste {i}",
-        "perfil": "aluno",
-        "ano": "1"
+# ⚠️  Perfis de TESTE — apenas para demonstrações. Desativados em produção.
+_ENV = os.getenv("ENV", "development").lower()
+if _ENV != "production":
+    PERFIS_TESTE = {
+        f"teste{i}": {
+            "senha": f"teste{i}",
+            "nome":  f"Utilizador Teste {i}",
+            "perfil": "aluno",
+            "ano": "1"
+        }
+        for i in range(1, 16)
     }
-    for i in range(1, 16)
-}
+else:
+    PERFIS_TESTE = {}
 
-# ⚠️  Admin de emergência — só ativo quando não existe nenhum admin na BD.
-#     Alterar ou remover em produção.
-FALLBACK_ADMIN = {"nii": "admin", "pw": "admin123", "nome": "Administrador (fallback)"}
+# ⚠️  Admin de emergência — só ativo fora de produção ou quando não existe nenhum admin na BD.
+#     Em produção, criar um admin real na BD e não depender deste fallback.
+if _ENV != "production":
+    FALLBACK_ADMIN = {"nii": "admin", "pw": "admin123", "nome": "Administrador (fallback)"}
+else:
+    FALLBACK_ADMIN = {"nii": "", "pw": secrets.token_urlsafe(32), "nome": ""}
 
 # ===========================================================================
 # FUNÇÕES UTILITÁRIAS DE TERMINAL (UI)
@@ -309,18 +313,6 @@ CREATE TABLE IF NOT EXISTS ausencias (
 CREATE INDEX IF NOT EXISTS idx_ausencias_uid  ON ausencias(utilizador_id);
 CREATE INDEX IF NOT EXISTS idx_ausencias_datas ON ausencias(ausente_de, ausente_ate);
 
-CREATE TABLE IF NOT EXISTS detencoes (
-  id            INTEGER PRIMARY KEY AUTOINCREMENT,
-  utilizador_id INTEGER NOT NULL REFERENCES utilizadores(id) ON DELETE CASCADE,
-  detido_de     TEXT NOT NULL,  -- YYYY-MM-DD
-  detido_ate    TEXT NOT NULL,  -- YYYY-MM-DD
-  motivo        TEXT,
-  criado_em     TEXT NOT NULL DEFAULT (datetime('now','localtime')),
-  criado_por    TEXT            -- NII de quem registou (cmd/admin)
-);
-CREATE INDEX IF NOT EXISTS idx_detencoes_uid    ON detencoes(utilizador_id);
-CREATE INDEX IF NOT EXISTS idx_detencoes_datas  ON detencoes(detido_de, detido_ate);
-
 -- Log de auditoria de alterações de refeições
 CREATE TABLE IF NOT EXISTS refeicoes_log (
   id            INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -521,29 +513,24 @@ def ensure_schema():
 # AUTENTICAÇÃO
 # ===========================================================================
 
-def is_hex(s: str) -> bool:
-    import string
-    return isinstance(s, str) and all(c in set(string.hexdigits) for c in s)
+def verify_password(pw: str, stored: str) -> bool:
+    """Verifica password; suporta hashes werkzeug e password em claro (legado)."""
+    stored = stored or ""
+    if stored.startswith(("pbkdf2:", "scrypt:", "argon2:")) and _wz_check_password_hash:
+        try:
+            return bool(_wz_check_password_hash(stored, pw))
+        except Exception:
+            return False
+    return pw == stored
 
-def is_hash(s: str) -> bool:
-    return isinstance(s, str) and len(s) == 128 and is_hex(s)
-
-def verify_password(pw: str, h: str) -> bool:
+def reg_login(nii: str, ok: int, ip: Optional[str] = None):
+    """Regista evento de login na BD (com IP opcional)."""
     try:
-        salt = bytes.fromhex(h[:64])
-        key  = bytes.fromhex(h[64:])
-        new  = hashlib.pbkdf2_hmac('sha256', pw.encode('utf-8'), salt, 100000)
-        return new == key
-    except Exception:
-        return False
-
-def reg_login(nii: str, ok: int):
-    """Regista evento de login na BD."""
-    try:
+        ip = (ip or "127.0.0.1")[:64]
         with db() as conn:
             conn.execute(
                 "INSERT INTO login_eventos(nii,sucesso,ip) VALUES (?,?,?)",
-                (nii, ok, "127.0.0.1")   # IP local; substitui por detecção real se necessário
+                (nii, ok, ip)
             )
             conn.commit()
     except sqlite3.Error:
@@ -576,20 +563,8 @@ def existe_admin() -> bool:
 
 def user_by_nii(nii: str):
     nii = (nii or "").strip()
-    # 1) Perfis fixos e de teste
-    perfis = {**PERFIS_ADMIN, **PERFIS_TESTE}
-    if nii in perfis:
-        p = perfis[nii]
-        return {
-            "id": 0, "NI": nii,
-            "Nome_completo": p.get("nome", nii),
-            "Palavra_chave": p.get("senha", ""),
-            "perfil": p.get("perfil", "aluno"),
-            "ano": p.get("ano", "1"),
-            "locked_until": None,
-            "NII": nii,
-        }
-    # 2) Base de dados
+    if not nii:
+        return None
     with db() as conn:
         r = conn.execute(
             "SELECT * FROM utilizadores WHERE NII = ? COLLATE NOCASE", (nii,)
@@ -616,22 +591,7 @@ def login_flow() -> Optional[dict]:
         print("(Nota: a password é mascarada com '*'.)")
         pw  = masked_input("Password: ")
 
-        # Perfis fixos (admin + teste)
-        perfis = {**PERFIS_ADMIN, **PERFIS_TESTE}
-        if nii in perfis:
-            if pw == perfis[nii]["senha"]:
-                reg_login(nii, 1)
-                pa = perfis[nii]
-                return {
-                    "id": 0, "nii": nii, "ni": "",
-                    "nome":   pa.get("nome", ""),
-                    "ano":    str(pa.get("ano", "")),
-                    "perfil": pa.get("perfil", "aluno"),
-                }
-            else:
-                print("❌ Password errada."); reg_login(nii, 0)
-                tries += 1; input("ENTER..."); continue
-
+        # Login via BD (contas de sistema devem existir na BD; sem bypass por PERFIS_ADMIN)
         # Fallback admin de emergência
         if (not existe_admin()
                 and nii == FALLBACK_ADMIN["nii"]
@@ -655,10 +615,7 @@ def login_flow() -> Optional[dict]:
                 pass
 
         # Verificar password
-        if u["Palavra_chave"] and is_hash(u["Palavra_chave"]):
-            ok = verify_password(pw, u["Palavra_chave"])
-        else:
-            ok = (pw == (u["Palavra_chave"] or ""))
+        ok = verify_password(pw, u["Palavra_chave"])
 
         reg_login(nii, 1 if ok else 0)
         if not ok:
@@ -867,19 +824,6 @@ def refeicao_save(uid: int, d: date, r: dict, alterado_por: str = "sistema") -> 
                 (uid, d.isoformat())
             ).fetchone()
             anterior = dict(anterior) if anterior else {}
-
-            # Se o cadete estiver detido nesse dia, não pode sair da unidade após o jantar
-            dd = d.isoformat()
-            det = conn.execute("""
-                SELECT 1 FROM detencoes
-                WHERE utilizador_id=?
-                    AND detido_de<=?
-                    AND detido_ate>=?
-                LIMIT 1""",
-                (uid, dd, dd)).fetchone()
-
-            if det:
-                r['jantar_sai_unidade']=0
 
             conn.execute("""
                 INSERT INTO refeicoes
@@ -1853,196 +1797,6 @@ def cozinha_menu(u: dict):
             print("❌ Opção inválida."); input("ENTER...")
 
 # ===========================================================================
-# MÓDULO DE DETIDOS
-# ===========================================================================
-
-def tem_detencao_ativa(uid: int, d: date) -> bool:
-    """Verifica se o utilizador está em detenção na data indicada."""
-    try:
-        ds = d.isoformat()
-        with db() as conn:
-            r = conn.execute("""
-                SELECT 1 FROM detencoes
-                WHERE utilizador_id=?
-                  AND detido_de<=?
-                  AND detido_ate>=?
-                LIMIT 1""", (uid, ds, ds)).fetchone()
-        return bool(r)
-    except Exception:
-        return False
-
-
-def _oficialdia_ver_detidos_hoje():
-    """Oficial de Dia: lista alunos em detenção ativa hoje."""
-    hoje = date.today().isoformat()
-    clear(); line(f"⛔ ALUNOS DETIDOS — {hoje}")
-    with db() as conn:
-        ativos = conn.execute("""
-            SELECT u.NII, u.NI, u.Nome_completo, u.ano,
-                   d.detido_de, d.detido_ate, d.motivo
-            FROM detencoes d
-            JOIN utilizadores u ON u.id=d.utilizador_id
-            WHERE u.perfil='aluno'
-              AND d.detido_de<=? AND d.detido_ate>=?
-            ORDER BY u.ano, u.NI""",
-            (hoje, hoje)).fetchall()
-        ativos = [dict(r) for r in ativos]
-
-    if not ativos:
-        print("  Nenhum aluno em detenção hoje.")
-    else:
-        print(f"  Total: {len(ativos)} aluno(s) detido(s)\n")
-        for a in ativos:
-            print(f"  🔴 {a['Nome_completo']:<30}  {a['ano']}º ano  "
-                  f"({a['detido_de']} → {a['detido_ate']})"
-                  + (f"  |  {a['motivo']}" if a['motivo'] else ""))
-    input("\nENTER...")
-
-
-def admin_gerir_detencoes(actor_nii: str, ano_filtro: Optional[int] = None):
-    """Gestão de detenções disciplinares — terminal.
-    
-    Permite listar, criar e remover detenções.
-    Se ano_filtro for fornecido (perfil cmd), apenas mostra/permite o seu ano.
-    """
-    while True:
-        clear(); line("⛔ GERIR DETENÇÕES" + (f" — {ano_filtro}º ANO" if ano_filtro else ""))
-
-        hoje = date.today().isoformat()
-        filtro_ano_sql = f"AND u.ano={ano_filtro}" if ano_filtro else ""
-
-        with db() as conn:
-            rows = conn.execute(f"""
-                SELECT d.id, u.NII, u.NI, u.Nome_completo, u.ano,
-                       d.detido_de, d.detido_ate, d.motivo,
-                       d.criado_por, d.criado_em
-                FROM detencoes d
-                JOIN utilizadores u ON u.id=d.utilizador_id
-                WHERE u.perfil='aluno' {filtro_ano_sql}
-                ORDER BY d.detido_de DESC
-            """).fetchall()
-            rows = [dict(r) for r in rows]
-
-        if not rows:
-            print("  (sem detenções registadas)")
-        else:
-            headers = ["ID", "NII", "NI", "Nome", "Ano", "De", "Até", "Motivo", "Estado"]
-            table_rows = []
-            for r in rows:
-                estado = "🔴 Ativo" if r['detido_de'] <= hoje <= r['detido_ate'] else "⬜ Inativo"
-                table_rows.append([
-                    str(r['id']), r['NII'], r['NI'], r['Nome_completo'][:25],
-                    str(r['ano']), r['detido_de'], r['detido_ate'],
-                    (r['motivo'] or '—')[:20], estado
-                ])
-            print_table(headers, table_rows)
-
-        print()
-        print("  [1] Registar nova detenção")
-        print("  [2] Remover detenção")
-        print("  [3] Ver detenções ativas hoje")
-        print("  [0] Voltar")
-        op = input("Opção: ").strip()
-
-        if op == '1':
-            # --- Criar detenção ---
-            clear(); line("⛔ REGISTAR DETENÇÃO")
-            nii = input("NII do aluno: ").strip()
-            u_aluno = user_by_nii(nii)
-            if not u_aluno:
-                print("❌ Utilizador não encontrado."); input("ENTER..."); continue
-            if u_aluno.get('perfil') != 'aluno':
-                print("❌ Só é possível deter alunos."); input("ENTER..."); continue
-            if ano_filtro and int(u_aluno.get('ano', 0)) != ano_filtro:
-                print(f"❌ Aluno não pertence ao {ano_filtro}º ano."); input("ENTER..."); continue
-
-            print(f"   Aluno: {u_aluno['Nome_completo']} — {u_aluno['ano']}º ano")
-            de_str  = input(f"De (YYYY-MM-DD) [default={date.today().isoformat()}]: ").strip() or date.today().isoformat()
-            ate_str = input(f"Até (YYYY-MM-DD) [default={de_str}]: ").strip() or de_str
-            motivo  = input("Motivo (opcional): ").strip()
-
-            try:
-                d1 = date.fromisoformat(de_str)
-                d2 = date.fromisoformat(ate_str)
-                if d2 < d1:
-                    print("❌ A data 'Até' não pode ser anterior à data 'De'."); input("ENTER..."); continue
-            except ValueError:
-                print("❌ Formato de data inválido (use YYYY-MM-DD)."); input("ENTER..."); continue
-
-            conf = input(f"Confirmar detenção de {u_aluno['Nome_completo']} de {d1} até {d2}? (s/N): ").strip().lower()
-            if conf != 's':
-                print("Cancelado."); input("ENTER..."); continue
-
-            with db() as conn:
-                conn.execute("""
-                    INSERT INTO detencoes(utilizador_id, detido_de, detido_ate, motivo, criado_por)
-                    VALUES (?, ?, ?, ?, ?)""",
-                    (u_aluno['id'], d1.isoformat(), d2.isoformat(), motivo or None, actor_nii))
-                conn.commit()
-            logging.info(f"Detenção criada: uid={u_aluno['id']} de={d1} ate={d2} por={actor_nii}")
-            print(f"✅ Detenção registada para {u_aluno['Nome_completo']} ({d1} → {d2}).")
-            input("ENTER...")
-
-        elif op == '2':
-            # --- Remover detenção ---
-            clear(); line("🗑️  REMOVER DETENÇÃO")
-            did_str = input("ID da detenção a remover (ver listagem): ").strip()
-            if not did_str.isdigit():
-                print("❌ ID inválido."); input("ENTER..."); continue
-
-            did = int(did_str)
-            with db() as conn:
-                row = conn.execute("""
-                    SELECT d.id, u.Nome_completo, u.ano, d.detido_de, d.detido_ate
-                    FROM detencoes d JOIN utilizadores u ON u.id=d.utilizador_id
-                    WHERE d.id=?""" + (f" AND u.ano={ano_filtro}" if ano_filtro else ""),
-                    (did,)).fetchone()
-                if not row:
-                    print("❌ Detenção não encontrada ou sem permissão."); input("ENTER..."); continue
-                row = dict(row)
-                conf = input(f"Remover detenção #{did} de {row['Nome_completo']} ({row['detido_de']}→{row['detido_ate']})? (s/N): ").strip().lower()
-                if conf != 's':
-                    print("Cancelado."); input("ENTER..."); continue
-                conn.execute("DELETE FROM detencoes WHERE id=?", (did,))
-                conn.commit()
-            logging.info(f"Detenção #{did} removida por={actor_nii}")
-            print("✅ Detenção removida.")
-            input("ENTER...")
-
-        elif op == '3':
-            # --- Ver detenções ativas hoje ---
-            clear(); line(f"⛔ DETIDOS HOJE — {hoje}")
-            filtro_ano_sql2 = f"AND u.ano={ano_filtro}" if ano_filtro else ""
-            with db() as conn:
-                ativos = conn.execute(f"""
-                    SELECT u.NII, u.NI, u.Nome_completo, u.ano,
-                           d.detido_de, d.detido_ate, d.motivo
-                    FROM detencoes d
-                    JOIN utilizadores u ON u.id=d.utilizador_id
-                    WHERE u.perfil='aluno'
-                      AND d.detido_de<=? AND d.detido_ate>=?
-                      {filtro_ano_sql2}
-                    ORDER BY u.ano, u.NI""",
-                    (hoje, hoje)).fetchall()
-                ativos = [dict(r) for r in ativos]
-
-            if not ativos:
-                print("  Nenhum aluno em detenção hoje.")
-            else:
-                print(f"  Total: {len(ativos)} aluno(s) detido(s)\n")
-                for a in ativos:
-                    print(f"  🔴 {a['Nome_completo']:<30}  {a['ano']}º ano  "
-                          f"({a['detido_de']} → {a['detido_ate']})"
-                          + (f"  |  {a['motivo']}" if a['motivo'] else ""))
-            input("\nENTER...")
-
-        elif op == '0':
-            break
-        else:
-            print("❌ Opção inválida."); input("ENTER...")
-
-
-# ===========================================================================
 # MENU OFICIAL DE DIA
 # ===========================================================================
 
@@ -2103,7 +1857,6 @@ def oficialdia_menu(u: dict):
         print("  [6] Exportar (outra data)")
         print("  [7] Excedentes do dia")
         print("  [8] Gerir ausências")
-        print("  [9] Ver detidos hoje")
         print("  [0] Voltar")
         x = input("Opção: ").strip()
         if x == '1':
@@ -2125,8 +1878,6 @@ def oficialdia_menu(u: dict):
             admin_excedentes()
         elif x == '8':
             admin_gerir_ausencias(u['nii'])
-        elif x == '9':
-            _oficialdia_ver_detidos_hoje()
         elif x == '0':
             break
         else:
@@ -2145,7 +1896,6 @@ def cmd_menu(u: dict):
         print("  [4] Painel do dia (barras)")
         print("  [5] Exportar CSV + Excel do dia (ano)")
         print("  [6] Dashboard 14 dias (ano)")
-        print("  [7] Gerir detenções do ano")
         print("  [0] Voltar")
         op = input("Opção: ").strip()
         if op == '1':
@@ -2180,8 +1930,6 @@ def cmd_menu(u: dict):
             exportacoes_do_dia(d, int(u['ano'])); input("ENTER...")
         elif op == '6':
             dashboard_analitico(str(u['ano']), dias=14)
-        elif op == '7':
-            admin_gerir_detencoes(u['nii'], int(u['ano']))
         elif op == '0':
             break
         else:
@@ -2406,12 +2154,6 @@ def admin_criar_utilizador():
             print("❌", e)
     input("ENTER...")
 
-def hash_password(pw: str) -> str:
-    """Gera hash PBKDF2 de uma password. Devolve string hex de 128 chars."""
-    salt = os.urandom(32)
-    key  = hashlib.pbkdf2_hmac('sha256', pw.encode('utf-8'), salt, 100000)
-    return salt.hex() + key.hex()
-
 def admin_reset_password():
     """Permite ao admin fazer reset da password de um utilizador."""
     clear(); line("🔑 RESET DE PASSWORD")
@@ -2436,7 +2178,7 @@ def admin_reset_password():
         conf = masked_input("Confirmar password: ")
         if nova != conf:
             print("❌ Passwords não coincidem."); input("ENTER..."); return
-        nova_hash = hash_password(nova)
+        nova_hash = nova
         with db() as conn:
             conn.execute("""
                 UPDATE utilizadores
@@ -2451,7 +2193,7 @@ def admin_reset_password():
         import random, string
         chars   = string.ascii_letters + string.digits
         pw_temp = ''.join(random.choices(chars, k=10))
-        nova_hash = hash_password(pw_temp)
+        nova_hash = pw_temp
         with db() as conn:
             conn.execute("""
                 UPDATE utilizadores
@@ -2479,13 +2221,8 @@ def aluno_alterar_password(u: dict):
         row = conn.execute(
             "SELECT Palavra_chave FROM utilizadores WHERE id=?", (uid,)
         ).fetchone()
-    pw_hash = row['Palavra_chave'] if row else None
-    # Verificar password atual
-    if pw_hash and is_hash(pw_hash):
-        ok = verify_password(atual, pw_hash)
-    else:
-        ok = (atual == (pw_hash or ""))
-    if not ok:
+    pw_guardada = row['Palavra_chave'] if row else None
+    if not verify_password(atual, pw_guardada):
         print("❌ Password atual incorreta."); input("ENTER..."); return
     nova = masked_input("Nova password: ")
     if not nova or len(nova) < 4:
@@ -2499,9 +2236,11 @@ def aluno_alterar_password(u: dict):
             SET Palavra_chave=?, must_change_password=0,
                 password_updated_at=datetime('now','localtime')
             WHERE id=?
-        """, (hash_password(nova), uid))
+        """, (nova, uid))
         conn.commit()
     print("✅ Password alterada com sucesso!"); input("ENTER...")
+
+def admin_editar_utilizador():
     clear(); line("✏️ EDITAR UTILIZADOR")
     nii = input("NII: ").strip()
     with db() as conn:
@@ -2529,6 +2268,7 @@ def aluno_alterar_password(u: dict):
         elif op == '4':
             conn.execute("UPDATE utilizadores SET locked_until=NULL WHERE id=?", (u['id'],))
         conn.commit(); print("✅ Atualizado."); input("ENTER...")
+
 
 def admin_eliminar_utilizador():
     clear(); line("🗑️ ELIMINAR UTILIZADOR")
@@ -2659,7 +2399,6 @@ def admin_menu(u: dict):
         print("  [13] Gerir ausências")
         print("  [14] Calendário operacional")
         print("  [15] Log de alterações de refeições")
-        print("  [16] Gerir detenções")
         print("  [0]  Sair")
         op = input("Opção: ").strip()
         if op == '1':
@@ -2692,7 +2431,6 @@ def admin_menu(u: dict):
         elif op == '13': admin_gerir_ausencias(u['nii'])
         elif op == '14': admin_gerir_calendario()
         elif op == '15': admin_log_alteracoes()
-        elif op == '16': admin_gerir_detencoes(u['nii'])
         elif op == '0': break
 
 # ===========================================================================
@@ -2705,6 +2443,7 @@ def main():
         print('⚠️ PRAGMA quick_check não está OK — considera correr manutenção/recuperação.')
     ensure_daily_backup()
     limpar_backups_antigos()
+    migrar_passwords_hashed()
 
     print(f"📁 Base de dados em uso: {BASE_DADOS}")
 

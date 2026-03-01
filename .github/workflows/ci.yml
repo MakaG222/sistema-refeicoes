@@ -52,5 +52,7 @@ jobs:
       - name: Install dev dependencies
         run: pip install -r requirements-dev.txt
 
-      - name: Run tests
-        run: pytest tests/ -v --tb=short
+      - name: Run tests with coverage
+        run: |
+          coverage run -m pytest tests/ -v --tb=short
+          coverage report --fail-under=70
