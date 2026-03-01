@@ -155,6 +155,13 @@ def _bootstrap_dev_system_accounts(conn=None) -> None:
                 )
             else:
                 stored = (row['Palavra_chave'] or '')
+                # Sempre sincroniza perfil, nome e ano — garante que perfis de sistema
+                # nao ficam "presos" como aluno se o campo estiver errado na BD.
+                conn.execute(
+                    "UPDATE utilizadores SET perfil=?, Nome_completo=?, ano=?, must_change_password=CASE WHEN ? != 'aluno' THEN 0 ELSE must_change_password END WHERE id=?",
+                    (perfil, nome, ano, perfil, row['id'])
+                )
+                # Migra password de plain-text para hash se ainda nao foi migrada
                 if stored == p.get('senha', ''):
                     conn.execute(
                         "UPDATE utilizadores SET Palavra_chave=?, password_updated_at=datetime('now','localtime') WHERE id=?",
@@ -702,7 +709,20 @@ def login():
             sr.reg_login(nii, 1, ip=_client_ip())
             app.logger.warning(f"Login via FALLBACK_ADMIN: NII={nii} IP={_client_ip()}")
         else:
-            db_u = sr.user_by_nii(nii)
+            # Busca directa à BD para garantir que o campo 'perfil' é sempre retornado
+            try:
+                with sr.db() as _conn:
+                    db_u = _conn.execute(
+                        "SELECT id, NII, NI, Nome_completo, Palavra_chave, ano, perfil, "
+                        "must_change_password, locked_until, is_active "
+                        "FROM utilizadores WHERE NII=? AND (is_active IS NULL OR is_active=1)",
+                        (nii,)
+                    ).fetchone()
+                    if db_u:
+                        db_u = dict(db_u)
+            except Exception as _e:
+                app.logger.warning(f"Fallback user_by_nii via sr: {_e}")
+                db_u = sr.user_by_nii(nii)
             if db_u:
                 locked = db_u.get('locked_until')
                 if locked:
@@ -719,9 +739,10 @@ def login():
                     ph = db_u.get('Palavra_chave', '') or ''
                     ok = _check_password(ph, pw)
                     if ok:
+                        _perfil = (db_u.get('perfil') if hasattr(db_u, 'get') else db_u['perfil']) or 'aluno'
                         u = {'id': db_u['id'], 'nii': db_u['NII'], 'ni': db_u['NI'],
-                             'nome': db_u['Nome_completo'], 'ano': str(db_u['ano']),
-                             'perfil': db_u['perfil'] or 'aluno'}
+                             'nome': db_u['Nome_completo'], 'ano': str(db_u['ano'] or ''),
+                             'perfil': _perfil}
                         sr.reg_login(nii, 1, ip=_client_ip())
                         app.logger.info(f"Login OK: NII={nii} perfil={u['perfil']} IP={_client_ip()}")
                         # Migração transparente: se ainda é plain-text, converter para hash
@@ -1188,7 +1209,7 @@ def aluno_password():
             flash("Password alterada!" if ok else (err or "Erro."), "ok" if ok else "error")
             if ok:
                 session.pop('must_change_password', None)
-                return redirect(url_for('aluno_home'))
+                return redirect(url_for('dashboard'))
 
     content = f"""
     <div class="container">
