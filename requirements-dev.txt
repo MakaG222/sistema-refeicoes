@@ -1,0 +1,8 @@
+# Dependências de desenvolvimento e CI (P3)
+-r requirements.txt
+
+ruff>=0.4             # linter + formatter (substitui flake8, isort, pyupgrade)
+pip-audit>=2.7        # auditoria de vulnerabilidades nas dependências
+pytest>=8.0
+pytest-flask>=1.3
+coverage>=7.0
