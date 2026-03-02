@@ -446,6 +446,14 @@ CREATE TABLE IF NOT EXISTS admin_audit_log (
   detail TEXT
 );
 
+CREATE TABLE IF NOT EXISTS turmas (
+  id        INTEGER PRIMARY KEY AUTOINCREMENT,
+  nome      TEXT NOT NULL UNIQUE,
+  ano       INTEGER NOT NULL,
+  descricao TEXT,
+  criado_em TEXT DEFAULT (datetime('now','localtime'))
+);
+
 CREATE INDEX IF NOT EXISTS idx_refeicoes_data ON refeicoes(data);
 CREATE INDEX IF NOT EXISTS idx_refeicoes_user ON refeicoes(utilizador_id);
 CREATE INDEX IF NOT EXISTS idx_utilizadores_ano ON utilizadores(ano);
@@ -498,25 +506,37 @@ CREATE VIEW IF NOT EXISTS v_ocupacao_dia AS
 SELECT
   d.data,
   'Pequeno Almoço' AS refeicao,
-  (SELECT COUNT(*) FROM refeicoes r WHERE r.data=d.data AND r.pequeno_almoco=1) AS ocupacao,
+  (SELECT COUNT(*) FROM refeicoes r
+   JOIN utilizadores u ON u.id=r.utilizador_id AND u.is_active=1
+   AND NOT EXISTS (SELECT 1 FROM ausencias a WHERE a.utilizador_id=u.id AND a.ausente_de<=r.data AND a.ausente_ate>=r.data)
+   WHERE r.data=d.data AND r.pequeno_almoco=1) AS ocupacao,
   COALESCE((SELECT max_total FROM capacidade_refeicao c WHERE c.data=d.data AND c.refeicao='Pequeno Almoço'), -1) AS capacidade
 FROM (SELECT DISTINCT data FROM refeicoes) d
 UNION ALL
 SELECT
   d.data, 'Lanche',
-  (SELECT COUNT(*) FROM refeicoes r WHERE r.data=d.data AND r.lanche=1),
+  (SELECT COUNT(*) FROM refeicoes r
+   JOIN utilizadores u ON u.id=r.utilizador_id AND u.is_active=1
+   AND NOT EXISTS (SELECT 1 FROM ausencias a WHERE a.utilizador_id=u.id AND a.ausente_de<=r.data AND a.ausente_ate>=r.data)
+   WHERE r.data=d.data AND r.lanche=1),
   COALESCE((SELECT max_total FROM capacidade_refeicao c WHERE c.data=d.data AND c.refeicao='Lanche'), -1)
 FROM (SELECT DISTINCT data FROM refeicoes) d
 UNION ALL
 SELECT
   d.data, 'Almoço',
-  (SELECT COUNT(*) FROM refeicoes r WHERE r.data=d.data AND r.almoco IS NOT NULL),
+  (SELECT COUNT(*) FROM refeicoes r
+   JOIN utilizadores u ON u.id=r.utilizador_id AND u.is_active=1
+   AND NOT EXISTS (SELECT 1 FROM ausencias a WHERE a.utilizador_id=u.id AND a.ausente_de<=r.data AND a.ausente_ate>=r.data)
+   WHERE r.data=d.data AND r.almoco IS NOT NULL),
   COALESCE((SELECT max_total FROM capacidade_refeicao c WHERE c.data=d.data AND c.refeicao='Almoço'), -1)
 FROM (SELECT DISTINCT data FROM refeicoes) d
 UNION ALL
 SELECT
   d.data, 'Jantar',
-  (SELECT COUNT(*) FROM refeicoes r WHERE r.data=d.data AND r.jantar_tipo IS NOT NULL),
+  (SELECT COUNT(*) FROM refeicoes r
+   JOIN utilizadores u ON u.id=r.utilizador_id AND u.is_active=1
+   AND NOT EXISTS (SELECT 1 FROM ausencias a WHERE a.utilizador_id=u.id AND a.ausente_de<=r.data AND a.ausente_ate>=r.data)
+   WHERE r.data=d.data AND r.jantar_tipo IS NOT NULL),
   COALESCE((SELECT max_total FROM capacidade_refeicao c WHERE c.data=d.data AND c.refeicao='Jantar'), -1)
 FROM (SELECT DISTINCT data FROM refeicoes) d;
 
@@ -810,93 +830,62 @@ def get_totais_dia(di: str, ano: Optional[int] = None) -> dict:
     """
     Devolve totais de todas as refeições para uma data ISO (di).
     Se ano for fornecido, filtra apenas utilizadores desse ano.
+    Exclui utilizadores inativos e ausentes nesse dia.
     Resultado: dict com chaves pa, lan, alm_norm, alm_veg, alm_dieta,
                               jan_norm, jan_veg, jan_dieta, jan_sai
     """
+    # Filtro comum: utilizador ativo e sem ausência registada para o dia
+    _active = (
+        "JOIN utilizadores u ON u.id=r.utilizador_id"
+        " AND u.is_active=1"
+        " AND NOT EXISTS ("
+        "SELECT 1 FROM ausencias a"
+        " WHERE a.utilizador_id=u.id AND a.ausente_de<=r.data AND a.ausente_ate>=r.data)"
+    )
+    _ano_cond = " AND u.ano=?" if ano is not None else ""
+
     with db() as conn:
-        if ano is None:
-            pa = (
-                conn.execute(
-                    "SELECT COUNT(*) c FROM refeicoes WHERE data=? AND pequeno_almoco=1",
-                    (di,),
-                ).fetchone()["c"]
-                or 0
-            )
-            ln = (
-                conn.execute(
-                    "SELECT COUNT(*) c FROM refeicoes WHERE data=? AND lanche=1", (di,)
-                ).fetchone()["c"]
-                or 0
-            )
-            alm = conn.execute(
-                """
-                SELECT
-                  SUM(CASE WHEN almoco='Normal'      THEN 1 ELSE 0 END) norm,
-                  SUM(CASE WHEN almoco='Vegetariano' THEN 1 ELSE 0 END) veg,
-                  SUM(CASE WHEN almoco='Dieta'       THEN 1 ELSE 0 END) dieta
-                FROM refeicoes WHERE data=?
-            """,
-                (di,),
-            ).fetchone()
-            jan = conn.execute(
-                """
-                SELECT
-                  SUM(CASE WHEN jantar_tipo='Normal'      THEN 1 ELSE 0 END) norm,
-                  SUM(CASE WHEN jantar_tipo='Vegetariano' THEN 1 ELSE 0 END) veg,
-                  SUM(CASE WHEN jantar_tipo='Dieta'       THEN 1 ELSE 0 END) dieta,
-                  SUM(COALESCE(jantar_sai_unidade, 0))                        sai
-                FROM refeicoes WHERE data=?
-            """,
-                (di,),
-            ).fetchone()
-        else:
-            pa = (
-                conn.execute(
-                    """
-                SELECT COUNT(*) c FROM refeicoes r
-                JOIN utilizadores u ON u.id=r.utilizador_id
-                WHERE r.data=? AND u.ano=? AND r.pequeno_almoco=1
-            """,
-                    (di, ano),
-                ).fetchone()["c"]
-                or 0
-            )
-            ln = (
-                conn.execute(
-                    """
-                SELECT COUNT(*) c FROM refeicoes r
-                JOIN utilizadores u ON u.id=r.utilizador_id
-                WHERE r.data=? AND u.ano=? AND r.lanche=1
-            """,
-                    (di, ano),
-                ).fetchone()["c"]
-                or 0
-            )
-            alm = conn.execute(
-                """
-                SELECT
-                  SUM(CASE WHEN r.almoco='Normal'      THEN 1 ELSE 0 END) norm,
-                  SUM(CASE WHEN r.almoco='Vegetariano' THEN 1 ELSE 0 END) veg,
-                  SUM(CASE WHEN r.almoco='Dieta'       THEN 1 ELSE 0 END) dieta
-                FROM refeicoes r
-                JOIN utilizadores u ON u.id=r.utilizador_id
-                WHERE r.data=? AND u.ano=?
-            """,
-                (di, ano),
-            ).fetchone()
-            jan = conn.execute(
-                """
-                SELECT
-                  SUM(CASE WHEN r.jantar_tipo='Normal'      THEN 1 ELSE 0 END) norm,
-                  SUM(CASE WHEN r.jantar_tipo='Vegetariano' THEN 1 ELSE 0 END) veg,
-                  SUM(CASE WHEN r.jantar_tipo='Dieta'       THEN 1 ELSE 0 END) dieta,
-                  SUM(COALESCE(r.jantar_sai_unidade, 0))                        sai
-                FROM refeicoes r
-                JOIN utilizadores u ON u.id=r.utilizador_id
-                WHERE r.data=? AND u.ano=?
-            """,
-                (di, ano),
-            ).fetchone()
+        params_base = (di, ano) if ano is not None else (di,)
+
+        pa = (
+            conn.execute(
+                f"SELECT COUNT(*) c FROM refeicoes r {_active}"
+                f" WHERE r.data=? {_ano_cond} AND r.pequeno_almoco=1",
+                params_base,
+            ).fetchone()["c"]
+            or 0
+        )
+        ln = (
+            conn.execute(
+                f"SELECT COUNT(*) c FROM refeicoes r {_active}"
+                f" WHERE r.data=? {_ano_cond} AND r.lanche=1",
+                params_base,
+            ).fetchone()["c"]
+            or 0
+        )
+        alm = conn.execute(
+            f"""
+            SELECT
+              SUM(CASE WHEN r.almoco='Normal'      THEN 1 ELSE 0 END) norm,
+              SUM(CASE WHEN r.almoco='Vegetariano' THEN 1 ELSE 0 END) veg,
+              SUM(CASE WHEN r.almoco='Dieta'       THEN 1 ELSE 0 END) dieta
+            FROM refeicoes r {_active}
+            WHERE r.data=? {_ano_cond}
+        """,
+            params_base,
+        ).fetchone()
+        jan = conn.execute(
+            f"""
+            SELECT
+              SUM(CASE WHEN r.jantar_tipo='Normal'      THEN 1 ELSE 0 END) norm,
+              SUM(CASE WHEN r.jantar_tipo='Vegetariano' THEN 1 ELSE 0 END) veg,
+              SUM(CASE WHEN r.jantar_tipo='Dieta'       THEN 1 ELSE 0 END) dieta,
+              SUM(COALESCE(r.jantar_sai_unidade, 0))                        sai
+            FROM refeicoes r {_active}
+            WHERE r.data=? {_ano_cond}
+        """,
+            params_base,
+        ).fetchone()
 
     return {
         "pa": pa,

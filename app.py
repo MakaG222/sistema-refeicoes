@@ -61,6 +61,10 @@ def _ensure_extra_schema():
                 conn.execute(
                     "ALTER TABLE utilizadores ADD COLUMN is_active INTEGER NOT NULL DEFAULT 1"
                 )
+            if "turma_id" not in cols:
+                conn.execute(
+                    "ALTER TABLE utilizadores ADD COLUMN turma_id INTEGER REFERENCES turmas(id)"
+                )
 
             # Verificar e reparar FTS5 se necessário (sem writable_schema)
             try:
@@ -132,6 +136,12 @@ def _init_app_once() -> None:
     sr.ensure_schema()
     _ensure_extra_schema()
     _APP_BOOTSTRAPPED = True
+
+
+@app.before_request
+def _bootstrap_before_request():
+    """Garante que o schema da BD é criado antes do primeiro pedido (Gunicorn)."""
+    _init_app_once()
 
 
 def _verify_cron_token() -> bool:
@@ -4237,11 +4247,6 @@ def dashboard_semanal():
 
 
 # ═══════════════════════════════════════════════════════════════════════════
-# CONFIGURAÇÕES DE NOTIFICAÇÕES (Admin)
-# ═══════════════════════════════════════════════════════════════════════════
-
-
-# ═══════════════════════════════════════════════════════════════════════════
 # EXPORTAÇÕES
 # ═══════════════════════════════════════════════════════════════════════════
 
@@ -4870,13 +4875,6 @@ def admin_companhias():
                 try:
                     ano_int = int(ano_turma)
                     with sr.db() as conn:
-                        conn.execute("""CREATE TABLE IF NOT EXISTS turmas (
-                            id INTEGER PRIMARY KEY,
-                            nome TEXT NOT NULL UNIQUE,
-                            ano INTEGER NOT NULL,
-                            descricao TEXT,
-                            criado_em TEXT DEFAULT (datetime('now','localtime'))
-                        )""")
                         conn.execute(
                             "INSERT INTO turmas (nome, ano, descricao) VALUES (?,?,?)",
                             (nome_turma, ano_int, descricao or None),
@@ -4894,11 +4892,36 @@ def admin_companhias():
             tid = request.form.get("tid", "")
             try:
                 with sr.db() as conn:
+                    # Desassociar alunos antes de eliminar
+                    conn.execute(
+                        "UPDATE utilizadores SET turma_id=NULL WHERE turma_id=?",
+                        (tid,),
+                    )
                     conn.execute("DELETE FROM turmas WHERE id=?", (tid,))
                     conn.commit()
                 flash("Turma eliminada.", "ok")
             except Exception as ex:
                 flash(f"Erro: {ex}", "error")
+
+        # ── Atribuir aluno a turma ──────────────────────────────────────
+        elif acao == "atribuir_turma":
+            nii_at = request.form.get("nii_at", "").strip()
+            tid_at = request.form.get("turma_id", "").strip()
+            if nii_at:
+                try:
+                    turma_val = int(tid_at) if tid_at else None
+                    with sr.db() as conn:
+                        conn.execute(
+                            "UPDATE utilizadores SET turma_id=? WHERE NII=? AND perfil='aluno'",
+                            (turma_val, nii_at),
+                        )
+                        conn.commit()
+                    flash(
+                        f"Turma do aluno {nii_at} atualizada.",
+                        "ok",
+                    )
+                except Exception as ex:
+                    flash(f"Erro: {ex}", "error")
 
         # ── Mover aluno de ano ───────────────────────────────────────────
         elif acao == "mover_aluno":
@@ -4979,10 +5002,6 @@ def admin_companhias():
     # ── Carregar dados ───────────────────────────────────────────────────
     try:
         with sr.db() as conn:
-            conn.execute("""CREATE TABLE IF NOT EXISTS turmas (
-                id INTEGER PRIMARY KEY, nome TEXT NOT NULL UNIQUE, ano INTEGER NOT NULL,
-                descricao TEXT, criado_em TEXT DEFAULT (datetime('now','localtime'))
-            )""")
             turmas = [
                 dict(r)
                 for r in conn.execute(
@@ -5096,14 +5115,18 @@ def admin_companhias():
           </td>
         </tr>"""
 
-    # ── Alunos para mover ─────────────────────────────────────────────────
+    # ── Alunos para mover / atribuir turma ──────────────────────────────
     with sr.db() as conn:
         alunos_all = conn.execute(
-            "SELECT NII, NI, Nome_completo, ano FROM utilizadores WHERE perfil='aluno' ORDER BY ano, NI"
+            "SELECT NII, NI, Nome_completo, ano, turma_id FROM utilizadores WHERE perfil='aluno' ORDER BY ano, NI"
         ).fetchall()
     alunos_opts = "".join(
         f'<option value="{esc(a["NII"])}">[{_ano_label(a["ano"])}] {esc(a["NI"])} — {esc(a["Nome_completo"])}</option>'
         for a in alunos_all
+    )
+    turma_select_opts = '<option value="">— Sem turma —</option>' + "".join(
+        f'<option value="{t["id"]}">{esc(t["nome"])} ({_ano_label(t["ano"])})</option>'
+        for t in turmas
     )
 
     ano_select_opts = "".join(
@@ -5127,12 +5150,13 @@ def admin_companhias():
       <!-- Tabs -->
       <div class="year-tabs" style="margin-bottom:1rem">
         <a class="year-tab" href="#turmas" onclick="showTab('turmas')">📚 Turmas</a>
+        <a class="year-tab" href="#atribuir" onclick="showTab('atribuir')">👥 Atribuir Turma</a>
         <a class="year-tab" href="#promocao" onclick="showTab('promocao')">🎖️ Promoção</a>
         <a class="year-tab" href="#mover" onclick="showTab('mover')">🔄 Mover Aluno</a>
       </div>
       <script>
         function showTab(id) {{
-          ['turmas','promocao','mover'].forEach(function(t) {{
+          ['turmas','atribuir','promocao','mover'].forEach(function(t) {{
             document.getElementById('tab-'+t).style.display = (t===id) ? '' : 'none';
           }});
           document.querySelectorAll('.year-tab').forEach(function(el) {{
@@ -5177,6 +5201,34 @@ def admin_companhias():
             <div class="card-title">📋 Turmas criadas ({len(turmas)})</div>
             {'<div class="table-wrap"><table><thead><tr><th>Nome</th><th>Ano/Curso</th><th>Descrição</th><th>Criada em</th><th></th></tr></thead><tbody>' + turmas_html + "</tbody></table></div>" if turmas else '<div class="text-muted" style="padding:.8rem">Nenhuma turma criada ainda.</div>'}
           </div>
+        </div>
+      </div>
+
+      <!-- Tab: Atribuir Turma -->
+      <div id="tab-atribuir" style="display:none">
+        <div class="card" style="max-width:520px">
+          <div class="card-title">👥 Atribuir aluno a uma turma</div>
+          <div class="alert alert-info" style="font-size:.81rem;margin-bottom:.8rem">
+            💡 Liga um aluno a uma turma/companhia criada no separador Turmas.
+          </div>
+          <form method="post">
+            {csrf_input()}
+            <input type="hidden" name="acao" value="atribuir_turma">
+            <div class="form-group">
+              <label>Aluno (NII)</label>
+              <select name="nii_at" required>
+                <option value="">— Selecionar aluno —</option>
+                {alunos_opts}
+              </select>
+            </div>
+            <div class="form-group">
+              <label>Turma</label>
+              <select name="turma_id">
+                {turma_select_opts}
+              </select>
+            </div>
+            <button class="btn btn-ok">💾 Atribuir turma</button>
+          </form>
         </div>
       </div>
 
