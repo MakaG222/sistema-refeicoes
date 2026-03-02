@@ -394,6 +394,19 @@ CREATE TABLE IF NOT EXISTS ausencias (
 CREATE INDEX IF NOT EXISTS idx_ausencias_uid  ON ausencias(utilizador_id);
 CREATE INDEX IF NOT EXISTS idx_ausencias_datas ON ausencias(ausente_de, ausente_ate);
 
+-- Detenções de cadetes (impede sair da unidade após jantar)
+CREATE TABLE IF NOT EXISTS detencoes (
+  id            INTEGER PRIMARY KEY AUTOINCREMENT,
+  utilizador_id INTEGER NOT NULL REFERENCES utilizadores(id) ON DELETE CASCADE,
+  detido_de     TEXT NOT NULL,  -- YYYY-MM-DD
+  detido_ate    TEXT NOT NULL,  -- YYYY-MM-DD (inclusive)
+  motivo        TEXT,
+  criado_em     TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+  criado_por    TEXT            -- NII de quem registou (cmd/admin)
+);
+CREATE INDEX IF NOT EXISTS idx_detencoes_uid   ON detencoes(utilizador_id);
+CREATE INDEX IF NOT EXISTS idx_detencoes_datas ON detencoes(detido_de, detido_ate);
+
 -- Log de auditoria de alterações de refeições
 CREATE TABLE IF NOT EXISTS refeicoes_log (
   id            INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -1010,6 +1023,17 @@ def refeicao_save(uid: int, d: date, r: dict, alterado_por: str = "sistema") -> 
                 (uid, d.isoformat()),
             ).fetchone()
             anterior = dict(anterior) if anterior else {}
+
+            # Se o cadete estiver detido nesse dia, não pode sair da unidade
+            dd = d.isoformat()
+            det = conn.execute(
+                """SELECT 1 FROM detencoes
+                WHERE utilizador_id=? AND detido_de<=? AND detido_ate>=?
+                LIMIT 1""",
+                (uid, dd, dd),
+            ).fetchone()
+            if det:
+                r["jantar_sai_unidade"] = 0
 
             conn.execute(
                 """

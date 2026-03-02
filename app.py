@@ -456,6 +456,21 @@ def _tem_ausencia_ativa(uid, d=None):
     return bool(row)
 
 
+def _tem_detencao_ativa(uid, d=None):
+    """Verifica se utilizador tem detenção ativa na data (ou hoje)."""
+    try:
+        d_str = (d or date.today()).isoformat()
+        with sr.db() as conn:
+            row = conn.execute(
+                """SELECT 1 FROM detencoes WHERE utilizador_id=?
+                              AND detido_de<=? AND detido_ate>=? LIMIT 1""",
+                (uid, d_str, d_str),
+            ).fetchone()
+        return bool(row)
+    except Exception:
+        return False
+
+
 def _dia_editavel_aluno(d):
     """Editável pelo aluno: futuro, dentro de DIAS_ANTECEDENCIA, prazo ok. Fins de semana permitidos."""
     hoje = date.today()
@@ -1041,6 +1056,7 @@ def aluno_home():
         ok_edit, _ = _dia_editavel_aluno(d)
         prazo = _prazo_label(d)
         ausente_d = uid and _tem_ausencia_ativa(uid, d)
+        detido_d = uid and _tem_detencao_ativa(uid, d)
         is_weekend = d.weekday() >= 5
         is_off = tipo in ("feriado", "exercicio")
 
@@ -1058,6 +1074,11 @@ def aluno_home():
         aus_chip = (
             '<span class="meal-chip chip-type" style="background:#fef3cd;color:#856404;margin-bottom:.3rem;display:block">⚓ Ausente</span>'
             if ausente_d
+            else ""
+        )
+        det_chip = (
+            '<span class="meal-chip chip-type" style="background:#fdecea;color:#7a1c1c;margin-bottom:.3rem;display:block">🚫 Detido</span>'
+            if detido_d
             else ""
         )
         alm_t = r.get("almoco")
@@ -1081,7 +1102,7 @@ def aluno_home():
         <div class="week-card {card_cls}">
           <div class="week-dow {dow_cls}">{ABREV_DIAS[d.weekday()]}</div>
           <div class="week-date">{d.strftime("%d/%m/%Y")}</div>
-          {aus_chip}{meals}{btn}
+          {aus_chip}{det_chip}{meals}{btn}
         </div>"""
 
     stats_html = ""
@@ -1153,13 +1174,14 @@ def aluno_editar(d):
     r = sr.refeicao_get(uid, dt)
     occ = _get_ocupacao_dia(dt)
     is_weekend = dt.weekday() >= 5
+    detido = _tem_detencao_ativa(uid, dt)
 
     if request.method == "POST":
         pa = 1 if request.form.get("pa") else 0
         lanche = 1 if request.form.get("lanche") else 0
         alm = request.form.get("almoco") or ""
         jan = request.form.get("jantar") or ""
-        sai = 1 if request.form.get("sai") else 0
+        sai = 0 if detido else (1 if request.form.get("sai") else 0)
         if _refeicao_set(uid, dt, pa, lanche, alm, jan, sai, alterado_por=u["nii"]):
             flash("Refeições atualizadas!", "ok")
         else:
@@ -1191,6 +1213,17 @@ def aluno_editar(d):
         else ""
     )
 
+    sai_disabled = " disabled" if detido else ""
+    sai_checked = " checked" if (r.get("jantar_sai_unidade") and not detido) else ""
+    sai_note = (
+        '<div class="alert alert-warn" style="margin-top:.6rem">'
+        "🚫 Estás detido neste dia. Não podes sair da unidade após o jantar."
+        "</div>"
+        if detido
+        else ""
+    )
+    sai_bg = "background:#fef937;border-color:#f9e79f" if detido else ""
+
     content = f"""
     <div class="container">
       <div class="page-header">
@@ -1219,7 +1252,11 @@ def aluno_editar(d):
             </div>
           </div>
           <div style="margin-top:.8rem">
-            {chk_label("sai", r.get("jantar_sai_unidade"), "🚪", "Sai da unidade após o jantar", "background:#fef9e7;border-color:#f9e79f")}
+            <label style="display:flex;align-items:center;gap:.6rem;cursor:pointer;padding:.6rem;border:1.5px solid var(--border);border-radius:9px;{sai_bg}">
+              <input type="checkbox" name="sai"{sai_checked}{sai_disabled}>
+              🚪 Sai da unidade após o jantar
+            </label>
+            {sai_note}
           </div>
           <hr>
           <div class="gap-btn">
@@ -1660,6 +1697,9 @@ def painel_dia():
         )
         acoes.append(
             f'<a class="btn btn-gold" href="{url_for("ausencias_cmd")}">🚫 Ausências do {u["ano"]}º Ano</a>'
+        )
+        acoes.append(
+            f'<a class="btn btn-warn" href="{url_for("detencoes_cmd")}">⛔ Detenções</a>'
         )
         acoes.append(
             f'<a class="btn btn-ghost" href="{url_for("calendario_publico")}">📅 Calendário</a>'
@@ -2633,6 +2673,168 @@ def ausencias_cmd():
 
 
 # ═══════════════════════════════════════════════════════════════════════════
+# DETENÇÕES
+# ═══════════════════════════════════════════════════════════════════════════
+
+
+@app.route("/cmd/detencoes", methods=["GET", "POST"])
+@role_required("cmd", "admin")
+def detencoes_cmd():
+    u = current_user()
+    perfil = u.get("perfil")
+    ano_cmd = int(u.get("ano", 0)) if perfil == "cmd" else 0
+
+    if request.method == "POST":
+        acao = request.form.get("acao", "")
+
+        if acao == "remover":
+            did = request.form.get("id", "")
+            with sr.db() as conn:
+                ok = conn.execute(
+                    """SELECT d.id FROM detencoes d
+                    JOIN utilizadores uu ON uu.id=d.utilizador_id
+                    WHERE d.id=? AND (uu.ano=? OR ?=1)""",
+                    (did, ano_cmd, 1 if perfil == "admin" else 0),
+                ).fetchone()
+                if ok:
+                    conn.execute("DELETE FROM detencoes WHERE id=?", (did,))
+                    conn.commit()
+                    flash("Detenção removida.", "ok")
+                else:
+                    flash("Não autorizado.", "error")
+            return redirect(url_for("detencoes_cmd"))
+
+        # criar
+        nii = request.form.get("nii", "").strip()
+        de = request.form.get("de", "").strip()
+        ate = request.form.get("ate", "").strip()
+        motivo = request.form.get("motivo", "").strip()
+
+        db_u = sr.user_by_nii(nii)
+        if not db_u:
+            flash("Utilizador não encontrado.", "error")
+            return redirect(url_for("detencoes_cmd"))
+
+        if perfil == "cmd" and int(db_u.get("ano", 0)) != ano_cmd:
+            flash(
+                f"Só podes registar detenções para alunos do {ano_cmd}º ano.", "error"
+            )
+            return redirect(url_for("detencoes_cmd"))
+
+        try:
+            d1 = _parse_date(de)
+            d2 = _parse_date(ate)
+            if d2 < d1:
+                flash(
+                    "A data 'Até' tem de ser igual ou posterior à data 'De'.", "error"
+                )
+                return redirect(url_for("detencoes_cmd"))
+        except Exception:
+            flash("Datas inválidas.", "error")
+            return redirect(url_for("detencoes_cmd"))
+
+        with sr.db() as conn:
+            conn.execute(
+                """INSERT INTO detencoes(utilizador_id, detido_de, detido_ate, motivo, criado_por)
+                            VALUES(?,?,?,?,?)""",
+                (db_u["id"], d1.isoformat(), d2.isoformat(), motivo or None, u["nii"]),
+            )
+            conn.commit()
+
+        flash(f"Detenção registada para {db_u['Nome_completo']}.", "ok")
+        return redirect(url_for("detencoes_cmd"))
+
+    filtro_ano = f"AND uu.ano={int(ano_cmd)}" if perfil == "cmd" else ""
+    with sr.db() as conn:
+        rows = [
+            dict(r)
+            for r in conn.execute(
+                f"""
+            SELECT d.id, uu.NII, uu.Nome_completo, uu.NI, uu.ano,
+                   d.detido_de, d.detido_ate, d.motivo
+            FROM detencoes d
+            JOIN utilizadores uu ON uu.id=d.utilizador_id
+            WHERE uu.perfil='aluno' {filtro_ano}
+            ORDER BY d.detido_de DESC
+        """
+            ).fetchall()
+        ]
+
+    with sr.db() as conn:
+        alunos_ano = (
+            [
+                dict(r)
+                for r in conn.execute(
+                    "SELECT NII, NI, Nome_completo FROM utilizadores WHERE perfil='aluno' AND ano=? ORDER BY NI",
+                    (ano_cmd,),
+                ).fetchall()
+            ]
+            if perfil == "cmd"
+            else []
+        )
+
+    hoje = date.today().isoformat()
+    rows_html = "".join(
+        f"""
+      <tr>
+        <td><strong>{esc(r["Nome_completo"])}</strong><br><span class="text-muted small">{esc(r["NII"])} · {r["ano"]}º ano</span></td>
+        <td>{r["detido_de"]}</td><td>{r["detido_ate"]}</td>
+        <td>{esc(r["motivo"] or "—")}</td>
+        <td>{'<span class="badge badge-warn">Atual</span>' if r["detido_de"] <= hoje <= r["detido_ate"] else '<span class="badge badge-muted">Inativa</span>'}</td>
+        <td><form method="post" style="display:inline">{csrf_input()}<input type="hidden" name="acao" value="remover"><input type="hidden" name="id" value="{r["id"]}"><button class="btn btn-danger btn-sm">🗑</button></form></td>
+      </tr>"""
+        for r in rows
+    )
+
+    alunos_options = "".join(
+        f'<option value="{esc(a["NII"])}">{esc(a["NI"])} — {esc(a["Nome_completo"])}</option>'
+        for a in alunos_ano
+    )
+    alunos_datalist = (
+        f'<datalist id="alunos_list">{alunos_options}</datalist>' if alunos_ano else ""
+    )
+
+    titulo = (
+        f"⛔ Detenções — {ano_cmd}º Ano"
+        if perfil == "cmd"
+        else "⛔ Detenções (todos os anos)"
+    )
+    back_url = url_for("painel_dia")
+
+    content = f"""
+    <div class="container">
+      <div class="page-header">{_back_btn(back_url)}<div class="page-title">{titulo}</div></div>
+      <div class="card">
+        <div class="card-title">Registar detenção</div>
+        {alunos_datalist}
+        <form method="post">
+          {csrf_input()}
+          <div class="grid grid-2">
+            <div class="form-group">
+              <label>NII do aluno</label>
+              <input type="text" name="nii" required placeholder="NII" list="alunos_list">
+            </div>
+            <div class="form-group"><label>Motivo (opcional)</label><input type="text" name="motivo" placeholder="Ex: detido por..."></div>
+            <div class="form-group"><label>De</label><input type="date" name="de" required value="{hoje}"></div>
+            <div class="form-group"><label>Até</label><input type="date" name="ate" required value="{hoje}"></div>
+          </div>
+          <button class="btn btn-ok">⛔ Registar detenção</button>
+        </form>
+      </div>
+      <div class="card">
+        <div class="card-title">Detenções registadas</div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Aluno</th><th>De</th><th>Até</th><th>Motivo</th><th>Estado</th><th>Ações</th></tr></thead>
+            <tbody>{rows_html or '<tr><td colspan="6" class="text-muted center" style="padding:1.5rem">Sem detenções.</td></tr>'}</tbody>
+          </table>
+        </div>
+      </div>
+    </div>"""
+    return render(content)
+
+
+# ═══════════════════════════════════════════════════════════════════════════
 # ADMIN
 # ═══════════════════════════════════════════════════════════════════════════
 
@@ -2670,6 +2872,7 @@ def admin_home():
         ),
         (url_for("admin_calendario"), "⚙️", "Gerir Calendário", "Dias operacionais"),
         (url_for("ausencias"), "🚫", "Ausências", "Gerir ausências"),
+        (url_for("detencoes_cmd"), "⛔", "Detenções", "Registar detenções"),
         (url_for("calendario_publico"), "📅", "Calendário", "Ver calendário"),
         (
             url_for("admin_companhias"),
