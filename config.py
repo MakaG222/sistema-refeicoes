@@ -41,6 +41,8 @@ class Config:
     SESSION_COOKIE_HTTPONLY = True
     SESSION_COOKIE_SAMESITE = "Lax"
     SESSION_COOKIE_SECURE = is_production  # HTTPS obrigatório em produção
+    SESSION_PERMANENT = False  # sessão expira ao fechar browser
+    PERMANENT_SESSION_LIFETIME = 8 * 3600  # 8h max se marcada permanente
     PREFERRED_URL_SCHEME = "https" if is_production else "http"
 
     # JSON

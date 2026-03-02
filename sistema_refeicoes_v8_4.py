@@ -407,6 +407,19 @@ CREATE TABLE IF NOT EXISTS detencoes (
 CREATE INDEX IF NOT EXISTS idx_detencoes_uid   ON detencoes(utilizador_id);
 CREATE INDEX IF NOT EXISTS idx_detencoes_datas ON detencoes(detido_de, detido_ate);
 
+-- Licenças de saída (antes ou depois do jantar)
+CREATE TABLE IF NOT EXISTS licencas (
+  id            INTEGER PRIMARY KEY AUTOINCREMENT,
+  utilizador_id INTEGER NOT NULL REFERENCES utilizadores(id) ON DELETE CASCADE,
+  data          TEXT NOT NULL,                -- YYYY-MM-DD
+  tipo          TEXT NOT NULL CHECK(tipo IN ('antes_jantar','apos_jantar')),
+  aprovado_por  TEXT,                         -- NULL = auto-aprovado por regra, NII se exceção
+  criado_em     TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+  UNIQUE(utilizador_id, data)
+);
+CREATE INDEX IF NOT EXISTS idx_licencas_uid  ON licencas(utilizador_id);
+CREATE INDEX IF NOT EXISTS idx_licencas_data ON licencas(data);
+
 -- Log de auditoria de alterações de refeições
 CREATE TABLE IF NOT EXISTS refeicoes_log (
   id            INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -617,21 +630,30 @@ END;
 
 def ensure_schema():
     with db() as conn:
-        # Limpar FTS eventualmente corrompida.
-        # ATENÇÃO: NÃO apagar tabelas sombra (_data, _idx, _docsize, _config) manualmente —
-        # isso corrompe o estado do FTS5 e provoca "vtable constructor failed".
-        # Basta apagar a tabela virtual principal; o SQLite elimina as sombras automaticamente.
+        # Verificar se a FTS5 está íntegra antes de recriar
+        fts_ok = False
         try:
-            conn.execute("DROP TABLE IF EXISTS utilizadores_fts")
-        except sqlite3.Error:
+            conn.execute("SELECT COUNT(*) FROM utilizadores_fts").fetchone()
+            fts_ok = True
+        except Exception:
             pass
+
+        if not fts_ok:
+            # FTS corrompida ou inexistente — recriar
+            try:
+                conn.execute("DROP TABLE IF EXISTS utilizadores_fts")
+            except sqlite3.Error:
+                pass
+
         conn.executescript(SCHEMA_SQL)
-        try:
-            conn.execute(
-                "INSERT INTO utilizadores_fts(utilizadores_fts) VALUES('rebuild')"
-            )
-        except sqlite3.Error:
-            pass
+
+        if not fts_ok:
+            try:
+                conn.execute(
+                    "INSERT INTO utilizadores_fts(utilizadores_fts) VALUES('rebuild')"
+                )
+            except sqlite3.Error:
+                pass
         conn.commit()
 
 

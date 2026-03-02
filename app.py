@@ -140,8 +140,15 @@ def _init_app_once() -> None:
 
 @app.before_request
 def _bootstrap_before_request():
-    """Garante que o schema da BD é criado antes do primeiro pedido (Gunicorn)."""
+    """Garante que o schema da BD é criado antes do primeiro pedido (Gunicorn).
+    Auto-remove-se após a primeira execução para não correr em cada request."""
     _init_app_once()
+    # Remover este handler — já não é necessário
+    app.before_request_funcs.setdefault(None, [])
+    try:
+        app.before_request_funcs[None].remove(_bootstrap_before_request)
+    except ValueError:
+        pass
 
 
 def _verify_cron_token() -> bool:
@@ -471,6 +478,98 @@ def _tem_detencao_ativa(uid, d=None):
         return False
 
 
+def _regras_licenca(ano: int, ni: str) -> dict:
+    """Devolve regras de licença para um aluno com base no ano e NI.
+
+    Regras:
+    - NI começa com '7' → pode sair todos os dias (exceção especial)
+    - 4º ano e acima → pode sair todos os dias
+    - 3º ano → sex/sab/dom + 3 dias úteis (seg-qui) por semana
+    - 2º ano → sex/sab/dom + 2 dias úteis (seg-qui) por semana
+    - 1º ano → sex/sab/dom + apenas quarta-feira
+    """
+    if str(ni).startswith("7"):
+        return {
+            "max_dias_uteis": 4,
+            "dias_permitidos": [0, 1, 2, 3, 4, 5, 6],
+            "excepcao_ni7": True,
+        }
+    if ano >= 4:
+        return {
+            "max_dias_uteis": 4,
+            "dias_permitidos": [0, 1, 2, 3, 4, 5, 6],
+            "excepcao_ni7": False,
+        }
+    if ano == 3:
+        return {
+            "max_dias_uteis": 3,
+            "dias_permitidos": [0, 1, 2, 3, 4, 5, 6],
+            "excepcao_ni7": False,
+        }
+    if ano == 2:
+        return {
+            "max_dias_uteis": 2,
+            "dias_permitidos": [0, 1, 2, 3, 4, 5, 6],
+            "excepcao_ni7": False,
+        }
+    # 1º ano — só quarta (2) + fim de semana (4=sex, 5=sab, 6=dom)
+    return {"max_dias_uteis": 1, "dias_permitidos": [2, 4, 5, 6], "excepcao_ni7": False}
+
+
+def _licencas_semana_usadas(uid: int, d: date) -> int:
+    """Conta licenças de dias úteis (seg-qui) já usadas na semana ISO de 'd'."""
+    # Calcular seg e qui da semana
+    seg = d - timedelta(days=d.weekday())  # segunda
+    qui = seg + timedelta(days=3)  # quinta
+    with sr.db() as conn:
+        row = conn.execute(
+            """SELECT COUNT(*) c FROM licencas
+            WHERE utilizador_id=? AND data>=? AND data<=?""",
+            (uid, seg.isoformat(), qui.isoformat()),
+        ).fetchone()
+    return row["c"] or 0
+
+
+def _pode_marcar_licenca(uid: int, d: date, ano: int, ni: str) -> tuple:
+    """Verifica se o aluno pode marcar licença para o dia 'd'.
+
+    Retorna (pode: bool, motivo: str).
+    """
+    regras = _regras_licenca(ano, ni)
+
+    # Detido não pode sair
+    if _tem_detencao_ativa(uid, d):
+        return False, "Estás detido neste dia — não podes marcar licença."
+
+    dia_semana = d.weekday()  # 0=seg ... 6=dom
+
+    # Fim de semana (sex=4, sab=5, dom=6) — todos podem
+    if dia_semana >= 4:
+        return True, ""
+
+    # Dia útil (seg-qui) — verificar se o dia é permitido
+    if dia_semana not in regras["dias_permitidos"]:
+        nomes = {0: "segunda", 1: "terça", 2: "quarta", 3: "quinta"}
+        return False, f"O teu ano não tem licença à {nomes.get(dia_semana, '')}."
+
+    # Verificar limite semanal de dias úteis
+    usadas = _licencas_semana_usadas(uid, d)
+    # Verificar se este dia já está contado (para não contar duas vezes ao editar)
+    with sr.db() as conn:
+        ja_tem = conn.execute(
+            "SELECT 1 FROM licencas WHERE utilizador_id=? AND data=?",
+            (uid, d.isoformat()),
+        ).fetchone()
+    if not ja_tem and usadas >= regras["max_dias_uteis"]:
+        return (
+            False,
+            f"Já esgotaste as tuas {regras['max_dias_uteis']} saídas desta semana (seg-qui). "
+            "Precisas de aprovação do Comandante de Companhia ou Oficial de Dia.",
+        )
+
+    return True, ""
+
+
 def _dia_editavel_aluno(d):
     """Editável pelo aluno: futuro, dentro de DIAS_ANTECEDENCIA, prazo ok. Fins de semana permitidos."""
     hoje = date.today()
@@ -792,12 +891,14 @@ def before():
         t = session.get("_csrf_token", "")
         ft = request.form.get("csrf_token", "")
         if not t or not ft or not secrets.compare_digest(t, ft):
-            if request.endpoint not in {None, "login"} and "user" not in session:
+            # Sessão expirada sem CSRF — redirecionar para login
+            if "user" not in session and request.endpoint not in {None}:
                 flash(
                     "A sessão expirou. Inicia sessão novamente e repete a operação.",
                     "warn",
                 )
                 return redirect(url_for("login"))
+            # CSRF inválido (inclui login POST) — rejeitar sempre
             abort(400)
 
 
@@ -805,6 +906,11 @@ def before():
 def after(r):
     r.headers.setdefault("X-Content-Type-Options", "nosniff")
     r.headers.setdefault("X-Frame-Options", "SAMEORIGIN")
+    r.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
+    r.headers.setdefault(
+        "Content-Security-Policy",
+        "default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'",
+    )
     return r
 
 
@@ -1081,6 +1187,21 @@ def aluno_home():
             if detido_d
             else ""
         )
+        # Verificar licença para este dia
+        lic_chip = ""
+        if uid:
+            with sr.db() as conn:
+                lic_r = conn.execute(
+                    "SELECT tipo FROM licencas WHERE utilizador_id=? AND data=?",
+                    (uid, d.isoformat()),
+                ).fetchone()
+            if lic_r:
+                lic_lbl = (
+                    "Sai antes jantar"
+                    if lic_r["tipo"] == "antes_jantar"
+                    else "Sai após jantar"
+                )
+                lic_chip = f'<span class="meal-chip chip-type" style="background:#d4efdf;color:#1e8449;margin-bottom:.3rem;display:block">🚪 {lic_lbl}</span>'
         alm_t = r.get("almoco")
         jan_t = r.get("jantar_tipo")
         meals = f"""<div class="week-meals">
@@ -1102,7 +1223,7 @@ def aluno_home():
         <div class="week-card {card_cls}">
           <div class="week-dow {dow_cls}">{ABREV_DIAS[d.weekday()]}</div>
           <div class="week-date">{d.strftime("%d/%m/%Y")}</div>
-          {aus_chip}{det_chip}{meals}{btn}
+          {aus_chip}{det_chip}{lic_chip}{meals}{btn}
         </div>"""
 
     stats_html = ""
@@ -1176,12 +1297,60 @@ def aluno_editar(d):
     is_weekend = dt.weekday() >= 5
     detido = _tem_detencao_ativa(uid, dt)
 
+    # Dados do aluno para regras de licença
+    with sr.db() as conn:
+        aluno_row = conn.execute(
+            "SELECT ano, NI FROM utilizadores WHERE id=?", (uid,)
+        ).fetchone()
+    ano_aluno = int(aluno_row["ano"]) if aluno_row else 1
+    ni_aluno = aluno_row["NI"] if aluno_row else ""
+
+    # Licença existente para este dia
+    with sr.db() as conn:
+        lic_row = conn.execute(
+            "SELECT tipo FROM licencas WHERE utilizador_id=? AND data=?",
+            (uid, dt.isoformat()),
+        ).fetchone()
+    licenca_atual = lic_row["tipo"] if lic_row else ""
+
+    pode_lic, motivo_lic = _pode_marcar_licenca(uid, dt, ano_aluno, ni_aluno)
+
     if request.method == "POST":
         pa = 1 if request.form.get("pa") else 0
         lanche = 1 if request.form.get("lanche") else 0
         alm = request.form.get("almoco") or ""
         jan = request.form.get("jantar") or ""
         sai = 0 if detido else (1 if request.form.get("sai") else 0)
+
+        # Processar licença
+        licenca_tipo = request.form.get("licenca", "")
+        with sr.db() as conn:
+            if licenca_tipo in ("antes_jantar", "apos_jantar"):
+                # Verificar se pode (e não está detido)
+                pode, motivo = _pode_marcar_licenca(uid, dt, ano_aluno, ni_aluno)
+                if pode:
+                    conn.execute(
+                        """INSERT INTO licencas(utilizador_id, data, tipo)
+                        VALUES(?,?,?)
+                        ON CONFLICT(utilizador_id, data) DO UPDATE SET tipo=excluded.tipo""",
+                        (uid, dt.isoformat(), licenca_tipo),
+                    )
+                    # Se sai antes do jantar, remover jantar
+                    if licenca_tipo == "antes_jantar":
+                        jan = ""
+                        sai = 0
+                    else:
+                        sai = 1  # após jantar implica sair
+                else:
+                    flash(motivo, "warn")
+            else:
+                # Cancelar licença se existia
+                conn.execute(
+                    "DELETE FROM licencas WHERE utilizador_id=? AND data=?",
+                    (uid, dt.isoformat()),
+                )
+            conn.commit()
+
         if _refeicao_set(uid, dt, pa, lanche, alm, jan, sai, alterado_por=u["nii"]):
             flash("Refeições atualizadas!", "ok")
         else:
@@ -1224,6 +1393,39 @@ def aluno_editar(d):
     )
     sai_bg = "background:#fef937;border-color:#f9e79f" if detido else ""
 
+    # Secção de licença
+    regras = _regras_licenca(ano_aluno, ni_aluno)
+    usadas_semana = _licencas_semana_usadas(uid, dt)
+    max_uteis = regras["max_dias_uteis"]
+    lic_disabled = "" if pode_lic else " disabled"
+    lic_warn = (
+        f'<div class="alert alert-warn" style="margin-top:.5rem">{esc(motivo_lic)}</div>'
+        if not pode_lic and motivo_lic
+        else ""
+    )
+    sel_antes = " selected" if licenca_atual == "antes_jantar" else ""
+    sel_apos = " selected" if licenca_atual == "apos_jantar" else ""
+
+    # Info sobre a quota semanal
+    if dt.weekday() < 4:  # seg-qui
+        quota_info = f'<span class="text-muted small">Saídas seg-qui usadas esta semana: <strong>{usadas_semana}/{max_uteis}</strong></span>'
+    else:
+        quota_info = '<span class="text-muted small">Fim de semana — sem limite de saídas.</span>'
+
+    licenca_html = f"""
+      <div class="card" style="border-top:3px solid #2e86c1">
+        <div class="card-title">🚪 Licença de saída</div>
+        {quota_info}
+        <div class="form-group" style="margin-top:.6rem">
+          <select name="licenca"{lic_disabled}>
+            <option value="">— Sem licença —</option>
+            <option value="antes_jantar"{sel_antes}>Sair ANTES do jantar (não janta)</option>
+            <option value="apos_jantar"{sel_apos}>Sair APÓS o jantar</option>
+          </select>
+        </div>
+        {lic_warn}
+      </div>"""
+
     content = f"""
     <div class="container">
       <div class="page-header">
@@ -1258,6 +1460,7 @@ def aluno_editar(d):
             </label>
             {sai_note}
           </div>
+          {licenca_html}
           <hr>
           <div class="gap-btn">
             <button class="btn btn-ok">💾 Guardar</button>
@@ -5503,20 +5706,21 @@ def health():
         with sr.db() as conn:
             row = conn.execute("SELECT COUNT(*) as n FROM utilizadores").fetchone()
         latency_ms = round((_time.monotonic() - t0) * 1000, 1)
-        return {
+        resp = {
             "status": "ok",
             "db": "ok",
-            "utilizadores": row["n"],
-            "db_path": sr.BASE_DADOS,
             "latency_ms": latency_ms,
             "ts": datetime.now().isoformat(),
-        }, 200
+        }
+        if not _is_production:
+            resp["utilizadores"] = row["n"]
+            resp["db_path"] = sr.BASE_DADOS
+        return resp, 200
     except Exception as exc:
         app.logger.error(f"health: BD falhou — {exc}")
         return {
             "status": "error",
             "db": "error",
-            "detail": str(exc),
             "ts": datetime.now().isoformat(),
         }, 503
 
