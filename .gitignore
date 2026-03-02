@@ -1,22 +1,12 @@
-# macOS
-.DS_Store
-
-# Python
 __pycache__/
 *.pyc
-.pytest_cache/
-.venv/
-venv/
-
-# DB / temporários
-*.db
-*.db-wal
-*.db-shm
-*.bak
-
-# Pastas geradas
+*.pyo
+*.pyd
+.env
+logs/
+*.log
 backups/
 exportacoes/
-
-# Env
-.env
+# Não incluir a BD local — será criada/carregada no volume do Railway
+sistema.db
+.DS_Store

@@ -5,7 +5,6 @@ Importar em app.py com:  from config import Config, is_production
 """
 
 import os
-import secrets
 import logging
 
 # ── Ambiente ────────────────────────────────────────────────────────────────
@@ -33,6 +32,7 @@ DIAS_ANTECEDENCIA: int = int(os.environ.get("DIAS_ANTECEDENCIA", "15"))
 PORT: int = int(os.environ.get("PORT", "8080"))
 DEBUG: bool = os.environ.get("DEBUG", "false").lower() == "true"
 
+
 # ── Flask config dict ────────────────────────────────────────────────────────
 class Config:
     """Classe de configuração para app.config.from_object(Config)."""
@@ -46,16 +46,19 @@ class Config:
     # JSON
     JSON_SORT_KEYS = False
 
+
 # ── Logging ──────────────────────────────────────────────────────────────────
 def configure_logging(flask_app) -> None:
     """Configura o logger da app Flask para stdout com formato legível."""
     import sys
+
     handler = logging.StreamHandler(sys.stdout)
     handler.setFormatter(
         logging.Formatter("%(asctime)s %(levelname)s [app]: %(message)s")
     )
     flask_app.logger.addHandler(handler)
     flask_app.logger.setLevel(logging.INFO)
+
 
 # ── Startup info ─────────────────────────────────────────────────────────────
 def print_startup_banner(db_path: str) -> None:
