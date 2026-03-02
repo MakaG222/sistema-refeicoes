@@ -7,7 +7,6 @@ Executa com:  pytest tests/ -v
 import os
 import pytest
 import tempfile
-import sqlite3
 
 # Configurar ENV de teste antes de importar a app
 os.environ.setdefault("ENV", "development")
@@ -18,6 +17,7 @@ os.environ.setdefault("SECRET_KEY", "test-secret-key-not-for-production")
 def app():
     """Cria uma instância da app com BD temporária para os testes."""
     import sys
+
     sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
     # BD temporária isolada para os testes
@@ -26,10 +26,12 @@ def app():
     os.environ["DB_PATH"] = tmp.name
 
     import sistema_refeicoes_v8_4 as sr
+
     sr.BASE_DADOS = tmp.name
     sr.ensure_schema()
 
     import app as app_module
+
     app_module._ensure_extra_schema()
 
     flask_app = app_module.app
@@ -59,6 +61,7 @@ def csrf_token(client):
 
 # ── Health endpoint ────────────────────────────────────────────────────────────
 
+
 class TestHealth:
     def test_health_returns_200(self, client):
         resp = client.get("/health")
@@ -81,6 +84,7 @@ class TestHealth:
 
 # ── Autenticação ───────────────────────────────────────────────────────────────
 
+
 class TestLogin:
     def test_login_page_loads(self, client):
         resp = client.get("/login")
@@ -94,31 +98,46 @@ class TestLogin:
         assert "/login" in resp.headers["Location"]
 
     def test_login_invalid_credentials(self, client, csrf_token):
-        resp = client.post("/login", data={
-            "nii": "utilizador_inexistente_9999",
-            "password": "wrongpassword",
-            "csrf_token": csrf_token,
-        }, follow_redirects=True)
+        resp = client.post(
+            "/login",
+            data={
+                "nii": "utilizador_inexistente_9999",
+                "password": "wrongpassword",
+                "csrf_token": csrf_token,
+            },
+            follow_redirects=True,
+        )
         assert resp.status_code == 200
         # Deve mostrar mensagem de erro, não entrar na app
-        assert b"login" in resp.data.lower() or b"incorret" in resp.data.lower() \
-               or b"inv" in resp.data.lower()
+        assert (
+            b"login" in resp.data.lower()
+            or b"incorret" in resp.data.lower()
+            or b"inv" in resp.data.lower()
+        )
 
     def test_login_empty_fields(self, client, csrf_token):
-        resp = client.post("/login", data={
-            "nii": "",
-            "password": "",
-            "csrf_token": csrf_token,
-        }, follow_redirects=True)
+        resp = client.post(
+            "/login",
+            data={
+                "nii": "",
+                "password": "",
+                "csrf_token": csrf_token,
+            },
+            follow_redirects=True,
+        )
         assert resp.status_code == 200
 
     def test_login_system_account_admin(self, client, csrf_token):
         """Login com conta de sistema 'admin' deve funcionar em desenvolvimento."""
-        resp = client.post("/login", data={
-            "nii": "admin",
-            "password": "admin123",
-            "csrf_token": csrf_token,
-        }, follow_redirects=False)
+        resp = client.post(
+            "/login",
+            data={
+                "nii": "admin",
+                "password": "admin123",
+                "csrf_token": csrf_token,
+            },
+            follow_redirects=False,
+        )
         # Deve redirecionar para dashboard (não ficar em /login)
         assert resp.status_code in (302, 200)
         if resp.status_code == 302:
@@ -127,14 +146,18 @@ class TestLogin:
 
 # ── Logout ─────────────────────────────────────────────────────────────────────
 
+
 class TestLogout:
     def _login_admin(self, client, csrf_token):
         """Utilitário: faz login como admin."""
-        client.post("/login", data={
-            "nii": "admin",
-            "password": "admin123",
-            "csrf_token": csrf_token,
-        })
+        client.post(
+            "/login",
+            data={
+                "nii": "admin",
+                "password": "admin123",
+                "csrf_token": csrf_token,
+            },
+        )
 
     def test_logout_requires_post(self, client):
         """GET para /logout deve retornar 405 Method Not Allowed."""
@@ -166,6 +189,7 @@ class TestLogout:
 
 # ── Autorização / proteção de rotas ───────────────────────────────────────────
 
+
 class TestAuthorization:
     ADMIN_ONLY_ROUTES = [
         "/admin",
@@ -181,20 +205,23 @@ class TestAuthorization:
         """Rotas de admin devem redirecionar para login quando não autenticado."""
         for route in self.ADMIN_ONLY_ROUTES:
             resp = client.get(route)
-            assert resp.status_code in (302, 403, 404), \
+            assert resp.status_code in (302, 403, 404), (
                 f"{route} deveria redirecionar ou retornar 403, got {resp.status_code}"
+            )
 
     def test_protected_routes_require_login(self, client):
         """Rotas protegidas devem redirecionar para login quando não autenticado."""
         for route in self.LOGIN_REQUIRED_ROUTES:
             resp = client.get(route)
-            assert resp.status_code == 302, \
+            assert resp.status_code == 302, (
                 f"{route} deveria redirecionar, got {resp.status_code}"
+            )
             if resp.status_code == 302:
                 assert "/login" in resp.headers.get("Location", "")
 
 
 # ── CSRF ────────────────────────────────────────────────────────────────────────
+
 
 class TestCSRF:
     def test_csrf_token_generated_on_login_page(self, client):
@@ -209,11 +236,14 @@ class TestCSRF:
         # Primeiro fazer GET para criar sessão com token
         client.get("/login")
         # Tentar POST com token errado
-        resp = client.post("/login", data={
-            "nii": "admin",
-            "password": "admin123",
-            "csrf_token": "token_completamente_errado",
-        })
+        resp = client.post(
+            "/login",
+            data={
+                "nii": "admin",
+                "password": "admin123",
+                "csrf_token": "token_completamente_errado",
+            },
+        )
         # Deve falhar (redirect de volta para login ou 403)
         assert resp.status_code in (200, 302, 400, 403)
         if resp.status_code == 302:
@@ -224,51 +254,68 @@ class TestCSRF:
 
 class TestLoginAuditAndIP:
     def test_login_event_records_real_ip(self, client):
-        client.get('/login')
+        client.get("/login")
         with client.session_transaction() as sess:
-            token = sess.get('_csrf_token', '')
-        resp = client.post('/login', data={'nii': 'admin', 'password': 'admin123', 'csrf_token': token},
-                           environ_overrides={'REMOTE_ADDR': '10.9.8.7'}, follow_redirects=False)
+            token = sess.get("_csrf_token", "")
+        resp = client.post(
+            "/login",
+            data={"nii": "admin", "password": "admin123", "csrf_token": token},
+            environ_overrides={"REMOTE_ADDR": "10.9.8.7"},
+            follow_redirects=False,
+        )
         assert resp.status_code in (200, 302)
 
         import sistema_refeicoes_v8_4 as sr
+
         with sr.db() as conn:
-            row = conn.execute("SELECT ip, sucesso FROM login_eventos WHERE nii=? ORDER BY id DESC LIMIT 1", ('admin',)).fetchone()
+            row = conn.execute(
+                "SELECT ip, sucesso FROM login_eventos WHERE nii=? ORDER BY id DESC LIMIT 1",
+                ("admin",),
+            ).fetchone()
             assert row is not None
-            assert row['sucesso'] == 1
-            assert row['ip'] == '10.9.8.7'
+            assert row["sucesso"] == 1
+            assert row["ip"] == "10.9.8.7"
 
     def test_login_creates_audit_for_system_account(self, client):
-        client.get('/login')
+        client.get("/login")
         with client.session_transaction() as sess:
-            token = sess.get('_csrf_token', '')
-        resp = client.post('/login', data={'nii': 'cozinha', 'password': 'cozinha123', 'csrf_token': token}, follow_redirects=False)
+            token = sess.get("_csrf_token", "")
+        resp = client.post(
+            "/login",
+            data={"nii": "cozinha", "password": "cozinha123", "csrf_token": token},
+            follow_redirects=False,
+        )
         assert resp.status_code in (200, 302)
 
         import sistema_refeicoes_v8_4 as sr
+
         with sr.db() as conn:
             row = conn.execute(
                 "SELECT actor, action, detail FROM admin_audit_log WHERE actor=? AND action='login' ORDER BY id DESC LIMIT 1",
-                ('cozinha',)
+                ("cozinha",),
             ).fetchone()
             assert row is not None
-            assert 'perfil=cozinha' in (row['detail'] or '')
+            assert "perfil=cozinha" in (row["detail"] or "")
 
 
 class TestExportRelatorioValidation:
     def _login_admin(self, client):
-        client.get('/login')
+        client.get("/login")
         with client.session_transaction() as sess:
-            token = sess.get('_csrf_token', '')
-        resp = client.post('/login', data={'nii': 'admin', 'password': 'admin123', 'csrf_token': token}, follow_redirects=False)
+            token = sess.get("_csrf_token", "")
+        resp = client.post(
+            "/login",
+            data={"nii": "admin", "password": "admin123", "csrf_token": token},
+            follow_redirects=False,
+        )
         assert resp.status_code in (200, 302)
 
     def test_export_relatorio_invalid_fmt_rejected(self, client):
         self._login_admin(client)
-        resp = client.get('/exportar/relatorio?d0=2026-03-01&fmt=pdf')
+        resp = client.get("/exportar/relatorio?d0=2026-03-01&fmt=pdf")
         assert resp.status_code == 400
 
     def test_export_relatorio_invalid_date_rejected(self, client):
         self._login_admin(client)
-        resp = client.get('/exportar/relatorio?d0=data-invalida&fmt=csv')
+        resp = client.get("/exportar/relatorio?d0=data-invalida&fmt=csv")
         assert resp.status_code == 400
