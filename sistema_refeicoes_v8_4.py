@@ -436,7 +436,7 @@ CREATE TABLE IF NOT EXISTS licencas (
   id            INTEGER PRIMARY KEY AUTOINCREMENT,
   utilizador_id INTEGER NOT NULL REFERENCES utilizadores(id) ON DELETE CASCADE,
   data          TEXT NOT NULL,                -- YYYY-MM-DD
-  tipo          TEXT NOT NULL DEFAULT 'licenca',
+  tipo          TEXT NOT NULL CHECK(tipo IN ('antes_jantar','apos_jantar')),
   aprovado_por  TEXT,                         -- NULL = auto-aprovado por regra, NII se exceção
   criado_em     TEXT NOT NULL DEFAULT (datetime('now','localtime')),
   hora_saida    TEXT,                         -- HH:MM — registado pelo oficial de dia
