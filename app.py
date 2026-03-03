@@ -142,38 +142,27 @@ END""")
                     "INSERT INTO _migracoes VALUES('reis_ni_382_482', datetime('now','localtime'))"
                 )
 
-            # 2) Reset credenciais alunos: NII→NI, password→hash(NI), must_change=1
-            if "reset_creds_ni_v1" not in done:
+            # 2) Reset credenciais alunos: password→hash(NII), must_change=1
+            #    Login = NII (ex: 24123), pw inicial = NII
+            if "reset_creds_nii_v2" not in done:
                 alunos_reset = conn.execute(
-                    "SELECT id, NII, NI FROM utilizadores WHERE perfil='aluno'"
+                    "SELECT id, NII FROM utilizadores WHERE perfil='aluno'"
                 ).fetchall()
                 for al in alunos_reset:
                     al = dict(al)
-                    ni = al["NI"]
-                    if not ni:
+                    nii = al["NII"]
+                    if not nii:
                         continue
-                    # Se NII != NI, atualizar NII para NI
-                    if al["NII"] != ni:
-                        dup = conn.execute(
-                            "SELECT id FROM utilizadores WHERE NII=? AND id!=?",
-                            (ni, al["id"]),
-                        ).fetchone()
-                        if not dup:
-                            conn.execute(
-                                "UPDATE utilizadores SET NII=? WHERE id=?",
-                                (ni, al["id"]),
-                            )
-                    # Reset password para NI (hashed) e forçar troca
-                    pw_hash = generate_password_hash(ni)
+                    pw_hash = generate_password_hash(nii)
                     conn.execute(
                         "UPDATE utilizadores SET Palavra_chave=?, must_change_password=1 WHERE id=?",
                         (pw_hash, al["id"]),
                     )
                 conn.execute(
-                    "INSERT INTO _migracoes VALUES('reset_creds_ni_v1', datetime('now','localtime'))"
+                    "INSERT INTO _migracoes VALUES('reset_creds_nii_v2', datetime('now','localtime'))"
                 )
                 print(
-                    "[MIGRAÇÃO] Credenciais alunos resetadas: NII=NI, pw=NI",
+                    "[MIGRAÇÃO] Credenciais alunos resetadas: pw=hash(NII), must_change=1",
                     flush=True,
                 )
 
@@ -1084,26 +1073,8 @@ def login():
             sr.reg_login(nii, 1, ip=_client_ip())
             app.logger.warning(f"Login via FALLBACK_ADMIN: NII={nii} IP={_client_ip()}")
         else:
-            # Busca directa à BD — tenta por NII, depois por NI
-            try:
-                _login_fields = (
-                    "SELECT id, NII, NI, Nome_completo, Palavra_chave, ano, perfil, "
-                    "must_change_password, locked_until, is_active "
-                    "FROM utilizadores WHERE {col}=? AND (is_active IS NULL OR is_active=1)"
-                )
-                with sr.db() as _conn:
-                    db_u = _conn.execute(
-                        _login_fields.format(col="NII"), (nii,)
-                    ).fetchone()
-                    if not db_u:
-                        db_u = _conn.execute(
-                            _login_fields.format(col="NI"), (nii,)
-                        ).fetchone()
-                    if db_u:
-                        db_u = dict(db_u)
-            except Exception as _e:
-                app.logger.warning(f"Fallback user lookup: {_e}")
-                db_u = sr.user_by_nii(nii)
+            # Busca directa à BD por NII
+            db_u = sr.user_by_nii(nii)
             if db_u:
                 locked = db_u.get("locked_until")
                 if locked:
@@ -1183,8 +1154,8 @@ def login():
         <form method="post">
           {csrf_input()}
           <div class="form-group">
-            <label>NI</label>
-            <input type="text" name="nii" autofocus autocomplete="username" required placeholder="O teu NI (número interno)">
+            <label>NII</label>
+            <input type="text" name="nii" autofocus autocomplete="username" required placeholder="O teu NII (ex: 24123)">
           </div>
           <div class="form-group">
             <label>Password</label>
