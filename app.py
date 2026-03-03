@@ -115,6 +115,68 @@ AFTER UPDATE OF Nome_completo ON utilizadores BEGIN
 END""")
                 print("[INFO] FTS recriada com sucesso.", flush=True)
 
+            # === Migrações pontuais (tabela de controlo) ===
+            conn.execute(
+                "CREATE TABLE IF NOT EXISTS _migracoes (nome TEXT PRIMARY KEY, aplicada_em TEXT)"
+            )
+            done = {
+                r["nome"]
+                for r in conn.execute("SELECT nome FROM _migracoes").fetchall()
+            }
+
+            # 1) Corrigir NI da aluna Reis 4º ano: 382 → 482
+            if "reis_ni_382_482" not in done:
+                reis = conn.execute(
+                    "SELECT id FROM utilizadores WHERE NI='382' AND ano='4'"
+                ).fetchone()
+                if reis:
+                    conn.execute(
+                        "UPDATE utilizadores SET NI='482' WHERE id=?",
+                        (reis["id"],),
+                    )
+                    print(
+                        "[MIGRAÇÃO] NI da aluna Reis corrigido: 382→482",
+                        flush=True,
+                    )
+                conn.execute(
+                    "INSERT INTO _migracoes VALUES('reis_ni_382_482', datetime('now','localtime'))"
+                )
+
+            # 2) Reset credenciais alunos: NII→NI, password→hash(NI), must_change=1
+            if "reset_creds_ni_v1" not in done:
+                alunos_reset = conn.execute(
+                    "SELECT id, NII, NI FROM utilizadores WHERE perfil='aluno'"
+                ).fetchall()
+                for al in alunos_reset:
+                    al = dict(al)
+                    ni = al["NI"]
+                    if not ni:
+                        continue
+                    # Se NII != NI, atualizar NII para NI
+                    if al["NII"] != ni:
+                        dup = conn.execute(
+                            "SELECT id FROM utilizadores WHERE NII=? AND id!=?",
+                            (ni, al["id"]),
+                        ).fetchone()
+                        if not dup:
+                            conn.execute(
+                                "UPDATE utilizadores SET NII=? WHERE id=?",
+                                (ni, al["id"]),
+                            )
+                    # Reset password para NI (hashed) e forçar troca
+                    pw_hash = generate_password_hash(ni)
+                    conn.execute(
+                        "UPDATE utilizadores SET Palavra_chave=?, must_change_password=1 WHERE id=?",
+                        (pw_hash, al["id"]),
+                    )
+                conn.execute(
+                    "INSERT INTO _migracoes VALUES('reset_creds_ni_v1', datetime('now','localtime'))"
+                )
+                print(
+                    "[MIGRAÇÃO] Credenciais alunos resetadas: NII=NI, pw=NI",
+                    flush=True,
+                )
+
             _bootstrap_dev_system_accounts(conn)
             conn.commit()
     except Exception as e:
@@ -485,8 +547,14 @@ def _auto_marcar_refeicoes_detido(uid, d_de, d_ate, alterado_por="sistema"):
                 ).fetchone()
             if not existe or not existe["almoco"]:
                 _refeicao_set(
-                    uid, d, pa=1, lanche=1, alm="Normal", jan="Normal",
-                    sai=0, alterado_por=alterado_por,
+                    uid,
+                    d,
+                    pa=1,
+                    lanche=1,
+                    alm="Normal",
+                    jan="Normal",
+                    sai=0,
+                    alterado_por=alterado_por,
                 )
             d += timedelta(days=1)
     except Exception as exc:
@@ -1016,19 +1084,25 @@ def login():
             sr.reg_login(nii, 1, ip=_client_ip())
             app.logger.warning(f"Login via FALLBACK_ADMIN: NII={nii} IP={_client_ip()}")
         else:
-            # Busca directa à BD para garantir que o campo 'perfil' é sempre retornado
+            # Busca directa à BD — tenta por NII, depois por NI
             try:
+                _login_fields = (
+                    "SELECT id, NII, NI, Nome_completo, Palavra_chave, ano, perfil, "
+                    "must_change_password, locked_until, is_active "
+                    "FROM utilizadores WHERE {col}=? AND (is_active IS NULL OR is_active=1)"
+                )
                 with sr.db() as _conn:
                     db_u = _conn.execute(
-                        "SELECT id, NII, NI, Nome_completo, Palavra_chave, ano, perfil, "
-                        "must_change_password, locked_until, is_active "
-                        "FROM utilizadores WHERE NII=? AND (is_active IS NULL OR is_active=1)",
-                        (nii,),
+                        _login_fields.format(col="NII"), (nii,)
                     ).fetchone()
+                    if not db_u:
+                        db_u = _conn.execute(
+                            _login_fields.format(col="NI"), (nii,)
+                        ).fetchone()
                     if db_u:
                         db_u = dict(db_u)
             except Exception as _e:
-                app.logger.warning(f"Fallback user_by_nii via sr: {_e}")
+                app.logger.warning(f"Fallback user lookup: {_e}")
                 db_u = sr.user_by_nii(nii)
             if db_u:
                 locked = db_u.get("locked_until")
@@ -1109,8 +1183,8 @@ def login():
         <form method="post">
           {csrf_input()}
           <div class="form-group">
-            <label>NII</label>
-            <input type="text" name="nii" autofocus autocomplete="username" required placeholder="O teu NII">
+            <label>NI</label>
+            <input type="text" name="nii" autofocus autocomplete="username" required placeholder="O teu NI (número interno)">
           </div>
           <div class="form-group">
             <label>Password</label>
@@ -1230,7 +1304,9 @@ def aluno_home():
                     (uid, d.isoformat()),
                 ).fetchone()
             if lic_r:
-                lic_lbl = "Antes jantar" if lic_r["tipo"] == "antes_jantar" else "Após jantar"
+                lic_lbl = (
+                    "Antes jantar" if lic_r["tipo"] == "antes_jantar" else "Após jantar"
+                )
                 lic_chip = f'<span class="meal-chip chip-type" style="background:#d4efdf;color:#1e8449;margin-bottom:.3rem;display:block">🚪 {lic_lbl}</span>'
         alm_t = r.get("almoco")
         jan_t = r.get("jantar_tipo")
@@ -1346,8 +1422,8 @@ def aluno_editar(d):
     pode_lic, motivo_lic = _pode_marcar_licenca(uid, dt, ano_aluno, ni_aluno)
 
     if request.method == "POST":
-        pa = 1 if request.form.get("pa") else 0
-        lanche = 1 if request.form.get("lanche") else 0
+        pa = 1 if request.form.get("pa") in ("1", "on") else 0
+        lanche = 1 if request.form.get("lanche") in ("1", "on") else 0
         alm = request.form.get("almoco") or ""
         jan = request.form.get("jantar") or ""
         sai = 0 if detido else (1 if request.form.get("sai") else 0)
@@ -1388,24 +1464,6 @@ def aluno_editar(d):
         val, cap = occ.get(nome, (0, -1))
         return f'<div style="margin-bottom:.65rem"><strong style="font-size:.84rem">{nome}</strong>{_bar_html(val, cap)}</div>'
 
-    def tipos_opt(sel):
-        return "".join(
-            f'<option value="{t}" {"selected" if sel == t else ""}>{t}</option>'
-            for t in ["Normal", "Vegetariano", "Dieta"]
-        )
-
-    def toggle(name, checked, icon, label):
-        on = "on" if checked else ""
-        chk = " checked" if checked else ""
-        return (
-            f'<label class="meal-toggle {on}" data-toggle>'
-            f'<input type="checkbox" name="{name}"{chk}>'
-            f'<span class="toggle-icon">{icon}</span>'
-            f'<span class="toggle-label">{label}</span>'
-            f'<span class="toggle-mark">{("✓" if checked else "")}</span>'
-            f'</label>'
-        )
-
     wknd_note = (
         '<div class="alert alert-info" style="margin-bottom:.8rem">Fim de semana — refeições opcionais.</div>'
         if is_weekend
@@ -1420,8 +1478,12 @@ def aluno_editar(d):
         else ""
     )
 
-    # Jantar disabled se licença antes_jantar
-    jan_disabled = ' disabled id="jantar_sel"' if licenca_atual == "antes_jantar" else ' id="jantar_sel"'
+    # Valores atuais
+    pa_on = 1 if r.get("pequeno_almoco") else 0
+    lan_on = 1 if r.get("lanche") else 0
+    alm_val = r.get("almoco") or ""
+    jan_val = r.get("jantar_tipo") or ""
+    jan_blocked = licenca_atual == "antes_jantar"
 
     # Secção de licença — oculta se detido
     licenca_html = ""
@@ -1443,21 +1505,30 @@ def aluno_editar(d):
         if dt.weekday() < 4:
             quota_info = f'<span class="text-muted small">Seg-Qui usadas: <strong>{usadas_semana}/{max_uteis}</strong></span>'
         else:
-            quota_info = '<span class="text-muted small">Fim de semana — sem limite.</span>'
+            quota_info = (
+                '<span class="text-muted small">Fim de semana — sem limite.</span>'
+            )
 
         licenca_html = f"""
       <div class="card" style="border-top:3px solid #2e86c1">
         <div class="card-title">🚪 Licença de saída</div>
         {quota_info}
-        <div class="lic-options" style="margin-top:.6rem;display:flex;flex-direction:column;gap:.5rem">
-          <label class="lic-radio{'  lic-active' if not licenca_atual else ''}">
-            <input type="radio" name="licenca" value=""{sel_nenhuma}{lic_disabled} onchange="toggleJantar()"> Sem licença
+        <div class="sw-group" style="margin-top:.6rem">
+          <label class="sw-row{"  sw-on" if not licenca_atual else ""}" data-lic>
+            <input type="radio" name="licenca" value=""{sel_nenhuma}{lic_disabled}>
+            <span class="sw-label">Sem licença</span>
           </label>
-          <label class="lic-radio{'  lic-active' if licenca_atual == 'antes_jantar' else ''}">
-            <input type="radio" name="licenca" value="antes_jantar"{sel_antes}{lic_disabled} onchange="toggleJantar()"> 🌅 Antes do jantar <span class="text-muted small">(não janta)</span>
+          <label class="sw-row{"  sw-on" if licenca_atual == "antes_jantar" else ""}" data-lic>
+            <input type="radio" name="licenca" value="antes_jantar"{sel_antes}{lic_disabled}>
+            <span class="sw-icon">🌅</span>
+            <span class="sw-label">Antes do jantar</span>
+            <span class="sw-hint">(não janta)</span>
           </label>
-          <label class="lic-radio{'  lic-active' if licenca_atual == 'apos_jantar' else ''}">
-            <input type="radio" name="licenca" value="apos_jantar"{sel_apos}{lic_disabled} onchange="toggleJantar()"> 🌙 Após o jantar <span class="text-muted small">(janta na unidade)</span>
+          <label class="sw-row{"  sw-on" if licenca_atual == "apos_jantar" else ""}" data-lic>
+            <input type="radio" name="licenca" value="apos_jantar"{sel_apos}{lic_disabled}>
+            <span class="sw-icon">🌙</span>
+            <span class="sw-label">Após o jantar</span>
+            <span class="sw-hint">(janta na unidade)</span>
           </label>
         </div>
         {lic_warn}
@@ -1465,22 +1536,33 @@ def aluno_editar(d):
 
     content = f"""
     <style>
-      .meal-toggle{{display:flex;align-items:center;gap:.6rem;cursor:pointer;padding:.75rem .9rem;
-        border:2px solid var(--border);border-radius:12px;transition:.2s;user-select:none;-webkit-tap-highlight-color:transparent}}
-      .meal-toggle:active{{transform:scale(.97)}}
-      .meal-toggle.on{{background:#eafaf1;border-color:#27ae60}}
-      .meal-toggle input{{display:none}}
-      .toggle-icon{{font-size:1.3rem}}
-      .toggle-label{{flex:1;font-weight:600;font-size:.9rem}}
-      .toggle-mark{{width:28px;height:28px;border-radius:8px;border:2px solid var(--border);
-        display:flex;align-items:center;justify-content:center;font-size:.9rem;font-weight:800;
-        color:transparent;transition:.2s;background:#fff}}
-      .meal-toggle.on .toggle-mark{{background:#27ae60;border-color:#27ae60;color:#fff}}
-      .lic-radio{{display:flex;align-items:center;gap:.6rem;cursor:pointer;padding:.6rem .8rem;
-        border:2px solid var(--border);border-radius:10px;transition:.2s;font-weight:600;font-size:.87rem}}
-      .lic-radio:active{{transform:scale(.97)}}
-      .lic-radio.lic-active{{background:#ebf5fb;border-color:#2e86c1}}
-      .lic-radio input[type="radio"]{{width:1.1rem;height:1.1rem;accent-color:#2e86c1}}
+      .sw-group{{display:flex;flex-direction:column;gap:.45rem}}
+      .sw-row{{display:flex;align-items:center;gap:.55rem;cursor:pointer;padding:.7rem .85rem;
+        border:2px solid var(--border);border-radius:12px;transition:all .2s;
+        user-select:none;-webkit-tap-highlight-color:transparent;background:#fff}}
+      .sw-row:active{{transform:scale(.97)}}
+      .sw-row.sw-on{{background:#eafaf1;border-color:#27ae60}}
+      .sw-row input[type=hidden],.sw-row input[type=radio]{{display:none}}
+      .sw-icon{{font-size:1.25rem;flex-shrink:0}}
+      .sw-label{{flex:1;font-weight:600;font-size:.9rem}}
+      .sw-hint{{font-size:.75rem;color:var(--muted);font-weight:400}}
+      .sw-mark{{width:28px;height:28px;border-radius:8px;border:2px solid var(--border);
+        display:flex;align-items:center;justify-content:center;font-size:.85rem;font-weight:800;
+        color:transparent;transition:all .2s;background:#fff;flex-shrink:0}}
+      .sw-row.sw-on .sw-mark{{background:#27ae60;border-color:#27ae60;color:#fff}}
+      .sw-pills{{display:flex;gap:.35rem;flex-wrap:wrap}}
+      .sw-pill{{padding:.5rem .75rem;border:2px solid var(--border);border-radius:10px;cursor:pointer;
+        font-weight:600;font-size:.82rem;transition:all .2s;user-select:none;
+        -webkit-tap-highlight-color:transparent;text-align:center;min-width:60px;background:#fff}}
+      .sw-pill:active{{transform:scale(.95)}}
+      .sw-pill.sw-sel{{background:#eafaf1;border-color:#27ae60;color:#1a5c38}}
+      .sw-pill-group{{display:flex;flex-direction:column;gap:.35rem}}
+      .sw-pill-row{{display:flex;align-items:center;gap:.55rem;padding:.5rem .85rem;
+        border:2px solid var(--border);border-radius:12px;background:#fff}}
+      .sw-pill-row.sw-on{{border-color:#27ae60;background:#f0faf4}}
+      .sw-pill-label{{font-weight:600;font-size:.9rem;min-width:auto;white-space:nowrap}}
+      .sw-pill-icon{{font-size:1.25rem;flex-shrink:0}}
+      .sw-pill-opts{{display:flex;gap:.3rem;flex:1;justify-content:flex-end;flex-wrap:wrap}}
     </style>
     <div class="container">
       <div class="page-header">
@@ -1494,20 +1576,44 @@ def aluno_editar(d):
       </div>
       <div class="card">
         <div class="card-title">✏️ Marcar refeições</div>
-        <form method="post">
+        <form method="post" id="mealForm">
           {csrf_input()}
-          <div style="display:flex;flex-direction:column;gap:.55rem">
-            {toggle("pa", r.get("pequeno_almoco"), "☕", "Pequeno Almoço")}
-            {toggle("lanche", r.get("lanche"), "🥐", "Lanche")}
-          </div>
-          <div class="grid grid-2" style="margin-top:.7rem">
-            <div class="form-group" style="margin:0">
-              <label>🍽️ Almoço</label>
-              <select name="almoco"><option value="">— Não —</option>{tipos_opt(r.get("almoco"))}</select>
+          <input type="hidden" name="pa" id="h_pa" value="{pa_on}">
+          <input type="hidden" name="lanche" id="h_lanche" value="{lan_on}">
+          <input type="hidden" name="almoco" id="h_almoco" value="{esc(alm_val)}">
+          <input type="hidden" name="jantar" id="h_jantar" value="{esc(jan_val)}">
+          <div class="sw-group">
+            <!-- PA toggle -->
+            <div class="sw-row{"  sw-on" if pa_on else ""}" data-meal="pa" onclick="toggleMeal(this)">
+              <span class="sw-icon">☕</span>
+              <span class="sw-label">Pequeno Almoço</span>
+              <span class="sw-mark">{"✓" if pa_on else ""}</span>
             </div>
-            <div class="form-group" style="margin:0">
-              <label>🌙 Jantar</label>
-              <select name="jantar"{jan_disabled}><option value="">— Não —</option>{tipos_opt(r.get("jantar_tipo"))}</select>
+            <!-- Lanche toggle -->
+            <div class="sw-row{"  sw-on" if lan_on else ""}" data-meal="lanche" onclick="toggleMeal(this)">
+              <span class="sw-icon">🥐</span>
+              <span class="sw-label">Lanche</span>
+              <span class="sw-mark">{"✓" if lan_on else ""}</span>
+            </div>
+            <!-- Almoço pill selector -->
+            <div class="sw-pill-row{"  sw-on" if alm_val else ""}" id="alm_row">
+              <span class="sw-pill-icon">🍽️</span>
+              <span class="sw-pill-label">Almoço</span>
+              <div class="sw-pill-opts">
+                <div class="sw-pill{" sw-sel" if alm_val == "Normal" else ""}" onclick="setPill('almoco','Normal',this)">Normal</div>
+                <div class="sw-pill{" sw-sel" if alm_val == "Vegetariano" else ""}" onclick="setPill('almoco','Vegetariano',this)">Veg</div>
+                <div class="sw-pill{" sw-sel" if alm_val == "Dieta" else ""}" onclick="setPill('almoco','Dieta',this)">Dieta</div>
+              </div>
+            </div>
+            <!-- Jantar pill selector -->
+            <div class="sw-pill-row{"  sw-on" if jan_val and not jan_blocked else ""}" id="jan_row"{"  style=opacity:.4;pointer-events:none" if jan_blocked else ""}>
+              <span class="sw-pill-icon">🌙</span>
+              <span class="sw-pill-label">Jantar</span>
+              <div class="sw-pill-opts">
+                <div class="sw-pill{" sw-sel" if jan_val == "Normal" else ""}" onclick="setPill('jantar','Normal',this)">Normal</div>
+                <div class="sw-pill{" sw-sel" if jan_val == "Vegetariano" else ""}" onclick="setPill('jantar','Vegetariano',this)">Veg</div>
+                <div class="sw-pill{" sw-sel" if jan_val == "Dieta" else ""}" onclick="setPill('jantar','Dieta',this)">Dieta</div>
+              </div>
             </div>
           </div>
           {licenca_html}
@@ -1520,34 +1626,49 @@ def aluno_editar(d):
       </div>
     </div>
     <script>
-    document.querySelectorAll('[data-toggle]').forEach(function(el){{
-      el.addEventListener('click',function(e){{
-        if(e.target.tagName==='INPUT')return;
-        var cb=el.querySelector('input[type=checkbox]');
-        cb.checked=!cb.checked;
-        el.classList.toggle('on',cb.checked);
-        el.querySelector('.toggle-mark').textContent=cb.checked?'✓':'';
-      }});
-      var cb=el.querySelector('input[type=checkbox]');
-      cb.addEventListener('change',function(){{
-        el.classList.toggle('on',cb.checked);
-        el.querySelector('.toggle-mark').textContent=cb.checked?'✓':'';
-      }});
-    }});
-    // Licença: highlight active radio + block jantar se antes_jantar
-    document.querySelectorAll('.lic-radio input[type=radio]').forEach(function(r){{
+    function toggleMeal(el){{
+      var key=el.getAttribute('data-meal');
+      var h=document.getElementById('h_'+key);
+      var on=h.value==='1'||h.value==='on';
+      h.value=on?'0':'1';
+      el.classList.toggle('sw-on',!on);
+      el.querySelector('.sw-mark').textContent=on?'':'✓';
+    }}
+    function setPill(meal,val,pill){{
+      var h=document.getElementById('h_'+meal);
+      var row=pill.closest('.sw-pill-row');
+      var pills=row.querySelectorAll('.sw-pill');
+      if(h.value===val){{
+        h.value='';
+        pills.forEach(function(p){{p.classList.remove('sw-sel')}});
+        row.classList.remove('sw-on');
+      }} else {{
+        h.value=val;
+        pills.forEach(function(p){{p.classList.remove('sw-sel')}});
+        pill.classList.add('sw-sel');
+        row.classList.add('sw-on');
+      }}
+    }}
+    // Licença radio: highlight active + block jantar se antes_jantar
+    document.querySelectorAll('[data-lic] input[type=radio]').forEach(function(r){{
       r.addEventListener('change',function(){{
-        document.querySelectorAll('.lic-radio').forEach(function(l){{l.classList.remove('lic-active')}});
-        r.closest('.lic-radio').classList.add('lic-active');
-        toggleJantar();
+        document.querySelectorAll('[data-lic]').forEach(function(l){{l.classList.remove('sw-on')}});
+        r.closest('[data-lic]').classList.add('sw-on');
+        syncJantar();
       }});
     }});
-    function toggleJantar(){{
-      var sel=document.getElementById('jantar_sel');
-      if(!sel)return;
+    function syncJantar(){{
       var antes=document.querySelector('input[name=licenca][value=antes_jantar]');
-      if(antes && antes.checked){{sel.disabled=true;sel.value='';}}
-      else{{sel.disabled=false;}}
+      var jr=document.getElementById('jan_row');
+      if(!jr)return;
+      if(antes && antes.checked){{
+        jr.style.opacity='.4';jr.style.pointerEvents='none';
+        document.getElementById('h_jantar').value='';
+        jr.querySelectorAll('.sw-pill').forEach(function(p){{p.classList.remove('sw-sel')}});
+        jr.classList.remove('sw-on');
+      }} else {{
+        jr.style.opacity='1';jr.style.pointerEvents='auto';
+      }}
     }}
     </script>"""
     return render(content)
@@ -1777,7 +1898,11 @@ def aluno_password():
         if is_forced
         else ""
     )
-    cancel_btn = "" if is_forced else f'<a class="btn btn-ghost" href="{url_for("aluno_home")}">Cancelar</a>'
+    cancel_btn = (
+        ""
+        if is_forced
+        else f'<a class="btn btn-ghost" href="{url_for("aluno_home")}">Cancelar</a>'
+    )
     back_btn = "" if is_forced else _back_btn(url_for("aluno_home"))
 
     content = f"""
@@ -2024,9 +2149,9 @@ def painel_dia():
             ]
         if detidos:
             det_rows = "".join(
-                f'<tr><td>{esc(r["NI"])}</td><td>{esc(r["Nome_completo"])}</td>'
-                f'<td>{r["ano"]}º</td><td>{r["detido_de"]} a {r["detido_ate"]}</td>'
-                f'<td>{esc(r["motivo"] or "—")}</td></tr>'
+                f"<tr><td>{esc(r['NI'])}</td><td>{esc(r['Nome_completo'])}</td>"
+                f"<td>{r['ano']}º</td><td>{r['detido_de']} a {r['detido_ate']}</td>"
+                f"<td>{esc(r['motivo'] or '—')}</td></tr>"
                 for r in detidos
             )
             detidos_html = f"""
@@ -2045,25 +2170,31 @@ def painel_dia():
             lics = [
                 dict(r)
                 for r in conn.execute(
-                    """SELECT uu.NI, uu.Nome_completo, uu.ano, l.hora_saida, l.hora_entrada
+                    """SELECT uu.NI, uu.Nome_completo, uu.ano, l.tipo, l.hora_saida, l.hora_entrada
                     FROM licencas l JOIN utilizadores uu ON uu.id=l.utilizador_id
                     WHERE l.data=? ORDER BY uu.ano, uu.NI""",
                     (d_str,),
                 ).fetchall()
             ]
         if lics:
+
+            def _lic_tipo_badge(tp):
+                if tp == "antes_jantar":
+                    return '<span class="badge badge-info" style="font-size:.6rem">🌅 Antes</span>'
+                return '<span class="badge badge-muted" style="font-size:.6rem">🌙 Após</span>'
+
             lic_rows = "".join(
-                f'<tr><td>{esc(r["NI"])}</td><td>{esc(r["Nome_completo"])}</td>'
-                f'<td>{r["ano"]}º</td>'
-                f'<td>{"✅ " + r["hora_saida"] if r["hora_saida"] else "—"}</td>'
-                f'<td>{"✅ " + r["hora_entrada"] if r["hora_entrada"] else "—"}</td></tr>'
+                f"<tr><td>{esc(r['NI'])}</td><td>{esc(r['Nome_completo'])}</td>"
+                f"<td>{r['ano']}º</td><td>{_lic_tipo_badge(r['tipo'])}</td>"
+                f"<td>{'✅ ' + r['hora_saida'] if r['hora_saida'] else '—'}</td>"
+                f"<td>{'✅ ' + r['hora_entrada'] if r['hora_entrada'] else '—'}</td></tr>"
                 for r in lics
             )
             licencas_html = f"""
       <div class="card" style="border-top:3px solid #2e86c1">
         <div class="card-title">🚪 Licenças hoje ({len(lics)})</div>
         <div class="table-wrap"><table>
-          <thead><tr><th>NI</th><th>Nome</th><th>Ano</th><th>Saída</th><th>Entrada</th></tr></thead>
+          <thead><tr><th>NI</th><th>Nome</th><th>Ano</th><th>Tipo</th><th>Saída</th><th>Entrada</th></tr></thead>
           <tbody>{lic_rows}</tbody>
         </table></div>
         <a class="btn btn-gold btn-sm" href="{url_for("licencas_entradas_saidas", d=d_str)}" style="margin-top:.5rem">Gerir entradas/saídas</a>
@@ -2154,13 +2285,20 @@ def lista_alunos_ano(ano):
             SELECT u.id, u.NII, u.NI, u.Nome_completo,
                    r.pequeno_almoco, r.lanche, r.almoco, r.jantar_tipo, r.jantar_sai_unidade,
                    EXISTS(SELECT 1 FROM ausencias a WHERE a.utilizador_id=u.id
-                          AND a.ausente_de <= ? AND a.ausente_ate >= ?) AS ausente
+                          AND a.ausente_de <= ? AND a.ausente_ate >= ?) AS ausente,
+                   (SELECT l.tipo FROM licencas l WHERE l.utilizador_id=u.id AND l.data=?) AS licenca_tipo
             FROM utilizadores u
             LEFT JOIN refeicoes r ON r.utilizador_id=u.id AND r.data=?
             WHERE u.ano=?
             ORDER BY u.NI
         """,
-                (dt.isoformat(), dt.isoformat(), dt.isoformat(), ano),
+                (
+                    dt.isoformat(),
+                    dt.isoformat(),
+                    dt.isoformat(),
+                    dt.isoformat(),
+                    ano,
+                ),
             ).fetchall()
         ]
 
@@ -2215,6 +2353,11 @@ def lista_alunos_ano(ano):
             if a["jantar_sai_unidade"]
             else ""
         )
+        lic_b = ""
+        if a.get("licenca_tipo") == "antes_jantar":
+            lic_b = '<span class="badge badge-info" style="font-size:.6rem">🌅 Lic. antes</span>'
+        elif a.get("licenca_tipo") == "apos_jantar":
+            lic_b = '<span class="badge badge-muted" style="font-size:.6rem">🌙 Lic. após</span>'
         exc_btn = ""  # Edição de refeições disponível no módulo de Exceções/Controlo de Presenças
 
         # Botão perfil do aluno — OD só pode VER, cmd e admin podem EDITAR
@@ -2230,7 +2373,7 @@ def lista_alunos_ano(ano):
         rows_html += f"""
         <tr style="{row_bg}">
           <td class="small text-muted">{esc(a["NI"])}</td>
-          <td><strong>{esc(a["Nome_completo"])}</strong> {ausente_b}</td>
+          <td><strong>{esc(a["Nome_completo"])}</strong> {ausente_b} {lic_b}</td>
           <td>{chip_ref(a["pequeno_almoco"], "PA")}</td>
           <td>{chip_ref(a["lanche"], "Lan")}</td>
           <td>{chip_ref(a["almoco"], "Almoço", a["almoco"][:3] if a["almoco"] else None)}</td>
@@ -3114,7 +3257,10 @@ def detencoes_cmd():
             )
             conn.commit()
 
-        flash(f"Detenção registada para {db_u['Nome_completo']}. Refeições auto-marcadas.", "ok")
+        flash(
+            f"Detenção registada para {db_u['Nome_completo']}. Refeições auto-marcadas.",
+            "ok",
+        )
         return redirect(url_for("detencoes_cmd"))
 
     filtro_ano = f"AND uu.ano={int(ano_cmd)}" if perfil == "cmd" else ""
@@ -3271,7 +3417,7 @@ def licencas_entradas_saidas():
             dict(r)
             for r in conn.execute(
                 """SELECT l.id, uu.NI, uu.Nome_completo, uu.ano,
-                          l.hora_saida, l.hora_entrada
+                          l.tipo, l.hora_saida, l.hora_entrada
                 FROM licencas l
                 JOIN utilizadores uu ON uu.id=l.utilizador_id
                 WHERE l.data=? AND uu.perfil='aluno'
@@ -3292,12 +3438,19 @@ def licencas_entradas_saidas():
     for r in rows:
         saiu = r["hora_saida"]
         entrou = r["hora_entrada"]
+        tipo = r.get("tipo", "")
         if saiu and not entrou:
             estado = '<span class="badge badge-warn">Fora</span>'
         elif saiu and entrou:
             estado = '<span class="badge badge-ok">Regressou</span>'
         else:
             estado = '<span class="badge badge-muted">Pendente</span>'
+
+        tipo_badge = (
+            '<span class="badge badge-info" style="font-size:.65rem">🌅 Antes jantar</span>'
+            if tipo == "antes_jantar"
+            else '<span class="badge badge-muted" style="font-size:.65rem">🌙 Após jantar</span>'
+        )
 
         btn_saida = (
             f'<form method="post" style="display:inline">{csrf_input()}'
@@ -3321,6 +3474,7 @@ def licencas_entradas_saidas():
         <td>{esc(r["NI"])}</td>
         <td><strong>{esc(r["Nome_completo"])}</strong></td>
         <td>{r["ano"]}º</td>
+        <td>{tipo_badge}</td>
         <td>{estado}</td>
         <td>{btn_saida}</td>
         <td>{btn_entrada}</td>
@@ -3343,13 +3497,13 @@ def licencas_entradas_saidas():
         <div class="stat-box"><div class="stat-num">{total}</div><div class="stat-lbl">Total licenças</div></div>
         <div class="stat-box"><div class="stat-num">{saidas}</div><div class="stat-lbl">Saíram</div></div>
         <div class="stat-box"><div class="stat-num">{entradas}</div><div class="stat-lbl">Regressaram</div></div>
-        <div class="stat-box" style="{'background:#fef3cd' if fora > 0 else ''}"><div class="stat-num">{fora}</div><div class="stat-lbl">Fora da unidade</div></div>
+        <div class="stat-box" style="{"background:#fef3cd" if fora > 0 else ""}"><div class="stat-num">{fora}</div><div class="stat-lbl">Fora da unidade</div></div>
       </div>
       <div class="card">
         <div class="table-wrap">
           <table>
-            <thead><tr><th>NI</th><th>Nome</th><th>Ano</th><th>Estado</th><th>Saída</th><th>Entrada</th></tr></thead>
-            <tbody>{rows_html or '<tr><td colspan="6" class="text-muted center" style="padding:1.5rem">Sem licenças para este dia.</td></tr>'}</tbody>
+            <thead><tr><th>NI</th><th>Nome</th><th>Ano</th><th>Tipo</th><th>Estado</th><th>Saída</th><th>Entrada</th></tr></thead>
+            <tbody>{rows_html or '<tr><td colspan="7" class="text-muted center" style="padding:1.5rem">Sem licenças para este dia.</td></tr>'}</tbody>
           </table>
         </div>
       </div>
@@ -3396,7 +3550,12 @@ def admin_home():
         (url_for("admin_calendario"), "⚙️", "Gerir Calendário", "Dias operacionais"),
         (url_for("ausencias"), "🚫", "Ausências", "Gerir ausências"),
         (url_for("detencoes_cmd"), "⛔", "Detenções", "Registar detenções"),
-        (url_for("licencas_entradas_saidas"), "🚪", "Licenças / Entradas", "Controlo de saídas"),
+        (
+            url_for("licencas_entradas_saidas"),
+            "🚪",
+            "Licenças / Entradas",
+            "Controlo de saídas",
+        ),
         (url_for("calendario_publico"), "📅", "Calendário", "Ver calendário"),
         (
             url_for("admin_companhias"),
@@ -5362,7 +5521,18 @@ def controlo_presencas():
                         (uid, dt.isoformat()),
                     ).fetchone()
                     ref = dict(ref) if ref else {}
-                resultado = {"aluno": aluno, "ausente": ausente, "ref": ref, "ni": ni_q}
+                    lic = conn.execute(
+                        "SELECT tipo, hora_saida, hora_entrada FROM licencas WHERE utilizador_id=? AND data=?",
+                        (uid, dt.isoformat()),
+                    ).fetchone()
+                    lic = dict(lic) if lic else {}
+                resultado = {
+                    "aluno": aluno,
+                    "ausente": ausente,
+                    "ref": ref,
+                    "ni": ni_q,
+                    "licenca": lic,
+                }
             else:
                 flash(f'NI "{ni_q}" não encontrado.', "error")
 
@@ -5381,6 +5551,14 @@ def controlo_presencas():
                     f"Saída registada por {u['nome']} ({u['perfil']})",
                     u["nii"],
                 )
+                # Sincronizar hora_saida na licença (se existir)
+                agora = datetime.now().strftime("%H:%M")
+                with sr.db() as conn:
+                    conn.execute(
+                        "UPDATE licencas SET hora_saida=? WHERE utilizador_id=? AND data=? AND hora_saida IS NULL",
+                        (agora, aluno["id"], dt.isoformat()),
+                    )
+                    conn.commit()
                 flash(
                     f"✅ Saída registada para {aluno['Nome_completo']} (NI {ni_q}).",
                     "ok",
@@ -5401,6 +5579,14 @@ def controlo_presencas():
                         """DELETE FROM ausencias WHERE utilizador_id=?
                                     AND ausente_de=? AND ausente_ate=?""",
                         (aluno["id"], dt.isoformat(), dt.isoformat()),
+                    )
+                    conn.commit()
+                # Sincronizar hora_entrada na licença (se existir)
+                agora = datetime.now().strftime("%H:%M")
+                with sr.db() as conn:
+                    conn.execute(
+                        "UPDATE licencas SET hora_entrada=? WHERE utilizador_id=? AND data=? AND hora_entrada IS NULL",
+                        (agora, aluno["id"], dt.isoformat()),
                     )
                     conn.commit()
                 flash(
@@ -5467,9 +5653,27 @@ def controlo_presencas():
         ref = resultado["ref"]
         ausente = resultado["ausente"]
         ni_val = resultado["ni"]
+        lic_info = resultado.get("licenca", {})
 
         estado_cor = "#fdecea" if ausente else "#d5f5e3"
         estado_txt = "🔴 AUSENTE" if ausente else "🟢 PRESENTE"
+
+        # Licença badge
+        lic_badge = ""
+        if lic_info.get("tipo") == "antes_jantar":
+            lic_badge = '<div style="margin-top:.4rem"><span class="badge badge-info">🌅 Licença antes do jantar</span>'
+            if lic_info.get("hora_saida"):
+                lic_badge += f' <span class="text-muted small">Saiu: {lic_info["hora_saida"]}</span>'
+            if lic_info.get("hora_entrada"):
+                lic_badge += f' <span class="text-muted small">Entrou: {lic_info["hora_entrada"]}</span>'
+            lic_badge += "</div>"
+        elif lic_info.get("tipo") == "apos_jantar":
+            lic_badge = '<div style="margin-top:.4rem"><span class="badge badge-muted">🌙 Licença após o jantar</span>'
+            if lic_info.get("hora_saida"):
+                lic_badge += f' <span class="text-muted small">Saiu: {lic_info["hora_saida"]}</span>'
+            if lic_info.get("hora_entrada"):
+                lic_badge += f' <span class="text-muted small">Entrou: {lic_info["hora_entrada"]}</span>'
+            lic_badge += "</div>"
 
         def ref_chip(val, label, tipo=None):
             if val:
@@ -5512,6 +5716,7 @@ def controlo_presencas():
             <div>
               <div style="font-size:1.15rem;font-weight:800">{esc(al["Nome_completo"])}</div>
               <div class="text-muted small">NI: <strong>{esc(al["NI"])}</strong> &nbsp;|&nbsp; {al["ano"]}º Ano &nbsp;|&nbsp; NII: {esc(al["NII"])}</div>
+              {lic_badge}
             </div>
             <div style="background:{estado_cor};padding:.4rem .9rem;border-radius:20px;font-weight:800;font-size:1rem">{estado_txt}</div>
           </div>
