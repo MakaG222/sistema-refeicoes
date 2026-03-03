@@ -71,6 +71,30 @@ PERFIS_ADMIN = {
         "perfil": "cmd",
         "ano": "4",
     },
+    "cmd5": {
+        "senha": "cmd5123",
+        "nome": "Comandante 5º Ano",
+        "perfil": "cmd",
+        "ano": "5",
+    },
+    "cmd6": {
+        "senha": "cmd6123",
+        "nome": "Comandante 6º Ano",
+        "perfil": "cmd",
+        "ano": "6",
+    },
+    "cmd7": {
+        "senha": "cmd7123",
+        "nome": "Comandante CFBO",
+        "perfil": "cmd",
+        "ano": "7",
+    },
+    "cmd8": {
+        "senha": "cmd8123",
+        "nome": "Comandante CFCO",
+        "perfil": "cmd",
+        "ano": "8",
+    },
     "cozinha": {
         "senha": "cozinha123",
         "nome": "Responsável da Cozinha",
@@ -407,14 +431,16 @@ CREATE TABLE IF NOT EXISTS detencoes (
 CREATE INDEX IF NOT EXISTS idx_detencoes_uid   ON detencoes(utilizador_id);
 CREATE INDEX IF NOT EXISTS idx_detencoes_datas ON detencoes(detido_de, detido_ate);
 
--- Licenças de saída (antes ou depois do jantar)
+-- Licenças de saída
 CREATE TABLE IF NOT EXISTS licencas (
   id            INTEGER PRIMARY KEY AUTOINCREMENT,
   utilizador_id INTEGER NOT NULL REFERENCES utilizadores(id) ON DELETE CASCADE,
   data          TEXT NOT NULL,                -- YYYY-MM-DD
-  tipo          TEXT NOT NULL CHECK(tipo IN ('antes_jantar','apos_jantar')),
+  tipo          TEXT NOT NULL DEFAULT 'licenca',
   aprovado_por  TEXT,                         -- NULL = auto-aprovado por regra, NII se exceção
   criado_em     TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+  hora_saida    TEXT,                         -- HH:MM — registado pelo oficial de dia
+  hora_entrada  TEXT,                         -- HH:MM — registado pelo oficial de dia
   UNIQUE(utilizador_id, data)
 );
 CREATE INDEX IF NOT EXISTS idx_licencas_uid  ON licencas(utilizador_id);
