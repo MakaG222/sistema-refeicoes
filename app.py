@@ -3629,7 +3629,7 @@ def admin_utilizadores():
                     with sr.db() as conn:
                         conn.execute(
                             "UPDATE utilizadores SET Palavra_chave=?,must_change_password=1 WHERE NII=?",
-                            (pw_e, nii_e),
+                            (generate_password_hash(pw_e), nii_e),
                         )
                         conn.commit()
                 _audit(
