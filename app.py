@@ -168,25 +168,6 @@ END""")
                     flush=True,
                 )
 
-
-            # 3) Corrigir NII da aluna Rafaela Fernandes: 20223 → 21223
-            if "rafaela_nii_20223_21223" not in done:
-                rafaela = conn.execute(
-                    "SELECT id FROM utilizadores WHERE NII='20223' AND Nome_completo LIKE '%Rafaela%Fernandes%'"
-                ).fetchone()
-                if rafaela:
-                    conn.execute(
-                        "UPDATE utilizadores SET NII='21223' WHERE id=?",
-                        (rafaela["id"],),
-                    )
-                    print(
-                        "[MIGRAÇÃO] NII da aluna Rafaela Fernandes corrigido: 20223→21223",
-                        flush=True,
-                    )
-                conn.execute(
-                    "INSERT INTO _migracoes VALUES('rafaela_nii_20223_21223', datetime('now','localtime'))"
-                )
-
             _bootstrap_dev_system_accounts(conn)
             conn.commit()
     except Exception as e:
@@ -2865,9 +2846,9 @@ def painel_dia():
         )
         alertas_html = f'<div style="margin-bottom:1rem">{items}</div>'
 
-    # ── Previsão de amanhã (cozinha / admin) ────────────────────────────────
+    # ── Previsão de amanhã (cozinha / oficialdia / admin) ─────────────────
     previsao_html = ""
-    if perfil in ("cozinha", "admin"):
+    if perfil in ("cozinha", "oficialdia", "admin"):
         amanha = dt + timedelta(days=1)
         t_am = sr.get_totais_dia(amanha.isoformat(), ano_int)
 
