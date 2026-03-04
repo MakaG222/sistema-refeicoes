@@ -2079,10 +2079,14 @@ def exportar_mensal():
             "jan_sai",
         ]
     }
+    _men_map, _men_empty = sr.get_totais_periodo(d0.isoformat(), d1.isoformat())
+    _men_cal = sr.dias_operacionais_batch(d0, d1)
     di = d0
     while di <= d1:
-        t = sr.get_totais_dia(di.isoformat())
-        tipo = sr.dia_operacional(di)
+        t = _men_map.get(di.isoformat(), _men_empty)
+        tipo = _men_cal.get(
+            di.isoformat(), "fim_semana" if di.weekday() >= 5 else "normal"
+        )
         alm = t["alm_norm"] + t["alm_veg"] + t["alm_dieta"]
         jan = t["jan_norm"] + t["jan_veg"] + t["jan_dieta"]
         dias_data.append((di, tipo, t, alm, jan))
@@ -2989,11 +2993,16 @@ def relatorio_semanal():
         "outro": "⚪",
     }
 
+    # Batch: totais e calendário para a semana toda
+    _rel_map, _rel_empty = sr.get_totais_periodo(d0.isoformat(), d1.isoformat())
+    _rel_cal = sr.dias_operacionais_batch(d0, d1)
     res = []
     for i in range(7):
         di = d0 + timedelta(days=i)
-        t = sr.get_totais_dia(di.isoformat())
-        tipo = sr.dia_operacional(di)
+        t = _rel_map.get(di.isoformat(), _rel_empty)
+        tipo = _rel_cal.get(
+            di.isoformat(), "fim_semana" if di.weekday() >= 5 else "normal"
+        )
         res.append({"data": di, "t": t, "tipo": tipo})
 
     totais = {
@@ -5508,11 +5517,16 @@ def dashboard_semanal():
     prev_w = (d0 - timedelta(days=7)).isoformat()
     next_w = (d0 + timedelta(days=7)).isoformat()
 
+    # Batch: carregar totais e calendário para toda a semana numa query
+    totais_map, _t_empty = sr.get_totais_periodo(d0.isoformat(), d1.isoformat())
+    cal_map_wk = sr.dias_operacionais_batch(d0, d1)
     dias = []
     for i in range(7):
         di = d0 + timedelta(days=i)
-        t = sr.get_totais_dia(di.isoformat())
-        tipo = sr.dia_operacional(di)
+        t = totais_map.get(di.isoformat(), _t_empty)
+        tipo = cal_map_wk.get(
+            di.isoformat(), "fim_semana" if di.weekday() >= 5 else "normal"
+        )
         dias.append({"data": di, "t": t, "tipo": tipo, "is_wknd": di.weekday() >= 5})
 
     max_alm = (
@@ -5630,11 +5644,12 @@ def dashboard_semanal():
     ]
     totais_semana = {k: sum(d["t"][k] for d in dias) for k in _keys}
 
-    # Totais da semana anterior para comparação
+    # Totais da semana anterior para comparação (1 query batch)
     prev_d0 = d0 - timedelta(days=7)
+    prev_d1 = d0 - timedelta(days=1)
+    prev_map, _ = sr.get_totais_periodo(prev_d0.isoformat(), prev_d1.isoformat())
     totais_prev = {k: 0 for k in _keys}
-    for i in range(7):
-        t_p = sr.get_totais_dia((prev_d0 + timedelta(days=i)).isoformat())
+    for t_p in prev_map.values():
         for k in _keys:
             totais_prev[k] += t_p[k]
 
@@ -5956,10 +5971,14 @@ def exportar_relatorio():
             "jan_sai",
         ]
     }
+    _exp_map, _exp_empty = sr.get_totais_periodo(d0.isoformat(), d1.isoformat())
+    _exp_cal = sr.dias_operacionais_batch(d0, d1)
     for i in range(7):
         di = d0 + timedelta(days=i)
-        t = sr.get_totais_dia(di.isoformat())
-        tipo = sr.dia_operacional(di)
+        t = _exp_map.get(di.isoformat(), _exp_empty)
+        tipo = _exp_cal.get(
+            di.isoformat(), "fim_semana" if di.weekday() >= 5 else "normal"
+        )
         alm = t["alm_norm"] + t["alm_veg"] + t["alm_dieta"]
         jan = t["jan_norm"] + t["jan_veg"] + t["jan_dieta"]
         dias_data.append((di, tipo, t, alm, jan))
