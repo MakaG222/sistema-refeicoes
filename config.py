@@ -41,8 +41,8 @@ class Config:
     SESSION_COOKIE_HTTPONLY = True
     SESSION_COOKIE_SAMESITE = "Lax"
     SESSION_COOKIE_SECURE = is_production  # HTTPS obrigatório em produção
-    SESSION_PERMANENT = False  # sessão expira ao fechar browser
-    PERMANENT_SESSION_LIFETIME = 8 * 3600  # 8h max se marcada permanente
+    SESSION_PERMANENT = True  # controlada via PERMANENT_SESSION_LIFETIME
+    PERMANENT_SESSION_LIFETIME = 180  # 3 min de inatividade → sessão expira
     PREFERRED_URL_SCHEME = "https" if is_production else "http"
 
     # JSON
@@ -56,10 +56,15 @@ def configure_logging(flask_app) -> None:
 
     handler = logging.StreamHandler(sys.stdout)
     handler.setFormatter(
-        logging.Formatter("%(asctime)s %(levelname)s [app]: %(message)s")
+        logging.Formatter(
+            "%(asctime)s %(levelname)s [%(name)s]: %(message)s",
+            datefmt="%Y-%m-%d %H:%M:%S",
+        )
     )
     flask_app.logger.addHandler(handler)
     flask_app.logger.setLevel(logging.INFO)
+    # SQLite warnings
+    logging.getLogger("sqlite3").setLevel(logging.WARNING)
 
 
 # ── Startup info ─────────────────────────────────────────────────────────────

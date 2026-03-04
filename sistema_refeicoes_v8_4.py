@@ -288,14 +288,58 @@ def masked_input(prompt="Password: ", mask="*") -> str:
 # ===========================================================================
 
 
-def db() -> sqlite3.Connection:
+def _new_conn() -> sqlite3.Connection:
+    """Cria uma nova conexão SQLite com pragmas de performance."""
     conn = sqlite3.connect(BASE_DADOS)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys=ON")
-    conn.execute("PRAGMA busy_timeout=5000")
+    conn.execute("PRAGMA busy_timeout=8000")
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA synchronous=NORMAL")
+    conn.execute("PRAGMA cache_size=-4000")  # 4 MB cache
     return conn
+
+
+def db() -> sqlite3.Connection:
+    """Devolve conexão SQLite reutilizável por request (via Flask g) ou nova."""
+    try:
+        from flask import g, has_request_context
+
+        if has_request_context():
+            conn = getattr(g, "_sr_db", None)
+            if conn is None:
+                conn = _new_conn()
+                g._sr_db = conn
+            return conn
+    except ImportError:
+        pass
+    return _new_conn()
+
+
+def close_request_db(exc=None) -> None:
+    """Fecha a conexão da request (chamado pelo teardown do Flask)."""
+    try:
+        from flask import g
+
+        conn = getattr(g, "_sr_db", None)
+        if conn is not None:
+            g._sr_db = None
+            try:
+                conn.close()
+            except Exception:
+                pass
+    except ImportError:
+        pass
+
+
+def wal_checkpoint() -> None:
+    """Força checkpoint do WAL para libertar espaço no ficheiro -wal."""
+    try:
+        conn = _new_conn()
+        conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+        conn.close()
+    except Exception:
+        pass
 
 
 def sqlite_quick_check() -> bool:
@@ -1070,6 +1114,87 @@ def refeicao_get(uid: int, d: date) -> dict:
         "jantar_tipo": None,
         "jantar_sai_unidade": 0,
     }
+
+
+def refeicoes_batch(uid: int, d_de: date, d_ate: date) -> dict:
+    """Carrega refeições de um aluno para um intervalo de datas. Devolve {iso_date: dict}."""
+    defaults = {
+        "pequeno_almoco": 0,
+        "lanche": 0,
+        "almoco": None,
+        "jantar_tipo": None,
+        "jantar_sai_unidade": 0,
+    }
+    with db() as conn:
+        rows = conn.execute(
+            "SELECT * FROM refeicoes WHERE utilizador_id=? AND data>=? AND data<=?",
+            (uid, d_de.isoformat(), d_ate.isoformat()),
+        ).fetchall()
+    result = {}
+    for r in rows:
+        result[r["data"]] = dict(r)
+    return result, defaults
+
+
+def dias_operacionais_batch(d_de: date, d_ate: date) -> dict:
+    """Carrega tipos de dia do calendário operacional. Devolve {iso_date: tipo}."""
+    with db() as conn:
+        rows = conn.execute(
+            "SELECT data, tipo FROM calendario_operacional WHERE data>=? AND data<=?",
+            (d_de.isoformat(), d_ate.isoformat()),
+        ).fetchall()
+    result = {}
+    for r in rows:
+        result[r["data"]] = r["tipo"]
+    return result
+
+
+def ausencias_batch(uid: int, d_de: date, d_ate: date) -> set:
+    """Devolve conjunto de datas (ISO str) com ausência ativa no intervalo."""
+    with db() as conn:
+        rows = conn.execute(
+            """SELECT ausente_de, ausente_ate FROM ausencias
+               WHERE utilizador_id=? AND ausente_ate>=? AND ausente_de<=?""",
+            (uid, d_de.isoformat(), d_ate.isoformat()),
+        ).fetchall()
+    dates = set()
+    for r in rows:
+        a_de = date.fromisoformat(r["ausente_de"])
+        a_ate = date.fromisoformat(r["ausente_ate"])
+        d = max(a_de, d_de)
+        while d <= min(a_ate, d_ate):
+            dates.add(d.isoformat())
+            d += timedelta(days=1)
+    return dates
+
+
+def detencoes_batch(uid: int, d_de: date, d_ate: date) -> set:
+    """Devolve conjunto de datas (ISO str) com detenção ativa no intervalo."""
+    with db() as conn:
+        rows = conn.execute(
+            """SELECT detido_de, detido_ate FROM detencoes
+               WHERE utilizador_id=? AND detido_ate>=? AND detido_de<=?""",
+            (uid, d_de.isoformat(), d_ate.isoformat()),
+        ).fetchall()
+    dates = set()
+    for r in rows:
+        d_de_r = date.fromisoformat(r["detido_de"])
+        d_ate_r = date.fromisoformat(r["detido_ate"])
+        d = max(d_de_r, d_de)
+        while d <= min(d_ate_r, d_ate):
+            dates.add(d.isoformat())
+            d += timedelta(days=1)
+    return dates
+
+
+def licencas_batch(uid: int, d_de: date, d_ate: date) -> dict:
+    """Carrega licenças de um aluno para um intervalo. Devolve {iso_date: tipo}."""
+    with db() as conn:
+        rows = conn.execute(
+            "SELECT data, tipo FROM licencas WHERE utilizador_id=? AND data>=? AND data<=?",
+            (uid, d_de.isoformat(), d_ate.isoformat()),
+        ).fetchall()
+    return {r["data"]: r["tipo"] for r in rows}
 
 
 def refeicao_save(uid: int, d: date, r: dict, alterado_por: str = "sistema") -> bool:
