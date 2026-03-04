@@ -267,3 +267,62 @@ class TestExportRelatorioValidation:
         self._login_admin(client)
         resp = client.get("/exportar/relatorio?d0=data-invalida&fmt=csv")
         assert resp.status_code == 400
+
+
+# ── IP Rate Limiting ─────────────────────────────────────────────────────────
+
+
+class TestIPRateLimiting:
+    def test_ip_blocked_after_20_failures(self, app, client):
+        """20+ falhas do mesmo IP devem bloquear tentativas seguintes."""
+        import sistema_refeicoes_v8_4 as sr
+
+        with app.app_context():
+            for i in range(20):
+                sr.reg_login(f"fake_{i}", 0, ip="10.0.0.99")
+
+        client.get("/login")
+        with client.session_transaction() as sess:
+            token = sess.get("_csrf_token", "")
+
+        resp = client.post(
+            "/login",
+            data={"nii": "admin", "password": "admin123", "csrf_token": token},
+            environ_overrides={"REMOTE_ADDR": "10.0.0.99"},
+            follow_redirects=True,
+        )
+        html = resp.data.decode()
+        assert "tentativas" in html.lower() or "aguarda" in html.lower()
+
+    def test_different_ip_not_blocked(self, app, client):
+        """Bloquear um IP não deve afetar outros IPs."""
+        import sistema_refeicoes_v8_4 as sr
+
+        with app.app_context():
+            for i in range(25):
+                sr.reg_login(f"fake_{i}", 0, ip="10.0.0.88")
+
+        client.get("/login")
+        with client.session_transaction() as sess:
+            token = sess.get("_csrf_token", "")
+
+        resp = client.post(
+            "/login",
+            data={"nii": "admin", "password": "admin123", "csrf_token": token},
+            environ_overrides={"REMOTE_ADDR": "10.0.0.77"},
+            follow_redirects=False,
+        )
+        # IP diferente deve conseguir fazer login
+        assert resp.status_code in (200, 302)
+
+    def test_recent_failures_by_ip_counts_correctly(self, app):
+        """Função recent_failures_by_ip conta apenas falhas (não sucessos)."""
+        import sistema_refeicoes_v8_4 as sr
+
+        with app.app_context():
+            sr.reg_login("u1", 0, ip="172.16.0.5")
+            sr.reg_login("u2", 0, ip="172.16.0.5")
+            sr.reg_login("u3", 1, ip="172.16.0.5")  # sucesso — não conta
+            sr.reg_login("u4", 0, ip="172.16.0.6")  # IP diferente — não conta
+            count = sr.recent_failures_by_ip("172.16.0.5", 10)
+            assert count == 2
