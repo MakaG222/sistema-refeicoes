@@ -700,6 +700,81 @@ def _dia_editavel_aluno(d):
 
 
 # ═══════════════════════════════════════════════════════════════════════════
+# LICENÇA DE FIM DE SEMANA — marcar/cancelar FDS com um clique
+# ═══════════════════════════════════════════════════════════════════════════
+
+
+def _marcar_licenca_fds(uid: int, sexta: date, alterado_por: str) -> tuple:
+    """
+    Marca 'licença fim de semana' para um aluno:
+    - Sexta: licença antes_jantar (retira jantar, marca sai_unidade)
+    - Sábado e Domingo: apaga todas as refeições
+    Retorna (sucesso: bool, mensagem: str)
+    """
+    try:
+        # ── Sexta-feira: licença antes_jantar ──────────────────────────
+        with sr.db() as conn:
+            conn.execute(
+                """INSERT INTO licencas(utilizador_id, data, tipo)
+                   VALUES(?,?,?)
+                   ON CONFLICT(utilizador_id, data) DO UPDATE SET tipo=excluded.tipo""",
+                (uid, sexta.isoformat(), "antes_jantar"),
+            )
+            conn.commit()
+
+        # Refeições da sexta: guardar sem jantar, com sai_unidade
+        r_sexta = sr.refeicao_get(uid, sexta)
+        r_sexta["jantar_tipo"] = None
+        r_sexta["jantar_sai_unidade"] = 1
+        sr.refeicao_save(uid, sexta, r_sexta, alterado_por=alterado_por)
+
+        # ── Sábado e Domingo: apagar todas as refeições ────────────────
+        for delta in (1, 2):  # sábado=+1, domingo=+2
+            d = sexta + timedelta(days=delta)
+            r_vazio = {
+                "pequeno_almoco": 0,
+                "lanche": 0,
+                "almoco": None,
+                "jantar_tipo": None,
+                "jantar_sai_unidade": 0,
+            }
+            sr.refeicao_save(uid, d, r_vazio, alterado_por=alterado_por)
+
+        return True, ""
+    except Exception as exc:
+        app.logger.warning(f"_marcar_licenca_fds uid={uid}: {exc}")
+        return False, str(exc)
+
+
+def _cancelar_licenca_fds(uid: int, sexta: date, alterado_por: str) -> tuple:
+    """
+    Cancela 'licença fim de semana':
+    - Remove a licença da sexta
+    - Repõe jantar normal na sexta, retira sai_unidade
+    """
+    try:
+        # Remover licença da sexta
+        with sr.db() as conn:
+            conn.execute(
+                "DELETE FROM licencas WHERE utilizador_id=? AND data=?",
+                (uid, sexta.isoformat()),
+            )
+            conn.commit()
+
+        # Repor sexta: jantar Normal, sem sai_unidade
+        r_sexta = sr.refeicao_get(uid, sexta)
+        r_sexta["jantar_sai_unidade"] = 0
+        if not r_sexta.get("jantar_tipo"):
+            r_sexta["jantar_tipo"] = "Normal"
+        sr.refeicao_save(uid, sexta, r_sexta, alterado_por=alterado_por)
+
+        return True, ""
+    except Exception as exc:
+        app.logger.warning(f"_cancelar_licenca_fds uid={uid}: {exc}")
+        return False, str(exc)
+
+
+# ═══════════════════════════════════════════════════════════════════════════
 # TEMPLATE BASE
 # ═══════════════════════════════════════════════════════════════════════════
 
@@ -1369,6 +1444,70 @@ def dashboard():
 # ═══════════════════════════════════════════════════════════════════════════
 
 
+@app.route("/aluno/licenca-fds", methods=["POST"])
+@login_required
+def aluno_licenca_fds():
+    """Marcar ou cancelar licença de fim de semana."""
+    u = current_user()
+    uid = sr.user_id_by_nii(u["nii"])
+    if not uid:
+        flash("Conta de sistema — funcionalidade não disponível.", "error")
+        return redirect(url_for("aluno_home"))
+
+    sexta_str = request.form.get("sexta", "")
+    acao = request.form.get("acao_fds", "marcar")  # "marcar" ou "cancelar"
+    sexta = _parse_date_strict(sexta_str)
+    if not sexta or sexta.weekday() != 4:  # 4 = sexta-feira
+        flash("Data inválida — apenas sextas-feiras.", "error")
+        return redirect(url_for("aluno_home"))
+
+    # Verificar se a sexta ainda é editável
+    ok_edit, msg = _dia_editavel_aluno(sexta)
+    if not ok_edit:
+        flash(f"Não é possível editar: {msg}", "warn")
+        return redirect(url_for("aluno_home"))
+
+    # Verificar ausência
+    if _tem_ausencia_ativa(uid, sexta):
+        flash("Tens uma ausência registada para este período.", "warn")
+        return redirect(url_for("aluno_home"))
+
+    # Verificar detenção
+    if _tem_detencao_ativa(uid, sexta):
+        flash("Estás detido — não podes marcar licença de fim de semana.", "error")
+        return redirect(url_for("aluno_home"))
+
+    if acao == "cancelar":
+        ok, err = _cancelar_licenca_fds(uid, sexta, u["nii"])
+        flash(
+            "Licença de fim de semana cancelada." if ok else (err or "Erro."),
+            "ok" if ok else "error",
+        )
+    else:
+        # Verificar regras de licença para a sexta
+        with sr.db() as conn:
+            aluno_row = conn.execute(
+                "SELECT ano, NI FROM utilizadores WHERE id=?", (uid,)
+            ).fetchone()
+        ano_aluno = int(aluno_row["ano"]) if aluno_row else 1
+        ni_aluno = aluno_row["NI"] if aluno_row else ""
+
+        pode, motivo = _pode_marcar_licenca(uid, sexta, ano_aluno, ni_aluno)
+        if not pode:
+            flash(motivo, "warn")
+            return redirect(url_for("aluno_home"))
+
+        ok, err = _marcar_licenca_fds(uid, sexta, u["nii"])
+        flash(
+            "✅ Licença de fim de semana marcada! Jantar de sexta e refeições de sábado/domingo cancelados."
+            if ok
+            else (err or "Erro."),
+            "ok" if ok else "error",
+        )
+
+    return redirect(url_for("aluno_home"))
+
+
 @app.route("/aluno")
 @login_required
 def aluno_home():
@@ -1473,6 +1612,38 @@ def aluno_home():
             else ""
         )
 
+        # ── Botão licença FDS (sextas-feiras) ────────────────────────
+        fds_btn_html = ""
+        is_friday = d.weekday() == 4
+        if is_friday and uid and not is_off:
+            tem_licenca_fds = lic_map.get(d_iso) == "antes_jantar"
+            nao_detido = not detido_d
+            nao_ausente = not ausente_d
+
+            if ok_edit and nao_detido and nao_ausente:
+                if tem_licenca_fds:
+                    fds_btn_html = f"""
+                    <form method="post" action="{url_for("aluno_licenca_fds")}" style="margin-top:.4rem">
+                      {csrf_input()}
+                      <input type="hidden" name="sexta" value="{d_iso}">
+                      <input type="hidden" name="acao_fds" value="cancelar">
+                      <button class="btn btn-danger btn-sm" style="width:100%;font-size:.7rem"
+                        onclick="return confirm('Cancelar licença de fim de semana?')">
+                        🔄 Cancelar licença FDS
+                      </button>
+                    </form>"""
+                else:
+                    fds_btn_html = f"""
+                    <form method="post" action="{url_for("aluno_licenca_fds")}" style="margin-top:.4rem">
+                      {csrf_input()}
+                      <input type="hidden" name="sexta" value="{d_iso}">
+                      <input type="hidden" name="acao_fds" value="marcar">
+                      <button class="btn btn-gold btn-sm" style="width:100%;font-size:.7rem"
+                        onclick="return confirm('Marcar licença de fim de semana?\\nIsto vai:\\n• Retirar o jantar de sexta\\n• Apagar refeições de sábado e domingo')">
+                        🏖️ Licença FDS
+                      </button>
+                    </form>"""
+
         card_cls = "weekend-active" if is_weekend else ""
         dow_cls = "weekend" if is_weekend else ""
 
@@ -1480,7 +1651,7 @@ def aluno_home():
         <div class="week-card {card_cls}">
           <div class="week-dow {dow_cls}">{ABREV_DIAS[d.weekday()]}</div>
           <div class="week-date">{d.strftime("%d/%m/%Y")}</div>
-          {aus_chip}{det_chip}{lic_chip}{meals}{btn}
+          {aus_chip}{det_chip}{lic_chip}{meals}{fds_btn_html}{btn}
         </div>"""
 
     stats_html = ""
