@@ -4,59 +4,7 @@ tests/test_auth.py — Testes de autenticação, autorização e endpoints crít
 Executa com:  pytest tests/ -v
 """
 
-import os
-import pytest
-import tempfile
-
-# Configurar ENV de teste antes de importar a app
-os.environ.setdefault("ENV", "development")
-os.environ.setdefault("SECRET_KEY", "test-secret-key-not-for-production")
-
-
-@pytest.fixture(scope="session")
-def app():
-    """Cria uma instância da app com BD temporária para os testes."""
-    import sys
-
-    sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
-
-    # BD temporária isolada para os testes
-    tmp = tempfile.NamedTemporaryFile(suffix=".db", delete=False)
-    tmp.close()
-    os.environ["DB_PATH"] = tmp.name
-
-    import sistema_refeicoes_v8_4 as sr
-
-    sr.BASE_DADOS = tmp.name
-    sr.ensure_schema()
-
-    import app as app_module
-
-    app_module._ensure_extra_schema()
-
-    flask_app = app_module.app
-    flask_app.config["TESTING"] = True
-    flask_app.config["WTF_CSRF_ENABLED"] = False
-
-    yield flask_app
-
-    # Cleanup
-    os.unlink(tmp.name)
-
-
-@pytest.fixture
-def client(app):
-    return app.test_client()
-
-
-@pytest.fixture
-def csrf_token(client):
-    """Obtém um token CSRF válido através do endpoint de login."""
-    resp = client.get("/login")
-    assert resp.status_code == 200
-    # Extrair o token da cookie de sessão via contexto
-    with client.session_transaction() as sess:
-        return sess.get("_csrf_token", "test-token")
+# Fixtures (app, client, csrf_token) importadas automaticamente do conftest.py
 
 
 # ── Health endpoint ────────────────────────────────────────────────────────────
