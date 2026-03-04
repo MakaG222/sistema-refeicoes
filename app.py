@@ -182,6 +182,9 @@ app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1)
 app.config.from_object(cfg.Config)
 cfg.configure_logging(app)
 
+# ── Teardown: fechar conexão SQLite no fim de cada request ────────────────
+app.teardown_appcontext(sr.close_request_db)
+
 # Expor constantes de config usadas localmente
 _is_production = cfg.is_production
 CRON_API_TOKEN = cfg.CRON_API_TOKEN
@@ -982,9 +985,25 @@ def current_user():
     return session.get("user", {})
 
 
+_WAL_CHECKPOINT_INTERVAL = 300  # checkpoint WAL a cada 5 min
+_last_wal_checkpoint = 0.0
+
+
 @app.before_request
 def before():
+    global _last_wal_checkpoint
     g._t0 = time.perf_counter()
+
+    # Refrescar sessão permanente em cada request (reset timeout inatividade)
+    if "user" in session:
+        session.modified = True
+
+    # WAL checkpoint periódico
+    now = time.time()
+    if now - _last_wal_checkpoint > _WAL_CHECKPOINT_INTERVAL:
+        _last_wal_checkpoint = now
+        sr.wal_checkpoint()
+
     if request.method == "POST":
         t = session.get("_csrf_token", "")
         ft = request.form.get("csrf_token", "")
@@ -1009,6 +1028,14 @@ def after(r):
         "Content-Security-Policy",
         "default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'",
     )
+    # Logging de performance — avisar para requests lentos
+    t0 = getattr(g, "_t0", None)
+    if t0 is not None:
+        dt_ms = (time.perf_counter() - t0) * 1000
+        if dt_ms > 500:
+            app.logger.warning(
+                "Slow request: %s %s %.0fms", request.method, request.path, dt_ms
+            )
     return r
 
 
@@ -1148,6 +1175,7 @@ def login():
                 error = "NII não encontrado."
         if u:
             session["user"] = u
+            session.permanent = True  # ativa timeout de inatividade
             _audit(nii, "login", f"perfil={u['perfil']} IP={_client_ip()}")
             # Forçar alteração de password se necessário
             if db_u and db_u.get("must_change_password"):
@@ -1249,15 +1277,30 @@ def aluno_home():
             return f'<span class="meal-chip chip-{"type" if tp else "ok"}">{tp or label} ✓</span>'
         return f'<span class="meal-chip chip-no">{label} ✗</span>'
 
+    # Batch-load: carregar todos os dados de uma vez (elimina N+1)
+    d_ate = hoje + timedelta(days=DIAS_ANTECEDENCIA)
+    cal_map = sr.dias_operacionais_batch(hoje, d_ate)
+    if uid:
+        ref_map, ref_defaults = sr.refeicoes_batch(uid, hoje, d_ate)
+        aus_set = sr.ausencias_batch(uid, hoje, d_ate)
+        det_set = sr.detencoes_batch(uid, hoje, d_ate)
+        lic_map = sr.licencas_batch(uid, hoje, d_ate)
+    else:
+        ref_map, ref_defaults = {}, {}
+        aus_set = set()
+        det_set = set()
+        lic_map = {}
+
     dias_html = ""
     for i in range(DIAS_ANTECEDENCIA + 1):
         d = hoje + timedelta(days=i)
-        tipo = sr.dia_operacional(d)
-        r = sr.refeicao_get(uid, d) if uid else {}
+        d_iso = d.isoformat()
+        tipo = cal_map.get(d_iso, "fim_semana" if d.weekday() >= 5 else "normal")
+        r = ref_map.get(d_iso, ref_defaults) if uid else {}
         ok_edit, _ = _dia_editavel_aluno(d)
         prazo = _prazo_label(d)
-        ausente_d = uid and _tem_ausencia_ativa(uid, d)
-        detido_d = uid and _tem_detencao_ativa(uid, d)
+        ausente_d = d_iso in aus_set
+        detido_d = d_iso in det_set
         is_weekend = d.weekday() >= 5
         is_off = tipo in ("feriado", "exercicio")
 
@@ -1282,19 +1325,12 @@ def aluno_home():
             if detido_d
             else ""
         )
-        # Verificar licença para este dia
+        # Licença do batch
         lic_chip = ""
-        if uid and not detido_d:
-            with sr.db() as conn:
-                lic_r = conn.execute(
-                    "SELECT tipo FROM licencas WHERE utilizador_id=? AND data=?",
-                    (uid, d.isoformat()),
-                ).fetchone()
-            if lic_r:
-                lic_lbl = (
-                    "Antes jantar" if lic_r["tipo"] == "antes_jantar" else "Após jantar"
-                )
-                lic_chip = f'<span class="meal-chip chip-type" style="background:#d4efdf;color:#1e8449;margin-bottom:.3rem;display:block">🚪 {lic_lbl}</span>'
+        lic_tipo = lic_map.get(d_iso)
+        if uid and not detido_d and lic_tipo:
+            lic_lbl = "Antes jantar" if lic_tipo == "antes_jantar" else "Após jantar"
+            lic_chip = f'<span class="meal-chip chip-type" style="background:#d4efdf;color:#1e8449;margin-bottom:.3rem;display:block">🚪 {lic_lbl}</span>'
         alm_t = r.get("almoco")
         jan_t = r.get("jantar_tipo")
         meals = f"""<div class="week-meals">
