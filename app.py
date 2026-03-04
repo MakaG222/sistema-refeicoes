@@ -6,6 +6,7 @@ Acede em:   http://localhost:8080
 """
 
 import os
+import re
 import sys
 import secrets
 import time
@@ -389,18 +390,36 @@ def _criar_utilizador(nii, ni, nome, ano, perfil, pw):
     try:
         if not all([nii, ni, nome, ano, perfil, pw]):
             return False, "Todos os campos são obrigatórios."
-        if len(pw) < 4:
-            return False, "Password deve ter pelo menos 4 caracteres."
+        nii = _val_nii(nii)
+        if not nii:
+            return False, "NII inválido (alfanumérico, máx. 20 caracteres)."
+        if _val_ni(ni) is None:
+            return False, "NI inválido (alfanumérico, máx. 20 caracteres)."
+        ni = _val_ni(ni)
+        nome = _val_nome(nome)
+        if not nome:
+            return False, "Nome inválido ou vazio."
+        ano_int = _val_ano(ano)
+        if ano_int is None:
+            return False, "Ano inválido (deve ser entre 0 e 8)."
+        perfil = _val_perfil(perfil)
+        if not perfil:
+            return False, "Perfil inválido."
+        pw = str(pw).strip()[:256]
+        if len(pw) < 6:
+            return False, "Password deve ter pelo menos 6 caracteres."
         pw_hash = generate_password_hash(pw)
         with sr.db() as conn:
             conn.execute(
                 """INSERT INTO utilizadores
               (NII,NI,Nome_completo,Palavra_chave,ano,perfil,must_change_password,password_updated_at)
               VALUES (?,?,?,?,?,?,1,datetime('now','localtime'))""",
-                (nii, ni, nome, pw_hash, ano, perfil),
+                (nii, ni, nome, pw_hash, ano_int, perfil),
             )
             conn.commit()
-        _audit("sistema", "criar_utilizador", f"NII={nii} perfil={perfil} ano={ano}")
+        _audit(
+            "sistema", "criar_utilizador", f"NII={nii} perfil={perfil} ano={ano_int}"
+        )
         return True, ""
     except Exception as e:
         app.logger.error(f"_criar_utilizador({nii}): {e}")
@@ -906,6 +925,115 @@ def _parse_date_strict(s):
     try:
         return datetime.strptime((s or "").strip(), "%Y-%m-%d").date()
     except Exception:
+        return None
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# VALIDADORES DE INPUT — funções reutilizáveis para sanitização server-side
+# ═══════════════════════════════════════════════════════════════════════════
+
+_PERFIS_VALIDOS = {"admin", "cmd", "cozinha", "oficialdia", "aluno"}
+_TIPOS_CALENDARIO = {"normal", "fim_semana", "feriado", "exercicio", "outro"}
+_REFEICAO_OPCOES = {"Normal", "Vegetariano", "Dieta", ""}
+_RE_EMAIL = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+_RE_PHONE = re.compile(r"^[\d\s\+\-\(\)]{7,20}$")
+_RE_ALNUM = re.compile(r"^[A-Za-z0-9_]+$")
+_MAX_NOME = 200
+_MAX_TEXT = 500
+_MAX_DATE_RANGE = 366
+
+
+def _val_email(v):
+    """Valida email. Devolve string limpa ou None se vazio, False se inválido."""
+    v = (v or "").strip()[:254]
+    if not v:
+        return None
+    return v if _RE_EMAIL.match(v) else False
+
+
+def _val_phone(v):
+    """Valida telemóvel. Devolve string limpa ou None se vazio, False se inválido."""
+    v = (v or "").strip()[:20]
+    if not v:
+        return None
+    return v if _RE_PHONE.match(v) else False
+
+
+def _val_nii(v):
+    """Valida NII (alfanumérico, 1-20 chars). Devolve string ou None se inválido."""
+    v = (v or "").strip()[:20]
+    return v if v and _RE_ALNUM.match(v) else None
+
+
+def _val_ni(v):
+    """Valida NI (alfanumérico, até 20 chars). Pode ser vazio."""
+    v = (v or "").strip()[:20]
+    if not v:
+        return ""
+    return v if _RE_ALNUM.match(v) else None
+
+
+def _val_nome(v, max_len=_MAX_NOME):
+    """Valida nome (não-vazio, limitado). Devolve string ou None se vazio."""
+    v = (v or "").strip()[:max_len]
+    return v if v else None
+
+
+def _val_ano(v):
+    """Valida ano escolar (0-8). 0 = concluído. Devolve int ou None se inválido."""
+    try:
+        a = int(v)
+        return a if 0 <= a <= 8 else None
+    except (TypeError, ValueError):
+        return None
+
+
+def _val_perfil(v):
+    """Valida perfil contra whitelist. Devolve string ou None se inválido."""
+    v = (v or "").strip().lower()
+    return v if v in _PERFIS_VALIDOS else None
+
+
+def _val_tipo_calendario(v):
+    """Valida tipo de calendário. Fallback para 'normal'."""
+    v = (v or "").strip().lower()
+    return v if v in _TIPOS_CALENDARIO else "normal"
+
+
+def _val_refeicao(v):
+    """Valida opção de refeição. Fallback para string vazia."""
+    v = (v or "").strip()
+    return v if v in _REFEICAO_OPCOES else ""
+
+
+def _val_text(v, max_len=_MAX_TEXT):
+    """Limita texto a max_len caracteres."""
+    return (v or "").strip()[:max_len]
+
+
+def _val_int_id(v):
+    """Valida ID numérico. Devolve int ou None."""
+    try:
+        return int(v)
+    except (TypeError, ValueError):
+        return None
+
+
+def _val_date_range(d1, d2, max_dias=_MAX_DATE_RANGE):
+    """Valida range de datas. Devolve (ok, msg_erro)."""
+    if d2 < d1:
+        return False, "Data final anterior à inicial."
+    if (d2 - d1).days > max_dias:
+        return False, f"Intervalo máximo permitido: {max_dias} dias."
+    return True, ""
+
+
+def _val_cap(v, max_val=9999):
+    """Valida capacidade (inteiro 0-max_val). Devolve int ou None."""
+    try:
+        c = int(v)
+        return c if 0 <= c <= max_val else None
+    except (TypeError, ValueError):
         return None
 
 
@@ -1447,8 +1575,8 @@ def aluno_editar(d):
     if request.method == "POST":
         pa = 1 if request.form.get("pa") in ("1", "on") else 0
         lanche = 1 if request.form.get("lanche") in ("1", "on") else 0
-        alm = request.form.get("almoco") or ""
-        jan = request.form.get("jantar") or ""
+        alm = _val_refeicao(request.form.get("almoco"))
+        jan = _val_refeicao(request.form.get("jantar"))
         sai = 0 if detido else (1 if request.form.get("sai") else 0)
 
         # Processar licença (antes_jantar / apos_jantar / vazio)
@@ -1733,30 +1861,35 @@ def aluno_ausencias():
         if acao == "criar":
             de = request.form.get("de", "")
             ate = request.form.get("ate", "")
-            motivo = request.form.get("motivo", "").strip()
+            motivo = _val_text(request.form.get("motivo", ""))
             ok, err = _registar_ausencia(uid, de, ate, motivo, u["nii"])
             flash(
                 "Ausência registada com sucesso!" if ok else (err or "Erro."),
                 "ok" if ok else "error",
             )
         elif acao == "editar":
-            aid = request.form.get("id", "")
+            aid = _val_int_id(request.form.get("id", ""))
             de = request.form.get("de", "")
             ate = request.form.get("ate", "")
-            motivo = request.form.get("motivo", "").strip()
-            ok, err = _editar_ausencia(aid, uid, de, ate, motivo)
-            flash(
-                "Ausência atualizada!" if ok else (err or "Erro."),
-                "ok" if ok else "error",
-            )
-        elif acao == "remover":
-            aid = request.form.get("id", "")
-            with sr.db() as conn:
-                conn.execute(
-                    "DELETE FROM ausencias WHERE id=? AND utilizador_id=?", (aid, uid)
+            motivo = _val_text(request.form.get("motivo", ""))
+            if aid is None:
+                flash("ID inválido.", "error")
+            else:
+                ok, err = _editar_ausencia(aid, uid, de, ate, motivo)
+                flash(
+                    "Ausência atualizada!" if ok else (err or "Erro."),
+                    "ok" if ok else "error",
                 )
-                conn.commit()
-            flash("Ausência removida.", "ok")
+        elif acao == "remover":
+            aid = _val_int_id(request.form.get("id", ""))
+            if aid is not None:
+                with sr.db() as conn:
+                    conn.execute(
+                        "DELETE FROM ausencias WHERE id=? AND utilizador_id=?",
+                        (aid, uid),
+                    )
+                    conn.commit()
+                flash("Ausência removida.", "ok")
         return redirect(url_for("aluno_ausencias"))
 
     with sr.db() as conn:
@@ -2321,13 +2454,19 @@ def aluno_perfil():
         )
 
     if request.method == "POST":
-        email_n = request.form.get("email", "").strip()
-        telef_n = request.form.get("telemovel", "").strip()
+        email_n = _val_email(request.form.get("email", ""))
+        if email_n is False:
+            flash("Email inválido.", "error")
+            return redirect(url_for("aluno_perfil"))
+        telef_n = _val_phone(request.form.get("telemovel", ""))
+        if telef_n is False:
+            flash("Telemóvel inválido.", "error")
+            return redirect(url_for("aluno_perfil"))
         try:
             with sr.db() as conn:
                 conn.execute(
                     "UPDATE utilizadores SET email=?, telemovel=? WHERE id=?",
-                    (email_n or None, telef_n or None, uid),
+                    (email_n, telef_n, uid),
                 )
                 conn.commit()
             flash("Perfil atualizado com sucesso!", "ok")
@@ -3121,8 +3260,8 @@ def excecoes_dia(d):
             return redirect(url_for("excecoes_dia", d=dt.isoformat()))
         pa = 1 if request.form.get("pa") else 0
         lanche = 1 if request.form.get("lanche") else 0
-        alm = request.form.get("almoco") or ""
-        jan = request.form.get("jantar") or ""
+        alm = _val_refeicao(request.form.get("almoco"))
+        jan = _val_refeicao(request.form.get("jantar"))
         sai = 1 if request.form.get("sai") else 0
         if _refeicao_set(
             db_u["id"], dt, pa, lanche, alm, jan, sai, alterado_por=u["nii"]
@@ -3356,18 +3495,24 @@ def cmd_editar_aluno(nii):
         return redirect(url_for("lista_alunos_ano", ano=ano_cmd, d=d_ret))
 
     if request.method == "POST":
-        nome_n = request.form.get("nome", "").strip()
-        ni_n = request.form.get("ni", "").strip()
-        email_n = request.form.get("email", "").strip()
-        telef_n = request.form.get("telemovel", "").strip()
+        nome_n = _val_nome(request.form.get("nome", ""))
+        ni_n = _val_ni(request.form.get("ni", ""))
+        email_n = _val_email(request.form.get("email", ""))
+        telef_n = _val_phone(request.form.get("telemovel", ""))
         if not nome_n:
             flash("O nome não pode estar vazio.", "error")
+        elif ni_n is None:
+            flash("NI inválido (alfanumérico, máx. 20 caracteres).", "error")
+        elif email_n is False:
+            flash("Email inválido.", "error")
+        elif telef_n is False:
+            flash("Telemóvel inválido.", "error")
         else:
             try:
                 with sr.db() as conn:
                     conn.execute(
                         "UPDATE utilizadores SET Nome_completo=?,NI=?,email=?,telemovel=? WHERE NII=?",
-                        (nome_n, ni_n or None, email_n or None, telef_n or None, nii),
+                        (nome_n, ni_n or None, email_n, telef_n, nii),
                     )
                     conn.commit()
                 flash(f"Dados de {nome_n} actualizados.", "ok")
@@ -3626,16 +3771,20 @@ def ausencias_cmd():
     if request.method == "POST":
         acao = request.form.get("acao", "")
         if acao == "remover":
+            aid = _val_int_id(request.form.get("id"))
+            if aid is None:
+                flash("ID inválido.", "error")
+                return redirect(url_for("ausencias_cmd"))
             # Validar que a ausência pertence ao ano do cmd
             with sr.db() as conn:
                 aus = conn.execute(
                     """SELECT a.id FROM ausencias a
                     JOIN utilizadores u ON u.id=a.utilizador_id
                     WHERE a.id=? AND (u.ano=? OR ?=0)""",
-                    (request.form.get("id"), ano_cmd, perfil == "admin"),
+                    (aid, ano_cmd, perfil == "admin"),
                 ).fetchone()
             if aus:
-                _remover_ausencia(request.form.get("id"))
+                _remover_ausencia(aid)
                 flash("Ausência removida.", "ok")
             else:
                 flash("Não autorizado.", "error")
@@ -3653,7 +3802,7 @@ def ausencias_cmd():
                 db_u["id"],
                 request.form.get("de", ""),
                 request.form.get("ate", ""),
-                request.form.get("motivo", ""),
+                _val_text(request.form.get("motivo", "")),
                 u["nii"],
             )
             flash(
@@ -3768,7 +3917,10 @@ def detencoes_cmd():
         acao = request.form.get("acao", "")
 
         if acao == "remover":
-            did = request.form.get("id", "")
+            did = _val_int_id(request.form.get("id", ""))
+            if did is None:
+                flash("ID inválido.", "error")
+                return redirect(url_for("detencoes_cmd"))
             with sr.db() as conn:
                 ok = conn.execute(
                     """SELECT d.id FROM detencoes d
@@ -3788,7 +3940,7 @@ def detencoes_cmd():
         nii = request.form.get("nii", "").strip()
         de = request.form.get("de", "").strip()
         ate = request.form.get("ate", "").strip()
-        motivo = request.form.get("motivo", "").strip()
+        motivo = _val_text(request.form.get("motivo", ""))
 
         db_u = sr.user_by_nii(nii)
         if not db_u:
@@ -3947,9 +4099,9 @@ def licencas_entradas_saidas():
 
     if request.method == "POST":
         acao = request.form.get("acao", "")
-        lic_id = request.form.get("lic_id", "")
+        lic_id = _val_int_id(request.form.get("lic_id", ""))
 
-        if acao == "saida" and lic_id:
+        if acao == "saida" and lic_id is not None:
             agora = datetime.now().strftime("%H:%M")
             with sr.db() as conn:
                 conn.execute(
@@ -3959,7 +4111,7 @@ def licencas_entradas_saidas():
                 conn.commit()
             flash("Saída registada.", "ok")
 
-        elif acao == "entrada" and lic_id:
+        elif acao == "entrada" and lic_id is not None:
             agora = datetime.now().strftime("%H:%M")
             with sr.db() as conn:
                 conn.execute(
@@ -4212,58 +4364,72 @@ def admin_utilizadores():
                 "ok" if ok else "error",
             )
         elif acao == "editar_user":
-            nii_e = request.form.get("nii", "")
-            nome_e = request.form.get("nome", "").strip()
-            ni_e = request.form.get("ni", "").strip()
-            ano_e = request.form.get("ano", "").strip()
-            perfil_e = request.form.get("perfil", "aluno")
-            email_e = request.form.get("email", "").strip()
-            tel_e = request.form.get("telemovel", "").strip()
-            pw_e = request.form.get("pw", "").strip()
-            try:
-                with sr.db() as conn:
-                    conn.execute(
-                        "UPDATE utilizadores SET Nome_completo=?,NI=?,ano=?,perfil=?,email=?,telemovel=? WHERE NII=?",
-                        (
-                            nome_e,
-                            ni_e,
-                            ano_e,
-                            perfil_e,
-                            email_e or None,
-                            tel_e or None,
-                            nii_e,
-                        ),
-                    )
-                    conn.commit()
-                if pw_e:
+            nii_e = _val_nii(request.form.get("nii", ""))
+            nome_e = _val_nome(request.form.get("nome", ""))
+            ni_e = _val_ni(request.form.get("ni", ""))
+            ano_e = _val_ano(request.form.get("ano", ""))
+            perfil_e = _val_perfil(request.form.get("perfil", "aluno"))
+            email_e = _val_email(request.form.get("email", ""))
+            tel_e = _val_phone(request.form.get("telemovel", ""))
+            pw_e = request.form.get("pw", "").strip()[:256]
+            if not nii_e:
+                flash("NII inválido.", "error")
+            elif not nome_e:
+                flash("Nome inválido ou vazio.", "error")
+            elif ni_e is None:
+                flash("NI inválido.", "error")
+            elif ano_e is None:
+                flash("Ano inválido (0-8).", "error")
+            elif not perfil_e:
+                flash("Perfil inválido.", "error")
+            elif email_e is False:
+                flash("Email inválido.", "error")
+            elif tel_e is False:
+                flash("Telemóvel inválido.", "error")
+            else:
+                try:
                     with sr.db() as conn:
                         conn.execute(
-                            "UPDATE utilizadores SET Palavra_chave=?,must_change_password=1 WHERE NII=?",
-                            (generate_password_hash(pw_e), nii_e),
+                            "UPDATE utilizadores SET Nome_completo=?,NI=?,ano=?,perfil=?,email=?,telemovel=? WHERE NII=?",
+                            (nome_e, ni_e, ano_e, perfil_e, email_e, tel_e, nii_e),
                         )
                         conn.commit()
-                _audit(
-                    current_user().get("nii", "admin"),
-                    "editar_utilizador",
-                    f"NII={nii_e}",
-                )
-                flash("Utilizador atualizado.", "ok")
-            except Exception as ex:
-                flash(f"Erro: {ex}", "error")
-        elif acao == "editar_contactos":
-            nii_e = request.form.get("nii", "")
-            email_e = request.form.get("email", "").strip()
-            tel_e = request.form.get("telemovel", "").strip()
-            try:
-                with sr.db() as conn:
-                    conn.execute(
-                        "UPDATE utilizadores SET email=?, telemovel=? WHERE NII=?",
-                        (email_e or None, tel_e or None, nii_e),
+                    if pw_e:
+                        with sr.db() as conn:
+                            conn.execute(
+                                "UPDATE utilizadores SET Palavra_chave=?,must_change_password=1 WHERE NII=?",
+                                (generate_password_hash(pw_e), nii_e),
+                            )
+                            conn.commit()
+                    _audit(
+                        current_user().get("nii", "admin"),
+                        "editar_utilizador",
+                        f"NII={nii_e}",
                     )
-                    conn.commit()
-                flash("Contactos atualizados.", "ok")
-            except Exception as ex:
-                flash(f"Erro: {ex}", "error")
+                    flash("Utilizador atualizado.", "ok")
+                except Exception as ex:
+                    flash(f"Erro: {ex}", "error")
+        elif acao == "editar_contactos":
+            nii_e = _val_nii(request.form.get("nii", ""))
+            email_e = _val_email(request.form.get("email", ""))
+            tel_e = _val_phone(request.form.get("telemovel", ""))
+            if not nii_e:
+                flash("NII inválido.", "error")
+            elif email_e is False:
+                flash("Email inválido.", "error")
+            elif tel_e is False:
+                flash("Telemóvel inválido.", "error")
+            else:
+                try:
+                    with sr.db() as conn:
+                        conn.execute(
+                            "UPDATE utilizadores SET email=?, telemovel=? WHERE NII=?",
+                            (email_e, tel_e, nii_e),
+                        )
+                        conn.commit()
+                    flash("Contactos atualizados.", "ok")
+                except Exception as ex:
+                    flash(f"Erro: {ex}", "error")
         elif acao == "reset_pw":
             nii = request.form.get("nii", "")
             ok, nova_pw = _reset_pw(nii)
@@ -4741,7 +4907,9 @@ def admin_menus():
                 cap_val = request.form.get(cap_key, "").strip()
                 if cap_val:
                     try:
-                        cap_int = int(cap_val)
+                        cap_int = _val_cap(cap_val)
+                        if cap_int is None:
+                            continue
                         if cap_int < 0:
                             conn.execute(
                                 "DELETE FROM capacidade_refeicao WHERE data=? AND refeicao=?",
@@ -4973,7 +5141,7 @@ def admin_log():
 @role_required("admin")
 def admin_audit():
     """Registo de ações administrativas (logins, criação/edição de utilizadores, etc.)."""
-    limite = min(int(request.args.get("limite", 500)), 5000)
+    limite = min(_val_int_id(request.args.get("limite", "500")) or 500, 5000)
     q_actor = request.args.get("actor", "").strip()
     q_action = request.args.get("action", "").strip()
 
@@ -5067,18 +5235,16 @@ def admin_calendario():
             try:
                 dia_de = request.form.get("dia_de", "").strip()
                 dia_ate = request.form.get("dia_ate", "").strip() or dia_de
-                tipo = request.form.get("tipo", "normal")
-                nota = request.form.get("nota", "") or None
+                tipo = _val_tipo_calendario(request.form.get("tipo", "normal"))
+                nota = _val_text(request.form.get("nota", ""), 200) or None
                 if not dia_de:
                     flash("Data de início obrigatória.", "error")
                 else:
                     d_de = datetime.strptime(dia_de, "%Y-%m-%d").date()
                     d_ate = datetime.strptime(dia_ate, "%Y-%m-%d").date()
-                    if d_de > d_ate:
-                        flash(
-                            "A data de início não pode ser posterior à data de fim.",
-                            "error",
-                        )
+                    range_ok, range_msg = _val_date_range(d_de, d_ate)
+                    if not range_ok:
+                        flash(range_msg, "error")
                     else:
                         count = 0
                         with sr.db() as conn:
@@ -6465,14 +6631,17 @@ def admin_companhias():
 
         # ── Criar turma ──────────────────────────────────────────────────
         if acao == "criar_turma":
-            nome_turma = request.form.get("nome_turma", "").strip()
+            nome_turma = _val_text(request.form.get("nome_turma", ""), 100)
             ano_turma = request.form.get("ano_turma", "").strip()
-            descricao = request.form.get("descricao", "").strip()
+            descricao = _val_text(request.form.get("descricao", ""), 200)
             if not nome_turma or not ano_turma:
                 flash("Nome e ano são obrigatórios.", "error")
             else:
                 try:
-                    ano_int = int(ano_turma)
+                    ano_int = _val_ano(ano_turma)
+                    if ano_int is None:
+                        flash("Ano inválido (0-8).", "error")
+                        return redirect(url_for("admin_companhias"))
                     with sr.db() as conn:
                         conn.execute(
                             "INSERT INTO turmas (nome, ano, descricao) VALUES (?,?,?)",
@@ -6488,7 +6657,10 @@ def admin_companhias():
 
         # ── Eliminar turma ───────────────────────────────────────────────
         elif acao == "eliminar_turma":
-            tid = request.form.get("tid", "")
+            tid = _val_int_id(request.form.get("tid", ""))
+            if tid is None:
+                flash("ID de turma inválido.", "error")
+                return redirect(url_for("admin_companhias"))
             try:
                 with sr.db() as conn:
                     # Desassociar alunos antes de eliminar
@@ -6524,26 +6696,31 @@ def admin_companhias():
 
         # ── Mover aluno de ano ───────────────────────────────────────────
         elif acao == "mover_aluno":
-            nii_m = request.form.get("nii_m", "").strip()
-            novo_ano = request.form.get("novo_ano", "").strip()
-            if nii_m and novo_ano:
+            nii_m = _val_nii(request.form.get("nii_m", ""))
+            novo_ano_v = _val_ano(request.form.get("novo_ano", ""))
+            if not nii_m:
+                flash("NII inválido.", "error")
+            elif novo_ano_v is None:
+                flash("Ano inválido (0-8).", "error")
+            else:
                 try:
                     with sr.db() as conn:
                         conn.execute(
                             "UPDATE utilizadores SET ano=? WHERE NII=? AND perfil='aluno'",
-                            (int(novo_ano), nii_m),
+                            (novo_ano_v, nii_m),
                         )
                         conn.commit()
-                    flash(
-                        f"Aluno {nii_m} movido para {_ano_label(int(novo_ano))}.", "ok"
-                    )
+                    flash(f"Aluno {nii_m} movido para {_ano_label(novo_ano_v)}.", "ok")
                 except Exception as ex:
                     flash(f"Erro: {ex}", "error")
 
         # ── Promover aluno individual ─────────────────────────────────────
         elif acao == "promover_um":
-            uid_p = request.form.get("uid", "")
-            novo_ni = request.form.get("novo_ni", "").strip()
+            uid_p = _val_int_id(request.form.get("uid", ""))
+            novo_ni = _val_ni(request.form.get("novo_ni", ""))
+            if uid_p is None:
+                flash("ID inválido.", "error")
+                return redirect(url_for("admin_companhias"))
             with sr.db() as conn:
                 al = conn.execute(
                     "SELECT ano,NI FROM utilizadores WHERE id=?", (uid_p,)
@@ -6566,7 +6743,10 @@ def admin_companhias():
 
         # ── Promoção global de um ano ─────────────────────────────────────
         elif acao == "promover_todos":
-            ano_origem = int(request.form.get("ano_origem", 0))
+            ano_origem = _val_ano(request.form.get("ano_origem", 0))
+            if ano_origem is None:
+                flash("Ano de origem inválido.", "error")
+                return redirect(url_for("admin_companhias"))
             if ano_origem >= 6:
                 novo_ano_p = 0
             else:
