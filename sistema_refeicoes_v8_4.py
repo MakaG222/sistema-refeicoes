@@ -397,6 +397,7 @@ CREATE TABLE IF NOT EXISTS login_eventos (
   criado_em TEXT NOT NULL DEFAULT (datetime('now','localtime'))
 );
 CREATE INDEX IF NOT EXISTS idx_login_eventos_nii_data ON login_eventos(nii, criado_em);
+CREATE INDEX IF NOT EXISTS idx_login_eventos_ip_data  ON login_eventos(ip, criado_em);
 
 CREATE TABLE IF NOT EXISTS calendario_operacional (
   data TEXT PRIMARY KEY,
@@ -722,6 +723,19 @@ def recent_failures(nii: str, minutes: int = 10) -> int:
                WHERE nii=? AND sucesso=0
                AND criado_em >= datetime('now','localtime',?)""",
             (nii, modifier),
+        ).fetchone()
+        return r["c"] if r else 0
+
+
+def recent_failures_by_ip(ip: str, minutes: int = 15) -> int:
+    """Conta tentativas falhadas recentes por IP (proteção contra ataques distribuídos)."""
+    with db() as conn:
+        modifier = f"-{minutes} minutes"
+        r = conn.execute(
+            """SELECT COUNT(*) c FROM login_eventos
+               WHERE ip=? AND sucesso=0
+               AND criado_em >= datetime('now','localtime',?)""",
+            (ip, modifier),
         ).fetchone()
         return r["c"] if r else 0
 

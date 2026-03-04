@@ -494,7 +494,9 @@ def _ano_label(ano):
 def _get_anos_disponiveis():
     with sr.db() as conn:
         rows = conn.execute(
-            "SELECT DISTINCT ano FROM utilizadores WHERE ano > 0 ORDER BY ano"
+            "SELECT DISTINCT CAST(ano AS INTEGER) AS ano FROM utilizadores"
+            " WHERE ano IS NOT NULL AND ano != '' AND CAST(ano AS INTEGER) > 0"
+            " ORDER BY CAST(ano AS INTEGER)"
         ).fetchall()
     return [r["ano"] for r in rows]
 
@@ -1055,11 +1057,20 @@ def login():
     if request.method == "POST":
         nii = request.form.get("nii", "").strip()[:32]
         pw = request.form.get("pw", request.form.get("password", "")).strip()[:256]
+        # Rate limiting por IP (proteção contra ataques distribuídos)
+        ip = _client_ip()
+        ip_falhas = sr.recent_failures_by_ip(ip, 15)
+        if ip_falhas >= 20:
+            error = "Demasiadas tentativas falhadas deste endereço. Aguarda 15 minutos."
+            app.logger.warning("IP rate-limited: IP=%s falhas=%d", ip, ip_falhas)
+            _audit(nii or "unknown", "ip_rate_limited", f"IP={ip} falhas={ip_falhas}")
         # Autenticação via BD (contas de sistema sincronizadas para a BD em desenvolvimento)
         perfis = {}
         u = None
         db_u = None
-        if False and nii in perfis:
+        if error:
+            pass  # IP bloqueado — não tentar autenticação
+        elif False and nii in perfis:
             error = "Login legado desativado."
         elif (
             not _is_production
@@ -2001,6 +2012,91 @@ def aluno_perfil():
 # ═══════════════════════════════════════════════════════════════════════════
 
 
+def _alertas_painel(d_str: str, perfil: str) -> list:
+    """Gera alertas operacionais para o painel do dia (sem tabela extra)."""
+    alertas: list = []
+    if perfil not in ("oficialdia", "cmd", "admin"):
+        return alertas
+
+    hoje = date.today().isoformat()
+    amanha = (date.today() + timedelta(days=1)).isoformat()
+
+    with sr.db() as conn:
+        # 1. Detenções que expiram hoje
+        det_exp = conn.execute(
+            """SELECT COUNT(*) c FROM detencoes d
+               JOIN utilizadores u ON u.id=d.utilizador_id
+               WHERE d.detido_ate=? AND u.perfil='aluno'""",
+            (hoje,),
+        ).fetchone()["c"]
+        if det_exp:
+            alertas.append(
+                {
+                    "icon": "⛔",
+                    "msg": f"{det_exp} detenção(ões) expira(m) hoje.",
+                    "cat": "warn",
+                }
+            )
+
+        # 2. Licenças sem registo de saída
+        lic_pend = conn.execute(
+            """SELECT COUNT(*) c FROM licencas
+               WHERE data=? AND hora_saida IS NULL""",
+            (hoje,),
+        ).fetchone()["c"]
+        if lic_pend:
+            alertas.append(
+                {
+                    "icon": "🚪",
+                    "msg": f"{lic_pend} licença(s) sem registo de saída.",
+                    "cat": "warn",
+                }
+            )
+
+        # 3. Alunos ativos sem refeições para amanhã (dias úteis)
+        amanha_dt = date.today() + timedelta(days=1)
+        if amanha_dt.weekday() < 5:
+            sem_ref = conn.execute(
+                """SELECT COUNT(*) c FROM utilizadores u
+                   WHERE u.perfil='aluno' AND u.is_active=1
+                   AND NOT EXISTS (
+                       SELECT 1 FROM refeicoes r
+                       WHERE r.utilizador_id=u.id AND r.data=?
+                   )
+                   AND NOT EXISTS (
+                       SELECT 1 FROM ausencias a
+                       WHERE a.utilizador_id=u.id
+                       AND a.ausente_de<=? AND a.ausente_ate>=?
+                   )""",
+                (amanha, amanha, amanha),
+            ).fetchone()["c"]
+            if sem_ref:
+                alertas.append(
+                    {
+                        "icon": "📋",
+                        "msg": f"{sem_ref} aluno(s) sem refeições marcadas para amanhã.",
+                        "cat": "info",
+                    }
+                )
+
+        # 4. Ausências registadas hoje
+        novas_aus = conn.execute(
+            """SELECT COUNT(*) c FROM ausencias
+               WHERE date(criado_em)=?""",
+            (hoje,),
+        ).fetchone()["c"]
+        if novas_aus:
+            alertas.append(
+                {
+                    "icon": "🚫",
+                    "msg": f"{novas_aus} ausência(s) registada(s) hoje.",
+                    "cat": "info",
+                }
+            )
+
+    return alertas
+
+
 @app.route("/painel", methods=["GET", "POST"])
 @role_required("cozinha", "oficialdia", "cmd", "admin")
 def painel_dia():
@@ -2037,6 +2133,52 @@ def painel_dia():
       <div class="stat-box"><div class="stat-num">{t["jan_veg"]}</div><div class="stat-lbl">Jantar Vegetariano</div></div>
       <div class="stat-box"><div class="stat-num">{t["jan_dieta"]}</div><div class="stat-lbl">Jantar Dieta</div></div>
     </div>"""
+
+    # ── Alertas operacionais ──────────────────────────────────────────────
+    alertas = _alertas_painel(d_str, perfil)
+    alertas_html = ""
+    if alertas:
+        items = "".join(
+            f'<div class="alert alert-{a["cat"]}" style="margin-bottom:.4rem">'
+            f"{a['icon']} {esc(a['msg'])}</div>"
+            for a in alertas
+        )
+        alertas_html = f'<div style="margin-bottom:1rem">{items}</div>'
+
+    # ── Previsão de amanhã (cozinha / oficialdia / admin) ─────────────────
+    previsao_html = ""
+    if perfil in ("cozinha", "oficialdia", "admin"):
+        amanha = dt + timedelta(days=1)
+        t_am = sr.get_totais_dia(amanha.isoformat(), ano_int)
+
+        def _delta(h, a):
+            d = a - h
+            if d > 0:
+                return f'<span style="color:#1e8449;font-size:.72rem"> ↑{d}</span>'
+            if d < 0:
+                return f'<span style="color:#c0392b;font-size:.72rem"> ↓{abs(d)}</span>'
+            return '<span style="color:#6c757d;font-size:.72rem"> =</span>'
+
+        alm_h = t["alm_norm"] + t["alm_veg"] + t["alm_dieta"]
+        jan_h = t["jan_norm"] + t["jan_veg"] + t["jan_dieta"]
+        alm_a = t_am["alm_norm"] + t_am["alm_veg"] + t_am["alm_dieta"]
+        jan_a = t_am["jan_norm"] + t_am["jan_veg"] + t_am["jan_dieta"]
+
+        previsao_html = f"""
+      <div class="card" style="border-top:3px solid #2e86c1">
+        <div class="card-title">🔮 Previsão Amanhã — {NOMES_DIAS[amanha.weekday()]} {amanha.strftime("%d/%m")}</div>
+        <div class="grid grid-4">
+          <div class="stat-box"><div class="stat-num">{t_am["pa"]}{_delta(t["pa"], t_am["pa"])}</div><div class="stat-lbl">☕ PA</div></div>
+          <div class="stat-box"><div class="stat-num">{t_am["lan"]}{_delta(t["lan"], t_am["lan"])}</div><div class="stat-lbl">🥐 Lanche</div></div>
+          <div class="stat-box"><div class="stat-num">{alm_a}{_delta(alm_h, alm_a)}</div><div class="stat-lbl">🍽️ Almoços</div></div>
+          <div class="stat-box"><div class="stat-num">{jan_a}{_delta(jan_h, jan_a)}</div><div class="stat-lbl">🌙 Jantares</div></div>
+        </div>
+        <div class="grid grid-3" style="margin-top:.5rem">
+          <div class="stat-box"><div class="stat-num">{t_am["alm_norm"]}</div><div class="stat-lbl">Alm Normal</div></div>
+          <div class="stat-box"><div class="stat-num">{t_am["alm_veg"]}</div><div class="stat-lbl">Alm Veg</div></div>
+          <div class="stat-box"><div class="stat-num">{t_am["alm_dieta"]}</div><div class="stat-lbl">Alm Dieta</div></div>
+        </div>
+      </div>"""
 
     prev_d = (dt - timedelta(days=1)).isoformat()
     next_d = (dt + timedelta(days=1)).isoformat()
@@ -2189,6 +2331,7 @@ def painel_dia():
         {backup_btn}
       </div>
       {nav_data}
+      {alertas_html}
       <div class="card">
         <div class="card-title">Ocupação geral</div>
         <div class="grid grid-4">
@@ -2200,6 +2343,7 @@ def painel_dia():
         {detail}
         {'<div style="margin-top:.65rem;font-size:.81rem;color:var(--muted)">🚪 Saem após jantar: <strong>' + str(t["jan_sai"]) + "</strong></div>" if perfil != "cozinha" else ""}
       </div>
+      {previsao_html}
       {detidos_html}
       {licencas_html}
       <div class="card">
@@ -5029,20 +5173,78 @@ def dashboard_semanal():
         </tr>"""
 
     sai_th = "" if perfil == "cozinha" else '<th class="center">Sai</th>'
-    totais_semana = {
-        k: sum(d["t"][k] for d in dias)
-        for k in [
-            "pa",
-            "lan",
-            "alm_norm",
-            "alm_veg",
-            "alm_dieta",
-            "jan_norm",
-            "jan_veg",
-            "jan_dieta",
-            "jan_sai",
-        ]
-    }
+    _keys = [
+        "pa",
+        "lan",
+        "alm_norm",
+        "alm_veg",
+        "alm_dieta",
+        "jan_norm",
+        "jan_veg",
+        "jan_dieta",
+        "jan_sai",
+    ]
+    totais_semana = {k: sum(d["t"][k] for d in dias) for k in _keys}
+
+    # Totais da semana anterior para comparação
+    prev_d0 = d0 - timedelta(days=7)
+    totais_prev = {k: 0 for k in _keys}
+    for i in range(7):
+        t_p = sr.get_totais_dia((prev_d0 + timedelta(days=i)).isoformat())
+        for k in _keys:
+            totais_prev[k] += t_p[k]
+
+    def _wk_delta(curr, prev):
+        d = curr - prev
+        if d > 0:
+            return f'<span style="color:#1e8449">↑{d}</span>'
+        if d < 0:
+            return f'<span style="color:#c0392b">↓{abs(d)}</span>'
+        return '<span style="color:#6c757d">=</span>'
+
+    _sai_total = (
+        ""
+        if perfil == "cozinha"
+        else f'<td class="center"><strong>{totais_semana["jan_sai"]}</strong></td>'
+    )
+    _sai_prev = (
+        ""
+        if perfil == "cozinha"
+        else f'<td class="center">{totais_prev["jan_sai"]}</td>'
+    )
+    _sai_var = (
+        ""
+        if perfil == "cozinha"
+        else f'<td class="center">{_wk_delta(totais_semana["jan_sai"], totais_prev["jan_sai"])}</td>'
+    )
+    comparison_rows = f"""
+        <tr style="background:#f0f4f8;font-weight:700;border-top:2px solid #0a2d4e">
+          <td>Total semana</td>
+          <td class="center">{totais_semana["pa"]}</td><td class="center">{totais_semana["lan"]}</td>
+          <td class="center">{totais_semana["alm_norm"]}</td><td class="center">{totais_semana["alm_veg"]}</td><td class="center">{totais_semana["alm_dieta"]}</td>
+          <td class="center">{totais_semana["jan_norm"]}</td><td class="center">{totais_semana["jan_veg"]}</td><td class="center">{totais_semana["jan_dieta"]}</td>
+          {_sai_total}
+        </tr>
+        <tr style="background:#fef9e7;font-size:.82rem">
+          <td>Semana anterior</td>
+          <td class="center">{totais_prev["pa"]}</td><td class="center">{totais_prev["lan"]}</td>
+          <td class="center">{totais_prev["alm_norm"]}</td><td class="center">{totais_prev["alm_veg"]}</td><td class="center">{totais_prev["alm_dieta"]}</td>
+          <td class="center">{totais_prev["jan_norm"]}</td><td class="center">{totais_prev["jan_veg"]}</td><td class="center">{totais_prev["jan_dieta"]}</td>
+          {_sai_prev}
+        </tr>
+        <tr style="background:#fff;font-size:.82rem">
+          <td>Variação</td>
+          <td class="center">{_wk_delta(totais_semana["pa"], totais_prev["pa"])}</td>
+          <td class="center">{_wk_delta(totais_semana["lan"], totais_prev["lan"])}</td>
+          <td class="center">{_wk_delta(totais_semana["alm_norm"], totais_prev["alm_norm"])}</td>
+          <td class="center">{_wk_delta(totais_semana["alm_veg"], totais_prev["alm_veg"])}</td>
+          <td class="center">{_wk_delta(totais_semana["alm_dieta"], totais_prev["alm_dieta"])}</td>
+          <td class="center">{_wk_delta(totais_semana["jan_norm"], totais_prev["jan_norm"])}</td>
+          <td class="center">{_wk_delta(totais_semana["jan_veg"], totais_prev["jan_veg"])}</td>
+          <td class="center">{_wk_delta(totais_semana["jan_dieta"], totais_prev["jan_dieta"])}</td>
+          {_sai_var}
+        </tr>"""
+
     back_url = url_for("admin_home") if perfil == "admin" else url_for("painel_dia")
 
     legenda_alm = "".join(
@@ -5104,7 +5306,7 @@ def dashboard_semanal():
         <div class="table-wrap">
           <table>
             <thead><tr><th>Dia</th><th>PA</th><th>Lan</th><th>Alm N</th><th>Alm V</th><th>Alm D</th><th>Jan N</th><th>Jan V</th><th>Jan D</th>{sai_th}</tr></thead>
-            <tbody>{table_rows}</tbody>
+            <tbody>{table_rows}{comparison_rows}</tbody>
           </table>
         </div>
         <div class="gap-btn" style="margin-top:.8rem">
