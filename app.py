@@ -29,6 +29,7 @@ from flask import (
     flash,
     g,
     abort,
+    send_file,
 )
 
 sys.path.insert(0, os.path.dirname(__file__))
@@ -196,6 +197,10 @@ def _init_app_once() -> None:
         return
     sr.ensure_schema()
     _ensure_extra_schema()
+    try:
+        sr.ensure_daily_backup()
+    except Exception as exc:
+        app.logger.warning("Backup no bootstrap falhou: %s", exc)
     _APP_BOOTSTRAPPED = True
 
 
@@ -2103,6 +2108,8 @@ def painel_dia():
     backup_btn = ""
     if perfil in ("oficialdia", "admin"):
         backup_btn = f'<form method="post" style="display:inline">{csrf_input()}<input type="hidden" name="acao" value="backup"><button class="btn btn-ghost">💾 Backup BD</button></form>'
+    if perfil == "admin":
+        backup_btn += f' <a class="btn btn-ghost" href="{url_for("admin_backup_download")}">📥 Download BD</a>'
 
     # Painel de detidos (oficialdia / admin)
     detidos_html = ""
@@ -3541,6 +3548,12 @@ def admin_home():
             "Pesquisa rápida por NI",
         ),
         (url_for("admin_importar_csv"), "📥", "Importar CSV", "Criar alunos em massa"),
+        (
+            url_for("admin_backup_download"),
+            "💾",
+            "Download BD",
+            "Descarregar base de dados",
+        ),
     ]
 
     anos = _get_anos_disponiveis()
@@ -6231,6 +6244,27 @@ def health():
             "db": "error",
             "ts": datetime.now().isoformat(),
         }, 503
+
+
+@app.route("/admin/backup-download")
+@login_required
+@role_required("admin")
+def admin_backup_download():
+    """Permite ao admin descarregar o ficheiro da base de dados."""
+    from pathlib import Path
+
+    db_path = Path(sr.BASE_DADOS)
+    if not db_path.exists():
+        flash("Ficheiro da base de dados não encontrado.", "error")
+        return redirect(url_for("admin_home"))
+    ts = datetime.now().strftime("%Y%m%d_%H%M")
+    nome = f"{db_path.stem}_{ts}.db"
+    return send_file(
+        db_path,
+        as_attachment=True,
+        download_name=nome,
+        mimetype="application/x-sqlite3",
+    )
 
 
 @app.route("/api/backup-cron", methods=["POST"])
