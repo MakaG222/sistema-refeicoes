@@ -553,7 +553,13 @@ CREATE TABLE IF NOT EXISTS turmas (
 
 CREATE INDEX IF NOT EXISTS idx_refeicoes_data ON refeicoes(data);
 CREATE INDEX IF NOT EXISTS idx_refeicoes_user ON refeicoes(utilizador_id);
+CREATE INDEX IF NOT EXISTS idx_refeicoes_user_data ON refeicoes(utilizador_id, data);
 CREATE INDEX IF NOT EXISTS idx_utilizadores_ano ON utilizadores(ano);
+CREATE INDEX IF NOT EXISTS idx_utilizadores_perfil ON utilizadores(perfil);
+CREATE INDEX IF NOT EXISTS idx_ausencias_uid_datas ON ausencias(utilizador_id, ausente_de, ausente_ate);
+CREATE INDEX IF NOT EXISTS idx_detencoes_uid_datas ON detencoes(utilizador_id, detido_de, detido_ate);
+CREATE INDEX IF NOT EXISTS idx_licencas_uid_data ON licencas(utilizador_id, data);
+CREATE INDEX IF NOT EXISTS idx_cal_op_data ON calendario_operacional(data);
 
 CREATE VIRTUAL TABLE IF NOT EXISTS utilizadores_fts USING fts5(
   Nome_completo,
@@ -1017,6 +1023,67 @@ def get_totais_dia(di: str, ano: Optional[int] = None) -> dict:
         "jan_dieta": jan["dieta"] or 0,
         "jan_sai": jan["sai"] or 0,
     }
+
+
+def get_totais_periodo(d_de: str, d_ate: str, ano: Optional[int] = None) -> dict:
+    """Totais agrupados por dia para um intervalo. Devolve {iso_date: dict_totais}.
+    Uma única query para todo o intervalo em vez de N chamadas a get_totais_dia.
+    """
+    _active = (
+        "JOIN utilizadores u ON u.id=r.utilizador_id"
+        " AND u.is_active=1"
+        " AND NOT EXISTS ("
+        "SELECT 1 FROM ausencias a"
+        " WHERE a.utilizador_id=u.id AND a.ausente_de<=r.data AND a.ausente_ate>=r.data)"
+    )
+    _ano_cond = " AND u.ano=?" if ano is not None else ""
+    params = (d_de, d_ate, ano) if ano is not None else (d_de, d_ate)
+
+    with db() as conn:
+        rows = conn.execute(
+            f"""
+            SELECT r.data,
+              SUM(CASE WHEN r.pequeno_almoco=1 THEN 1 ELSE 0 END) pa,
+              SUM(CASE WHEN r.lanche=1 THEN 1 ELSE 0 END) lan,
+              SUM(CASE WHEN r.almoco='Normal'      THEN 1 ELSE 0 END) alm_norm,
+              SUM(CASE WHEN r.almoco='Vegetariano' THEN 1 ELSE 0 END) alm_veg,
+              SUM(CASE WHEN r.almoco='Dieta'       THEN 1 ELSE 0 END) alm_dieta,
+              SUM(CASE WHEN r.jantar_tipo='Normal'      THEN 1 ELSE 0 END) jan_norm,
+              SUM(CASE WHEN r.jantar_tipo='Vegetariano' THEN 1 ELSE 0 END) jan_veg,
+              SUM(CASE WHEN r.jantar_tipo='Dieta'       THEN 1 ELSE 0 END) jan_dieta,
+              SUM(COALESCE(r.jantar_sai_unidade, 0)) jan_sai
+            FROM refeicoes r {_active}
+            WHERE r.data>=? AND r.data<=? {_ano_cond}
+            GROUP BY r.data
+        """,
+            params,
+        ).fetchall()
+
+    _empty = {
+        "pa": 0,
+        "lan": 0,
+        "alm_norm": 0,
+        "alm_veg": 0,
+        "alm_dieta": 0,
+        "jan_norm": 0,
+        "jan_veg": 0,
+        "jan_dieta": 0,
+        "jan_sai": 0,
+    }
+    result = {}
+    for r in rows:
+        result[r["data"]] = {
+            "pa": r["pa"] or 0,
+            "lan": r["lan"] or 0,
+            "alm_norm": r["alm_norm"] or 0,
+            "alm_veg": r["alm_veg"] or 0,
+            "alm_dieta": r["alm_dieta"] or 0,
+            "jan_norm": r["jan_norm"] or 0,
+            "jan_veg": r["jan_veg"] or 0,
+            "jan_dieta": r["jan_dieta"] or 0,
+            "jan_sai": r["jan_sai"] or 0,
+        }
+    return result, _empty
 
 
 def get_ocupacao_capacidade(d: date) -> dict:
