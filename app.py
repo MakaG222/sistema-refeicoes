@@ -1521,6 +1521,25 @@ def aluno_editar(d):
         {lic_warn}
       </div>"""
 
+    # Ementa do dia
+    menu = sr.get_menu_do_dia(dt)
+    ementa_html = ""
+    if menu:
+
+        def _mv(k):
+            return esc(menu.get(k) or "—")
+
+        ementa_html = f"""
+      <div class="card" style="border-top:3px solid #f39c12">
+        <div class="card-title">📋 Ementa — {dt.strftime("%d/%m/%Y")}</div>
+        <div class="grid grid-4" style="font-size:.85rem">
+          <div><strong>Peq. Almoço</strong><br><span class="text-muted">{_mv("pequeno_almoco")}</span></div>
+          <div><strong>Lanche</strong><br><span class="text-muted">{_mv("lanche")}</span></div>
+          <div><strong>Almoço</strong><br>N: {_mv("almoco_normal")}<br>V: {_mv("almoco_veg")}<br>D: {_mv("almoco_dieta")}</div>
+          <div><strong>Jantar</strong><br>N: {_mv("jantar_normal")}<br>V: {_mv("jantar_veg")}<br>D: {_mv("jantar_dieta")}</div>
+        </div>
+      </div>"""
+
     content = f"""
     <style>
       .sw-group{{display:flex;flex-direction:column;gap:.45rem}}
@@ -1556,7 +1575,7 @@ def aluno_editar(d):
         {_back_btn(url_for("aluno_home"))}
         <div class="page-title">🍽️ {NOMES_DIAS[dt.weekday()]}, {dt.strftime("%d/%m/%Y")}</div>
       </div>
-      {wknd_note}{detido_note}
+      {wknd_note}{detido_note}{ementa_html}
       <div class="card">
         <div class="card-title">📊 Ocupação</div>
         {occ_row("Pequeno Almoço")}{occ_row("Lanche")}{occ_row("Almoço")}{occ_row("Jantar")}
@@ -1842,6 +1861,14 @@ def aluno_historico():
         for r in rows
     )
 
+    export_btns = ""
+    if rows:
+        export_btns = f"""
+      <div class="gap-btn" style="margin-top:.8rem">
+        <a class="btn btn-ghost btn-sm" href="{url_for("exportar_historico_aluno", fmt="csv")}">📄 Exportar CSV</a>
+        <a class="btn btn-ghost btn-sm" href="{url_for("exportar_historico_aluno", fmt="xlsx")}">📊 Exportar Excel</a>
+      </div>"""
+
     content = f"""
     <div class="container">
       <div class="page-header">{_back_btn(url_for("aluno_home"))}<div class="page-title">🕘 Histórico — 30 dias</div></div>
@@ -1852,9 +1879,333 @@ def aluno_historico():
             <tbody>{rows_html or '<tr><td colspan="6" class="text-muted center" style="padding:1.5rem">Sem registos.</td></tr>'}</tbody>
           </table>
         </div>
+        {export_btns}
       </div>
     </div>"""
     return render(content)
+
+
+@app.route("/aluno/exportar-historico")
+@login_required
+def exportar_historico_aluno():
+    import io
+    import csv as _csv
+
+    u = current_user()
+    uid = sr.user_id_by_nii(u["nii"])
+    fmt = (request.args.get("fmt", "csv") or "csv").strip().lower()
+    if fmt not in {"csv", "xlsx"}:
+        abort(400)
+
+    hoje = date.today()
+    rows = []
+    if uid:
+        with sr.db() as conn:
+            rows = conn.execute(
+                """SELECT data,pequeno_almoco,lanche,almoco,jantar_tipo,jantar_sai_unidade
+              FROM refeicoes WHERE utilizador_id=? AND data>=? ORDER BY data DESC""",
+                (uid, (hoje - timedelta(days=30)).isoformat()),
+            ).fetchall()
+
+    headers = ["Data", "PA", "Lanche", "Almoço", "Jantar", "Sai Unidade"]
+
+    def make_row(r):
+        return [
+            r["data"],
+            "Sim" if r["pequeno_almoco"] else "Não",
+            "Sim" if r["lanche"] else "Não",
+            r["almoco"] or "—",
+            r["jantar_tipo"] or "—",
+            "Sim" if r["jantar_sai_unidade"] else "Não",
+        ]
+
+    nome_ficheiro = f"historico_{u['nii']}_{hoje.isoformat()}"
+
+    if fmt == "xlsx":
+        try:
+            import openpyxl
+            from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+
+            wb = openpyxl.Workbook()
+            ws = wb.active
+            ws.title = f"Histórico {u['nome'][:20]}"
+
+            header_fill = PatternFill("solid", fgColor="0A2D4E")
+            header_font = Font(color="FFFFFF", bold=True, size=11)
+            thin = Side(style="thin")
+            border = Border(left=thin, right=thin, top=thin, bottom=thin)
+
+            for col, h in enumerate(headers, 1):
+                c = ws.cell(row=1, column=col, value=h)
+                c.fill = header_fill
+                c.font = header_font
+                c.alignment = Alignment(horizontal="center")
+                c.border = border
+
+            alt_fill = PatternFill("solid", fgColor="EBF5FB")
+            for i, r in enumerate(rows, 2):
+                row_data = make_row(r)
+                fill = alt_fill if i % 2 == 0 else PatternFill()
+                for col, val in enumerate(row_data, 1):
+                    c = ws.cell(row=i, column=col, value=val)
+                    c.fill = fill
+                    c.border = border
+                    c.alignment = Alignment(horizontal="center")
+
+            for col in ws.columns:
+                max_len = max(len(str(c.value or "")) for c in col) + 4
+                ws.column_dimensions[col[0].column_letter].width = min(max_len, 22)
+
+            buf = io.BytesIO()
+            wb.save(buf)
+            buf.seek(0)
+            return Response(
+                buf.read(),
+                headers={
+                    "Content-Disposition": f"attachment; filename={nome_ficheiro}.xlsx",
+                    "Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                },
+            )
+        except ImportError:
+            fmt = "csv"
+
+    buf = io.StringIO()
+    writer = _csv.writer(buf, delimiter=";")
+    writer.writerow(headers)
+    for r in rows:
+        writer.writerow(make_row(r))
+    csv_bytes = ("\ufeff" + buf.getvalue()).encode("utf-8")
+    return Response(
+        csv_bytes,
+        headers={
+            "Content-Disposition": f"attachment; filename={nome_ficheiro}.csv",
+            "Content-Type": "text/csv; charset=utf-8-sig",
+        },
+    )
+
+
+@app.route("/exportar/mensal")
+@role_required("cozinha", "oficialdia", "cmd", "admin")
+def exportar_mensal():
+    import io
+    import csv as _csv
+
+    mes = request.args.get("mes", "")
+    fmt = (request.args.get("fmt", "csv") or "csv").strip().lower()
+    if fmt not in {"csv", "xlsx"}:
+        abort(400)
+
+    # Default: mês atual
+    hoje = date.today()
+    if mes:
+        try:
+            ano_m, mes_m = mes.split("-")
+            d0 = date(int(ano_m), int(mes_m), 1)
+        except (ValueError, IndexError):
+            abort(400)
+    else:
+        d0 = date(hoje.year, hoje.month, 1)
+
+    # Último dia do mês
+    if d0.month == 12:
+        d1 = date(d0.year + 1, 1, 1) - timedelta(days=1)
+    else:
+        d1 = date(d0.year, d0.month + 1, 1) - timedelta(days=1)
+
+    MESES_PT = {
+        1: "Janeiro",
+        2: "Fevereiro",
+        3: "Março",
+        4: "Abril",
+        5: "Maio",
+        6: "Junho",
+        7: "Julho",
+        8: "Agosto",
+        9: "Setembro",
+        10: "Outubro",
+        11: "Novembro",
+        12: "Dezembro",
+    }
+    nome_mes = MESES_PT.get(d0.month, str(d0.month))
+
+    dias_data = []
+    totais = {
+        k: 0
+        for k in [
+            "pa",
+            "lan",
+            "alm_norm",
+            "alm_veg",
+            "alm_dieta",
+            "jan_norm",
+            "jan_veg",
+            "jan_dieta",
+            "jan_sai",
+        ]
+    }
+    di = d0
+    while di <= d1:
+        t = sr.get_totais_dia(di.isoformat())
+        tipo = sr.dia_operacional(di)
+        alm = t["alm_norm"] + t["alm_veg"] + t["alm_dieta"]
+        jan = t["jan_norm"] + t["jan_veg"] + t["jan_dieta"]
+        dias_data.append((di, tipo, t, alm, jan))
+        for k in totais:
+            totais[k] += t[k]
+        di += timedelta(days=1)
+
+    HEADERS = [
+        "Data",
+        "Dia da Semana",
+        "Tipo Dia",
+        "PA",
+        "Lanche",
+        "Alm. Normal",
+        "Alm. Veg.",
+        "Alm. Dieta",
+        "Total Almoços",
+        "Jan. Normal",
+        "Jan. Veg.",
+        "Jan. Dieta",
+        "Total Jantares",
+        "Sai Unidade",
+    ]
+
+    def make_row(di, tipo, t, alm, jan):
+        return [
+            di.isoformat(),
+            NOMES_DIAS[di.weekday()],
+            tipo,
+            t["pa"],
+            t["lan"],
+            t["alm_norm"],
+            t["alm_veg"],
+            t["alm_dieta"],
+            alm,
+            t["jan_norm"],
+            t["jan_veg"],
+            t["jan_dieta"],
+            jan,
+            t["jan_sai"],
+        ]
+
+    nome_ficheiro = f"relatorio_mensal_{d0.strftime('%Y-%m')}"
+
+    if fmt == "xlsx":
+        try:
+            import openpyxl
+            from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+
+            wb = openpyxl.Workbook()
+            ws = wb.active
+            ws.title = f"{nome_mes} {d0.year}"
+
+            header_fill = PatternFill("solid", fgColor="0A2D4E")
+            header_font = Font(color="FFFFFF", bold=True)
+            thin = Side(style="thin")
+            border = Border(left=thin, right=thin, top=thin, bottom=thin)
+
+            for col, h in enumerate(HEADERS, 1):
+                c = ws.cell(row=1, column=col, value=h)
+                c.fill = header_fill
+                c.font = header_font
+                c.alignment = Alignment(horizontal="center")
+                c.border = border
+
+            tipo_fills = {
+                "feriado": PatternFill("solid", fgColor="FFD6D6"),
+                "exercicio": PatternFill("solid", fgColor="FFFACD"),
+                "fim_semana": PatternFill("solid", fgColor="DDEEFF"),
+            }
+
+            for i, (di, tipo, t, alm, jan) in enumerate(dias_data, 2):
+                row_data = make_row(di, tipo, t, alm, jan)
+                fill = tipo_fills.get(tipo, PatternFill())
+                for col, val in enumerate(row_data, 1):
+                    c = ws.cell(row=i, column=col, value=val)
+                    c.fill = fill
+                    c.border = border
+                    c.alignment = Alignment(horizontal="center")
+
+            # Total row
+            total_row_idx = len(dias_data) + 2
+            total_alm = totais["alm_norm"] + totais["alm_veg"] + totais["alm_dieta"]
+            total_jan = totais["jan_norm"] + totais["jan_veg"] + totais["jan_dieta"]
+            total_data = [
+                "TOTAL",
+                "",
+                "",
+                totais["pa"],
+                totais["lan"],
+                totais["alm_norm"],
+                totais["alm_veg"],
+                totais["alm_dieta"],
+                total_alm,
+                totais["jan_norm"],
+                totais["jan_veg"],
+                totais["jan_dieta"],
+                total_jan,
+                totais["jan_sai"],
+            ]
+            total_fill = PatternFill("solid", fgColor="D5F5E3")
+            total_font = Font(bold=True)
+            for col, val in enumerate(total_data, 1):
+                c = ws.cell(row=total_row_idx, column=col, value=val)
+                c.fill = total_fill
+                c.font = total_font
+                c.border = border
+                c.alignment = Alignment(horizontal="center")
+
+            for col in ws.columns:
+                max_len = max(len(str(c.value or "")) for c in col) + 4
+                ws.column_dimensions[col[0].column_letter].width = min(max_len, 22)
+
+            buf = io.BytesIO()
+            wb.save(buf)
+            buf.seek(0)
+            return Response(
+                buf.read(),
+                headers={
+                    "Content-Disposition": f"attachment; filename={nome_ficheiro}.xlsx",
+                    "Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                },
+            )
+        except ImportError:
+            fmt = "csv"
+
+    buf = io.StringIO()
+    writer = _csv.writer(buf, delimiter=";")
+    writer.writerow(HEADERS)
+    for di, tipo, t, alm, jan in dias_data:
+        writer.writerow(make_row(di, tipo, t, alm, jan))
+    total_alm = totais["alm_norm"] + totais["alm_veg"] + totais["alm_dieta"]
+    total_jan = totais["jan_norm"] + totais["jan_veg"] + totais["jan_dieta"]
+    writer.writerow(
+        [
+            "TOTAL",
+            "",
+            "",
+            totais["pa"],
+            totais["lan"],
+            totais["alm_norm"],
+            totais["alm_veg"],
+            totais["alm_dieta"],
+            total_alm,
+            totais["jan_norm"],
+            totais["jan_veg"],
+            totais["jan_dieta"],
+            total_jan,
+            totais["jan_sai"],
+        ]
+    )
+    csv_bytes = ("\ufeff" + buf.getvalue()).encode("utf-8")
+    return Response(
+        csv_bytes,
+        headers={
+            "Content-Disposition": f"attachment; filename={nome_ficheiro}.csv",
+            "Content-Type": "text/csv; charset=utf-8-sig",
+        },
+    )
 
 
 @app.route("/aluno/password", methods=["GET", "POST"])
@@ -3023,9 +3374,66 @@ def cmd_editar_aluno(nii):
             <a class="btn btn-ghost" href="{back_url}">Cancelar</a>
           </div>
         </form>
+        <hr style="margin:1rem 0">
+        <form method="post" action="{url_for("cmd_reset_password", nii=nii)}"
+              onsubmit="return confirm('Tens a certeza que queres resetar a password de {esc(aluno.get("Nome_completo", ""))}?')">
+          {csrf_input()}
+          <input type="hidden" name="ano" value="{ano_ret}">
+          <input type="hidden" name="d" value="{d_ret}">
+          <button class="btn btn-danger btn-sm">🔑 Resetar password</button>
+          <span class="text-muted small" style="margin-left:.5rem">Gera uma password temporária (o aluno terá de mudar no próximo login)</span>
+        </form>
       </div>
     </div>"""
     return render(content)
+
+
+@app.route("/cmd/reset-password/<nii>", methods=["POST"])
+@role_required("cmd", "oficialdia", "admin")
+def cmd_reset_password(nii):
+    u = current_user()
+    perfil = u.get("perfil")
+    ano_cmd = int(u.get("ano", 0)) if u.get("ano") else 0
+    ano_ret = request.form.get("ano", str(ano_cmd) if ano_cmd else "1")
+    d_ret = request.form.get("d", date.today().isoformat())
+
+    with sr.db() as conn:
+        aluno = conn.execute(
+            "SELECT NII, Nome_completo, ano, perfil FROM utilizadores WHERE NII=?",
+            (nii,),
+        ).fetchone()
+
+    if not aluno:
+        flash("Aluno não encontrado.", "error")
+        return redirect(url_for("lista_alunos_ano", ano=ano_cmd or 1, d=d_ret))
+
+    aluno = dict(aluno)
+
+    # Só pode resetar alunos (não admins/cmd/cozinha/oficialdia)
+    if aluno.get("perfil") != "aluno":
+        flash("Só é possível resetar passwords de alunos.", "error")
+        return redirect(url_for("lista_alunos_ano", ano=ano_ret, d=d_ret))
+
+    # CMD só pode resetar alunos do seu ano
+    if perfil == "cmd" and int(aluno.get("ano", 0)) != ano_cmd:
+        flash("Só podes resetar passwords de alunos do teu ano.", "error")
+        return redirect(url_for("lista_alunos_ano", ano=ano_cmd, d=d_ret))
+
+    ok, result = _reset_pw(nii)
+    if ok:
+        _audit(
+            u["nii"],
+            "cmd_reset_password",
+            f"NII={nii} por {u['nome']} ({perfil})",
+        )
+        flash(
+            f"Password de {aluno['Nome_completo']} resetada. Temporária: {result}",
+            "ok",
+        )
+    else:
+        flash(f"Erro: {result}", "error")
+
+    return redirect(url_for("cmd_editar_aluno", nii=nii, ano=ano_ret, d=d_ret))
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -5314,6 +5722,13 @@ def dashboard_semanal():
           <a class="btn btn-primary" href="{url_for("exportar_relatorio", d0=d0_str, fmt="xlsx")}">⬇ Excel</a>
         </div>
       </div>
+      <div class="card">
+        <div class="card-title">📅 Relatório Mensal</div>
+        <div class="gap-btn">
+          <a class="btn btn-gold" href="{url_for("exportar_mensal", mes=d0.strftime("%Y-%m"), fmt="xlsx")}">📊 Excel mês {d0.strftime("%m/%Y")}</a>
+          <a class="btn btn-ghost" href="{url_for("exportar_mensal", mes=d0.strftime("%Y-%m"), fmt="csv")}">📄 CSV mês {d0.strftime("%m/%Y")}</a>
+        </div>
+      </div>
     </div>"""
     return render(content)
 
@@ -5349,7 +5764,7 @@ def exportar_dia():
             ws.title = f"Totais {dt.strftime('%d-%m-%Y')}"
 
             # Cabeçalho
-            header_fill = PatternFill("solid", fgValue="0A2D4E")
+            header_fill = PatternFill("solid", fgColor="0A2D4E")
             header_font = Font(color="FFFFFF", bold=True, size=11)
             border = Border(
                 left=Side(style="thin"),
@@ -5397,7 +5812,7 @@ def exportar_dia():
                 total_alm,
                 total_jan,
             ]
-            alt_fill = PatternFill("solid", fgValue="EBF5FB")
+            alt_fill = PatternFill("solid", fgColor="EBF5FB")
             for col, val in enumerate(data_row, 1):
                 c = ws.cell(row=2, column=col, value=val)
                 c.fill = alt_fill
@@ -5561,7 +5976,7 @@ def exportar_relatorio():
             ws = wb.active
             ws.title = f"Relatório {d0.strftime('%d-%m')} a {d1.strftime('%d-%m-%Y')}"
 
-            header_fill = PatternFill("solid", fgValue="0A2D4E")
+            header_fill = PatternFill("solid", fgColor="0A2D4E")
             header_font = Font(color="FFFFFF", bold=True)
             thin = Side(style="thin")
             border = Border(left=thin, right=thin, top=thin, bottom=thin)
@@ -5581,7 +5996,7 @@ def exportar_relatorio():
                 "outro": "F0F0F0",
             }
             for ri, (di, tipo, t, alm, jan) in enumerate(dias_data, 2):
-                row_fill = PatternFill("solid", fgValue=TIPO_CORES.get(tipo, "FFFFFF"))
+                row_fill = PatternFill("solid", fgColor=TIPO_CORES.get(tipo, "FFFFFF"))
                 for col, val in enumerate(make_row(di, tipo, t, alm, jan), 1):
                     c = ws.cell(row=ri, column=col, value=val)
                     c.fill = row_fill
@@ -5607,7 +6022,7 @@ def exportar_relatorio():
                 total_jan,
                 totais["jan_sai"],
             ]
-            total_fill = PatternFill("solid", fgValue="D5E8F0")
+            total_fill = PatternFill("solid", fgColor="D5E8F0")
             total_font = Font(bold=True)
             for col, val in enumerate(total_row, 1):
                 c = ws.cell(row=9, column=col, value=val)
