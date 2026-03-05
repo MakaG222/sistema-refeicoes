@@ -67,7 +67,6 @@ def _ensure_extra_schema():
                 conn.execute(
                     "ALTER TABLE utilizadores ADD COLUMN turma_id INTEGER REFERENCES turmas(id)"
                 )
-
             # Colunas extra na tabela licencas (entradas/saídas)
             lic_cols = [
                 r["name"]
@@ -143,7 +142,21 @@ END""")
                 conn.execute(
                     "INSERT INTO _migracoes VALUES('reis_ni_382_482', datetime('now','localtime'))"
                 )
+            # === Migrações pontuais ===
+            conn.execute(
+                "CREATE TABLE IF NOT EXISTS _migracoes (nome TEXT PRIMARY KEY, aplicada_em TEXT)"
+            )
+            done = {r["nome"] for r in conn.execute("SELECT nome FROM _migracoes").fetchall()}
 
+            # 1) Corrigir NII da aluna Rafaela Fernandes: 20223 → 21223
+            if "rafaela_nii_21223" not in done:
+                conn.execute(
+                    "UPDATE utilizadores SET NII='21223' WHERE NII='20223'"
+                )
+                conn.execute(
+                    "INSERT INTO _migracoes VALUES('rafaela_nii_21223', datetime('now','localtime'))"
+                )
+                print("[MIGRAÇÃO] NII Rafaela Fernandes corrigido para 21223.", flush=True)
             # 2) Reset credenciais alunos: password→hash(NII), must_change=1
             #    Login = NII (ex: 24123), pw inicial = NII
             if "reset_creds_nii_v2" not in done:
@@ -704,45 +717,33 @@ def _dia_editavel_aluno(d):
 # ═══════════════════════════════════════════════════════════════════════════
 
 
-def _marcar_licenca_fds(uid: int, sexta: date, alterado_por: str) -> tuple:
-    """
-    Marca 'licença fim de semana' para um aluno:
-    - Sexta: licença antes_jantar (retira jantar, marca sai_unidade)
-    - Sábado e Domingo: apaga todas as refeições
-    Retorna (sucesso: bool, mensagem: str)
-    """
+def _marcar_licenca_fds(uid, sexta, alterado_por="sistema"):
+    """Marca licença de FDS: regista na BD, sai unidade na sexta e apaga Sab/Dom."""
     try:
-        # ── Sexta-feira: licença antes_jantar ──────────────────────────
         with sr.db() as conn:
+            # Regista a licença na sexta (tipo default 'apos_jantar' para FDS)
             conn.execute(
-                """INSERT INTO licencas(utilizador_id, data, tipo)
-                   VALUES(?,?,?)
-                   ON CONFLICT(utilizador_id, data) DO UPDATE SET tipo=excluded.tipo""",
-                (uid, sexta.isoformat(), "antes_jantar"),
+                "INSERT OR REPLACE INTO licencas (utilizador_id, data, tipo) VALUES (?, ?, ?)",
+                (uid, sexta.isoformat(), "apos_jantar")
             )
             conn.commit()
 
-        # Refeições da sexta: guardar sem jantar, com sai_unidade
+        # Configurar sexta: jantar sai da unidade
         r_sexta = sr.refeicao_get(uid, sexta)
-        r_sexta["jantar_tipo"] = None
         r_sexta["jantar_sai_unidade"] = 1
         sr.refeicao_save(uid, sexta, r_sexta, alterado_por=alterado_por)
 
-        # ── Sábado e Domingo: apagar todas as refeições ────────────────
-        for delta in (1, 2):  # sábado=+1, domingo=+2
+        # Sábado e Domingo: apagar todas as refeições
+        for delta in (1, 2):
             d = sexta + timedelta(days=delta)
             r_vazio = {
-                "pequeno_almoco": 0,
-                "lanche": 0,
-                "almoco": None,
-                "jantar_tipo": None,
-                "jantar_sai_unidade": 0,
+                "pequeno_almoco": 0, "lanche": 0, "almoco": None,
+                "jantar_tipo": None, "jantar_sai_unidade": 0
             }
             sr.refeicao_save(uid, d, r_vazio, alterado_por=alterado_por)
-
         return True, ""
     except Exception as exc:
-        app.logger.warning(f"_marcar_licenca_fds uid={uid}: {exc}")
+        app.logger.warning(f"_marcar_licenca_fds: {exc}")
         return False, str(exc)
 
 
@@ -2848,7 +2849,7 @@ def painel_dia():
 
     # ── Previsão de amanhã (cozinha / oficialdia / admin) ─────────────────
     previsao_html = ""
-    if perfil in ("cozinha", "oficialdia", "admin"):
+    if perfil in ("cozinha", "admin"):
         amanha = dt + timedelta(days=1)
         t_am = sr.get_totais_dia(amanha.isoformat(), ano_int)
 
@@ -4265,104 +4266,61 @@ def detencoes_cmd():
 @app.route("/oficialdia/licencas-es", methods=["GET", "POST"])
 @role_required("oficialdia", "admin")
 def licencas_entradas_saidas():
-    hoje = date.today()
-    d_str = request.args.get("d", hoje.isoformat())
+    d_str = request.args.get("d", date.today().isoformat())
     dt = _parse_date(d_str)
 
     if request.method == "POST":
-        acao   = request.form.get("acao", "")
-        lic_id = request.form.get("lic_id", "")
-        agora  = datetime.now().strftime("%H:%M")
+        acao = request.form.get("acao", "")
+        lic_id = _val_int_id(request.form.get("lic_id", ""))
 
-        with sr.db() as conn:
-            if acao == "saida" and lic_id:
+        if acao == "saida" and lic_id is not None:
+            agora = datetime.now().strftime("%H:%M")
+            with sr.db() as conn:
                 conn.execute(
-                    "UPDATE licencas SET hora_saida=? WHERE id=? AND hora_saida IS NULL",
-                    (agora, lic_id),
+                    "UPDATE licencas SET hora_saida=? WHERE id=? AND data=?",
+                    (agora, lic_id, d_str),
                 )
                 conn.commit()
-                flash("✅ Saída registada.", "ok")
+            flash("Saída registada.", "ok")
 
-            elif acao == "entrada" and lic_id:
+        elif acao == "entrada" and lic_id is not None:
+            agora = datetime.now().strftime("%H:%M")
+            with sr.db() as conn:
                 conn.execute(
-                    "UPDATE licencas SET hora_entrada=? WHERE id=? AND hora_entrada IS NULL",
-                    (agora, lic_id),
+                    "UPDATE licencas SET hora_entrada=? WHERE id=? AND data=?",
+                    (agora, lic_id, d_str),
                 )
                 conn.commit()
-                flash("✅ Entrada registada.", "ok")
+            flash("Entrada registada.", "ok")
 
-            elif acao == "limpar_saida" and lic_id:
-                conn.execute("UPDATE licencas SET hora_saida=NULL WHERE id=?", (lic_id,))
+        elif acao == "limpar_saida" and lic_id:
+            with sr.db() as conn:
+                conn.execute(
+                    "UPDATE licencas SET hora_saida=NULL WHERE id=? AND data=?",
+                    (lic_id, d_str),
+                )
                 conn.commit()
 
-            elif acao == "limpar_entrada" and lic_id:
-                conn.execute("UPDATE licencas SET hora_entrada=NULL WHERE id=?", (lic_id,))
+        elif acao == "limpar_entrada" and lic_id:
+            with sr.db() as conn:
+                conn.execute(
+                    "UPDATE licencas SET hora_entrada=NULL WHERE id=? AND data=?",
+                    (lic_id, d_str),
+                )
                 conn.commit()
 
         return redirect(url_for("licencas_entradas_saidas", d=d_str))
 
-    # ── Contadores ────────────────────────────────────────────────────────
     with sr.db() as conn:
-        # Total de licenças marcadas para hoje
-        total = conn.execute(
-            """SELECT COUNT(*) c FROM licencas l
-               JOIN utilizadores uu ON uu.id=l.utilizador_id
-               WHERE l.data=? AND uu.perfil='aluno'""",
-            (d_str,)
-        ).fetchone()["c"]
-
-        # Saíram hoje (têm hora_saida)
-        saidas = conn.execute(
-            """SELECT COUNT(*) c FROM licencas l
-               JOIN utilizadores uu ON uu.id=l.utilizador_id
-               WHERE l.data=? AND uu.perfil='aluno' AND l.hora_saida IS NOT NULL""",
-            (d_str,)
-        ).fetchone()["c"]
-
-        # Regressaram (têm hora_entrada)
-        entradas = conn.execute(
-            """SELECT COUNT(*) c FROM licencas l
-               JOIN utilizadores uu ON uu.id=l.utilizador_id
-               WHERE l.data=? AND uu.perfil='aluno' AND l.hora_entrada IS NOT NULL""",
-            (d_str,)
-        ).fetchone()["c"]
-
-        # Fora da unidade = saíram (em qualquer data) mas ainda não regressaram
-        fora = conn.execute(
-            """SELECT COUNT(*) c FROM licencas l
-               JOIN utilizadores uu ON uu.id=l.utilizador_id
-               WHERE uu.perfil='aluno'
-                 AND l.hora_saida IS NOT NULL
-                 AND l.hora_entrada IS NULL""",
-        ).fetchone()["c"]
-
-        # ── Lista principal: licenças do dia selecionado ──────────────────
-        rows_hoje = [
+        rows = [
             dict(r)
             for r in conn.execute(
                 """SELECT l.id, uu.NI, uu.Nome_completo, uu.ano,
-                          l.data, l.tipo, l.hora_saida, l.hora_entrada
-                   FROM licencas l
-                   JOIN utilizadores uu ON uu.id=l.utilizador_id
-                   WHERE l.data=? AND uu.perfil='aluno'
-                   ORDER BY uu.ano, uu.NI""",
-                (d_str,),
-            ).fetchall()
-        ]
-
-        # ── Alunos ainda fora de dias anteriores ─────────────────────────
-        rows_fora = [
-            dict(r)
-            for r in conn.execute(
-                """SELECT l.id, uu.NI, uu.Nome_completo, uu.ano,
-                          l.data, l.tipo, l.hora_saida, l.hora_entrada
-                   FROM licencas l
-                   JOIN utilizadores uu ON uu.id=l.utilizador_id
-                   WHERE uu.perfil='aluno'
-                     AND l.hora_saida IS NOT NULL
-                     AND l.hora_entrada IS NULL
-                     AND l.data != ?
-                   ORDER BY l.data ASC, uu.ano, uu.NI""",
+                          l.tipo, l.hora_saida, l.hora_entrada
+                FROM licencas l
+                JOIN utilizadores uu ON uu.id=l.utilizador_id
+                WHERE l.data=? AND uu.perfil='aluno'
+                ORDER BY uu.ano, uu.NI""",
                 (d_str,),
             ).fetchall()
         ]
@@ -4370,15 +4328,16 @@ def licencas_entradas_saidas():
     prev_d = (dt - timedelta(days=1)).isoformat()
     next_d = (dt + timedelta(days=1)).isoformat()
 
-    def _tipo_badge(tp):
-        if tp == "antes_jantar":
-            return '<span class="badge badge-info" style="font-size:.65rem">🌅 Antes jantar</span>'
-        return '<span class="badge badge-muted" style="font-size:.65rem">🌙 Após jantar</span>'
+    total = len(rows)
+    saidas = sum(1 for r in rows if r["hora_saida"])
+    entradas = sum(1 for r in rows if r["hora_entrada"])
+    fora = saidas - entradas
 
-    def _build_row(r, mostrar_data=False):
-        saiu   = r["hora_saida"]
+    rows_html = ""
+    for r in rows:
+        saiu = r["hora_saida"]
         entrou = r["hora_entrada"]
-
+        tipo = r.get("tipo", "")
         if saiu and not entrou:
             estado = '<span class="badge badge-warn">Fora</span>'
         elif saiu and entrou:
@@ -4386,69 +4345,39 @@ def licencas_entradas_saidas():
         else:
             estado = '<span class="badge badge-muted">Pendente</span>'
 
-        # Saída: botão se ainda não saiu, hora se já saiu
-        if not saiu:
-            col_saida = (
-                f'<form method="post" style="display:inline">{csrf_input()}'
-                f'<input type="hidden" name="acao" value="saida">'
-                f'<input type="hidden" name="lic_id" value="{r["id"]}">'
-                f'<button class="btn btn-warn btn-sm">🚶 Registar saída</button></form>'
-            )
-        else:
-            col_saida = f'<span class="text-muted small">{saiu}</span>'
-
-        # Entrada: botão só se saiu mas ainda não entrou
-        if saiu and not entrou:
-            col_entrada = (
-                f'<form method="post" style="display:inline">{csrf_input()}'
-                f'<input type="hidden" name="acao" value="entrada">'
-                f'<input type="hidden" name="lic_id" value="{r["id"]}">'
-                f'<button class="btn btn-ok btn-sm">✅ Registar entrada</button></form>'
-            )
-        elif entrou:
-            col_entrada = f'<span class="text-muted small">{entrou}</span>'
-        else:
-            col_entrada = "—"
-
-        data_td = f'<td class="small text-muted">{r["data"]}</td>' if mostrar_data else ""
-
-        return (
-            f"<tr>"
-            f"<td>{esc(r['NI'])}</td>"
-            f"<td><strong>{esc(r['Nome_completo'])}</strong></td>"
-            f"<td>{r['ano']}º</td>"
-            f"{data_td}"
-            f"<td>{_tipo_badge(r['tipo'])}</td>"
-            f"<td>{estado}</td>"
-            f"<td>{col_saida}</td>"
-            f"<td>{col_entrada}</td>"
-            f"</tr>"
+        tipo_badge = (
+            '<span class="badge badge-info" style="font-size:.65rem">🌅 Antes jantar</span>'
+            if tipo == "antes_jantar"
+            else '<span class="badge badge-muted" style="font-size:.65rem">🌙 Após jantar</span>'
         )
 
-    rows_html = "".join(_build_row(r) for r in rows_hoje)
+        btn_saida = (
+            f'<form method="post" style="display:inline">{csrf_input()}'
+            f'<input type="hidden" name="acao" value="saida">'
+            f'<input type="hidden" name="lic_id" value="{r["id"]}">'
+            f'<button class="btn btn-warn btn-sm">Registar saída</button></form>'
+            if not saiu
+            else f'<span class="text-muted small">{saiu}</span>'
+        )
+        btn_entrada = (
+            f'<form method="post" style="display:inline">{csrf_input()}'
+            f'<input type="hidden" name="acao" value="entrada">'
+            f'<input type="hidden" name="lic_id" value="{r["id"]}">'
+            f'<button class="btn btn-ok btn-sm">Registar entrada</button></form>'
+            if saiu and not entrou
+            else (f'<span class="text-muted small">{entrou}</span>' if entrou else "—")
+        )
 
-    # Secção de alunos ainda fora de dias anteriores
-    fora_html = ""
-    if rows_fora:
-        fora_rows_html = "".join(_build_row(r, mostrar_data=True) for r in rows_fora)
-        fora_html = f"""
-        <div class="card" style="border-left:4px solid var(--danger)">
-          <div class="card-title" style="color:var(--danger)">
-            ⚠️ Ainda fora da unidade — dias anteriores ({len(rows_fora)})
-          </div>
-          <div class="alert alert-warn" style="font-size:.82rem">
-            Estes alunos saíram em dias anteriores e ainda não regressaram.
-            Regista a entrada aqui quando voltarem.
-          </div>
-          <div class="table-wrap">
-            <table>
-              <thead>
-                <tr><th>NI</th><th>Nome</th><th>Ano</th><th>Data saída</th><th>Tipo</th><th>Estado</th><th>Saída</th><th>Entrada</th></tr>
-              </thead>
-              <tbody>{fora_rows_html}</tbody>
-            </table>
-          </div>
-        </div>"""
+        rows_html += f"""
+      <tr>
+        <td>{esc(r["NI"])}</td>
+        <td><strong>{esc(r["Nome_completo"])}</strong></td>
+        <td>{r["ano"]}º</td>
+        <td>{tipo_badge}</td>
+        <td>{estado}</td>
+        <td>{btn_saida}</td>
+        <td>{btn_entrada}</td>
+      </tr>"""
 
     content = f"""
     <div class="container">
@@ -4463,38 +4392,17 @@ def licencas_entradas_saidas():
           <a class="btn btn-ghost btn-sm" href="{url_for("licencas_entradas_saidas", d=next_d)}">Próximo →</a>
         </div>
       </div>
-
       <div class="grid grid-4" style="margin-bottom:1rem">
-        <div class="stat-box">
-          <div class="stat-num">{total}</div>
-          <div class="stat-lbl">Licenças hoje</div>
-        </div>
-        <div class="stat-box">
-          <div class="stat-num">{saidas}</div>
-          <div class="stat-lbl">Saíram hoje</div>
-        </div>
-        <div class="stat-box">
-          <div class="stat-num">{entradas}</div>
-          <div class="stat-lbl">Regressaram hoje</div>
-        </div>
-        <div class="stat-box" style="{"background:#fef3cd" if fora > 0 else ""}">
-          <div class="stat-num" style="{"color:var(--danger)" if fora > 0 else ""}">{fora}</div>
-          <div class="stat-lbl">Fora da unidade</div>
-        </div>
+        <div class="stat-box"><div class="stat-num">{total}</div><div class="stat-lbl">Total licenças</div></div>
+        <div class="stat-box"><div class="stat-num">{saidas}</div><div class="stat-lbl">Saíram</div></div>
+        <div class="stat-box"><div class="stat-num">{entradas}</div><div class="stat-lbl">Regressaram</div></div>
+        <div class="stat-box" style="{"background:#fef3cd" if fora > 0 else ""}"><div class="stat-num">{fora}</div><div class="stat-lbl">Fora da unidade</div></div>
       </div>
-
-      {fora_html}
-
       <div class="card">
-        <div class="card-title">Licenças de {dt.strftime("%d/%m/%Y")}</div>
         <div class="table-wrap">
           <table>
-            <thead>
-              <tr><th>NI</th><th>Nome</th><th>Ano</th><th>Tipo</th><th>Estado</th><th>Saída</th><th>Entrada</th></tr>
-            </thead>
-            <tbody>
-              {rows_html or '<tr><td colspan="7" class="text-muted center" style="padding:1.5rem">Sem licenças para este dia.</td></tr>'}
-            </tbody>
+            <thead><tr><th>NI</th><th>Nome</th><th>Ano</th><th>Tipo</th><th>Estado</th><th>Saída</th><th>Entrada</th></tr></thead>
+            <tbody>{rows_html or '<tr><td colspan="7" class="text-muted center" style="padding:1.5rem">Sem licenças para este dia.</td></tr>'}</tbody>
           </table>
         </div>
       </div>
