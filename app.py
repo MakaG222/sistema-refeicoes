@@ -4232,62 +4232,54 @@ def licencas_entradas_saidas():
 def licencas_entradas_saidas():
     d_str = request.args.get("d", date.today().isoformat())
     dt = _parse_date(d_str)
+    # No teu app.py, o utilizador atual é obtido assim:
+    u = current_user()
 
     if request.method == "POST":
         acao = request.form.get("acao", "")
         lic_id = _val_int_id(request.form.get("lic_id", ""))
 
-        if acao == "saida" and lic_id is not None:
-            # 1. Obter o UID do aluno através do ID da licença
+        if acao == "saida" and lic_id:
             with sr.db() as conn:
                 row = conn.execute("SELECT utilizador_id FROM licencas WHERE id=?", (lic_id,)).fetchone()
-                uid_aluno = row["utilizador_id"] if row else None
             
-            if uid_aluno:
-                # 2. Regista a ausência oficial para a cozinha (Lógica do app-2.py)
-                u = current_user() 
-                # Nota: u["NI"] ou u["NII"] dependendo da tua base de dados. No app.py costuma ser NI.
-                _registar_ausencia(uid_aluno, d_str, d_str, f"Saída registada pelo Oficial {u['nome']}", u["NI"])
-                
-                # 3. Atualiza a hora de saída na licença
+            if row:
+                uid_aluno = row["utilizador_id"]
+                # Usamos u["NI"] porque é o que está no teu schema do app.py
+                try:
+                    _registar_ausencia(uid_aluno, d_str, d_str, f"Saída registada pelo Oficial {u['nome']}", u["NI"])
+                except Exception as e:
+                    app.logger.error(f"Erro ao registar ausência: {e}")
+
                 agora = datetime.now().strftime("%H:%M")
                 with sr.db() as conn:
                     conn.execute(
                         "UPDATE licencas SET hora_saida=? WHERE id=? AND data=?",
-                        (agora, lic_id, d_str),
+                        (agora, lic_id, d_str)
                     )
                     conn.commit()
-                flash(f"Saída registada às {agora} e comunicada à cozinha.", "ok")
-            else:
-                flash("Erro: Aluno não encontrado.", "error")
+                flash(f"Saída registada às {agora}.", "ok")
 
-        elif acao == "entrada" and lic_id is not None:
+        elif acao == "entrada" and lic_id:
             agora = datetime.now().strftime("%H:%M")
             with sr.db() as conn:
                 conn.execute(
                     "UPDATE licencas SET hora_entrada=? WHERE id=? AND data=?",
-                    (agora, lic_id, d_str),
+                    (agora, lic_id, d_str)
                 )
                 conn.commit()
             flash("Entrada registada.", "ok")
 
-        elif acao == "limpar_saida" and lic_id:
-            with sr.db() as conn:
-                conn.execute(
-                    "UPDATE licencas SET hora_saida=NULL WHERE id=? AND data=?",
-                    (lic_id, d_str),
-                )
-                conn.commit()
-
-        elif acao == "limpar_entrada" and lic_id:
-            with sr.db() as conn:
-                conn.execute(
-                    "UPDATE licencas SET hora_entrada=NULL WHERE id=? AND data=?",
-                    (lic_id, d_str),
-                )
-                conn.commit()
-
         return redirect(url_for("licencas_entradas_saidas", d=d_str))
+
+    # --- RESTO DA ROTA (GET) IGUAL AO QUE TINHAS ---
+    with sr.db() as conn:
+        rows = [dict(r) for r in conn.execute(
+            "SELECT l.id, uu.NI, uu.Nome_completo, uu.ano, l.tipo, l.hora_saida, l.hora_entrada "
+            "FROM licencas l JOIN utilizadores uu ON uu.id=l.utilizador_id "
+            "WHERE l.data=? AND uu.perfil='aluno' ORDER BY uu.ano, uu.NI", (d_str,)
+        ).fetchall()]
+
 
     # --- Parte do GET (Visualização) ---
     with sr.db() as conn:
