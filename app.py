@@ -4274,14 +4274,28 @@ def licencas_entradas_saidas():
         lic_id = _val_int_id(request.form.get("lic_id", ""))
 
         if acao == "saida" and lic_id is not None:
-            agora = datetime.now().strftime("%H:%M")
+            # 1. Obter o UID do aluno através do ID da licença para registar a ausência
             with sr.db() as conn:
-                conn.execute(
-                    "UPDATE licencas SET hora_saida=? WHERE id=? AND data=?",
-                    (agora, lic_id, d_str),
-                )
-                conn.commit()
-            flash("Saída registada.", "ok")
+                row = conn.execute("SELECT utilizador_id FROM licencas WHERE id=?", (lic_id,)).fetchone()
+                uid_aluno = row["utilizador_id"] if row else None
+    
+            if uid_aluno:
+                # 2. Regista a ausência oficial (comunica com o módulo de refeições)
+                # u["nii"] refere-se ao NII do Oficial que está a operar o sistema
+                u = current_user() 
+                _registar_ausencia(uid_aluno, d_str, d_str, f"Saída registada pelo Oficial {u['nome']}", u["NI"])
+        
+                # 3. Atualiza a hora de saída na licença
+                agora = datetime.now().strftime("%H:%M")
+                with sr.db() as conn:
+                    conn.execute(
+                        "UPDATE licencas SET hora_saida=? WHERE id=? AND data=?",
+                        (agora, lic_id, d_str),
+                    )
+                    conn.commit()
+                flash(f"Saída registada às {agora} e comunicada à cozinha.", "ok")
+            else:
+                flash("Erro: Aluno não encontrado.", "error")
 
         elif acao == "entrada" and lic_id is not None:
             agora = datetime.now().strftime("%H:%M")
