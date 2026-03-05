@@ -4262,7 +4262,6 @@ def detencoes_cmd():
 # LICENÇAS — ENTRADAS / SAÍDAS (Oficial de Dia)
 # ═══════════════════════════════════════════════════════════════════════════
 
-
 @app.route("/oficialdia/licencas-es", methods=["GET", "POST"])
 @role_required("oficialdia", "admin")
 def licencas_entradas_saidas():
@@ -4274,17 +4273,17 @@ def licencas_entradas_saidas():
         lic_id = _val_int_id(request.form.get("lic_id", ""))
 
         if acao == "saida" and lic_id is not None:
-            # 1. Obter o UID do aluno através do ID da licença para registar a ausência
+            # 1. Obter o UID do aluno através do ID da licença
             with sr.db() as conn:
                 row = conn.execute("SELECT utilizador_id FROM licencas WHERE id=?", (lic_id,)).fetchone()
                 uid_aluno = row["utilizador_id"] if row else None
-    
+            
             if uid_aluno:
-                # 2. Regista a ausência oficial (comunica com o módulo de refeições)
-                # u["nii"] refere-se ao NII do Oficial que está a operar o sistema
+                # 2. Regista a ausência oficial para a cozinha (Lógica do app-2.py)
                 u = current_user() 
+                # Nota: u["NI"] ou u["NII"] dependendo da tua base de dados. No app.py costuma ser NI.
                 _registar_ausencia(uid_aluno, d_str, d_str, f"Saída registada pelo Oficial {u['nome']}", u["NI"])
-        
+                
                 # 3. Atualiza a hora de saída na licença
                 agora = datetime.now().strftime("%H:%M")
                 with sr.db() as conn:
@@ -4325,6 +4324,7 @@ def licencas_entradas_saidas():
 
         return redirect(url_for("licencas_entradas_saidas", d=d_str))
 
+    # --- Parte do GET (Visualização) ---
     with sr.db() as conn:
         rows = [
             dict(r)
