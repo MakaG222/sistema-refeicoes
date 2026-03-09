@@ -393,8 +393,9 @@ def _alterar_password(nii, old, new):
     ph = row["Palavra_chave"] or ""
     if not _check_password(ph, old):
         return False, "Password atual incorreta."
-    if len(new) < 6:
-        return False, "A nova password deve ter pelo menos 6 caracteres."
+    pw_ok, pw_msg = _validate_password(new)
+    if not pw_ok:
+        return False, pw_msg
     new_hash = generate_password_hash(new)
     with sr.db() as conn:
         conn.execute(
@@ -405,6 +406,14 @@ def _alterar_password(nii, old, new):
         conn.commit()
     return True, ""
 
+
+def _validate_password(pw: str) -> tuple:
+    """Valida requisitos de password: mínimo 8 caracteres, letras e números."""
+    if len(pw) < 8:
+        return False, "A password deve ter pelo menos 8 caracteres."
+    if pw.isdigit() or pw.isalpha():
+        return False, "A password deve conter letras e números."
+    return True, ""
 
 def _criar_utilizador(nii, ni, nome, ano, perfil, pw):
     try:
@@ -1422,11 +1431,11 @@ def login():
           {csrf_input()}
           <div class="form-group">
             <label>NII</label>
-            <input type="text" name="nii" autofocus autocomplete="username" required placeholder="O teu NII (ex: 24123)">
+            <input type="text" name="nii" maxlength="32" autofocus autocomplete="username" required placeholder="O teu NII (ex: 24123)">
           </div>
           <div class="form-group">
             <label>Password</label>
-            <input type="password" name="pw" autocomplete="current-password" required placeholder="••••••••">
+            <input type="password" name="pw" maxlength="256" autocomplete="current-password" required placeholder="••••••••">
           </div>
           <button type="submit" class="btn btn-primary" style="width:100%;justify-content:center;padding:.72rem;font-size:.95rem;margin-top:.2rem">
             Entrar
@@ -2052,7 +2061,7 @@ def aluno_ausencias():
         if acao == "criar":
             de = request.form.get("de", "")
             ate = request.form.get("ate", "")
-            motivo = _val_text(request.form.get("motivo", ""))
+            motivo = _val_text(request.form.get("motivo", ""))[:500]
             ok, err = _registar_ausencia(uid, de, ate, motivo, u["nii"])
             flash(
                 "Ausência registada com sucesso!" if ok else (err or "Erro."),
@@ -2062,7 +2071,7 @@ def aluno_ausencias():
             aid = _val_int_id(request.form.get("id", ""))
             de = request.form.get("de", "")
             ate = request.form.get("ate", "")
-            motivo = _val_text(request.form.get("motivo", ""))
+            motivo = _val_text(request.form.get("motivo", ""))[:500]
             if aid is None:
                 flash("ID inválido.", "error")
             else:
@@ -2175,7 +2184,7 @@ def aluno_ausencias():
           </div>
           <div class="form-group">
             <label>Motivo (opcional)</label>
-            <input type="text" name="motivo" value="{esc(form_motivo)}" placeholder="Ex: deslocação, exercício, visita...">
+            <input type="text" name="motivo" maxlength="500" value="{esc(form_motivo)}" placeholder="Ex: deslocação, exercício, visita...">
           </div>
           <div class="gap-btn">
             <button class="btn btn-ok">{"Atualizar" if edit_row else "Registar ausência"}</button>
@@ -2614,9 +2623,9 @@ def aluno_password():
       <div class="card" style="max-width:440px">
         <form method="post">
           {csrf_input()}
-          <div class="form-group"><label>Password atual</label><input type="password" name="old" required placeholder="{old_hint}"></div>
-          <div class="form-group"><label>Nova password (mín. 6 caracteres)</label><input type="password" name="new" required minlength="6"></div>
-          <div class="form-group"><label>Confirmar nova password</label><input type="password" name="conf" required></div>
+          <div class="form-group"><label>Password atual</label><input type="password" name="old" maxlength="256" required placeholder="{old_hint}"></div>
+          <div class="form-group"><label>Nova password (mín. 8 caracteres, letras e números)</label><input type="password" name="new" maxlength="256" required minlength="8"></div>
+          <div class="form-group"><label>Confirmar nova password</label><input type="password" name="conf" maxlength="256" required></div>
           <div class="gap-btn"><button class="btn btn-ok">💾 Guardar</button>{cancel_btn}</div>
         </form>
       </div>
@@ -3523,7 +3532,7 @@ def excecoes_dia(d):
           {ausente_alert}{prazo_info}
           <form method="post">
             {csrf_input()}
-            <input type="hidden" name="nii" value="{esc(nii_q)}">
+            <input type="hidden" name="nii" maxlength="32" value="{esc(nii_q)}">
             <div class="grid grid-2">
               {chk_label("pa", r.get("pequeno_almoco"), "☕", "Pequeno Almoço")}
               {chk_label("lanche", r.get("lanche"), "🥐", "Lanche")}
@@ -3555,7 +3564,7 @@ def excecoes_dia(d):
         <div class="card-title">Pesquisar utilizador</div>
         <form method="get" style="display:flex;gap:.5rem">
           <input type="hidden" name="d" value="{d}">
-          <input type="text" name="nii" placeholder="NII do utilizador" value="{esc(nii_q)}" style="flex:1">
+          <input type="text" name="nii" maxlength="32" placeholder="NII do utilizador" value="{esc(nii_q)}" style="flex:1">
           <button class="btn btn-primary">Pesquisar</button>
         </form>
       </div>
@@ -3588,7 +3597,7 @@ def ausencias():
                 db_u["id"],
                 request.form.get("de", ""),
                 request.form.get("ate", ""),
-                request.form.get("motivo", ""),
+                request.form.get("motivo", "")[:500],
                 u["nii"],
             )
             flash(
@@ -3630,8 +3639,8 @@ def ausencias():
         <form method="post">
           {csrf_input()}
           <div class="grid grid-2">
-            <div class="form-group"><label>NII do utilizador</label><input type="text" name="nii" required placeholder="NII"></div>
-            <div class="form-group"><label>Motivo (opcional)</label><input type="text" name="motivo" placeholder="Ex: deslocação, prova..."></div>
+            <div class="form-group"><label>NII do utilizador</label><input type="text" name="nii" maxlength="32" required placeholder="NII"></div>
+            <div class="form-group"><label>Motivo (opcional)</label><input type="text" name="motivo" maxlength="500" placeholder="Ex: deslocação, prova..."></div>
             <div class="form-group"><label>De</label><input type="date" name="de" required></div>
             <div class="form-group"><label>Até</label><input type="date" name="ate" required></div>
           </div>
@@ -3993,7 +4002,7 @@ def ausencias_cmd():
                 db_u["id"],
                 request.form.get("de", ""),
                 request.form.get("ate", ""),
-                _val_text(request.form.get("motivo", "")),
+                _val_text(request.form.get("motivo", ""))[:500],
                 u["nii"],
             )
             flash(
@@ -4069,10 +4078,10 @@ def ausencias_cmd():
           <div class="grid grid-2">
             <div class="form-group">
               <label>NII do aluno</label>
-              <input type="text" name="nii" required placeholder="NII" list="alunos_list">
+              <input type="text" name="nii" maxlength="32" required placeholder="NII" list="alunos_list">
               {'<div class="text-muted small" style="margin-top:.25rem">💡 Escreve para ver sugestões de alunos do teu ano</div>' if alunos_ano else ""}
             </div>
-            <div class="form-group"><label>Motivo (opcional)</label><input type="text" name="motivo" placeholder="Ex: deslocação, exercício..."></div>
+            <div class="form-group"><label>Motivo (opcional)</label><input type="text" name="motivo" maxlength="500" placeholder="Ex: deslocação, exercício..."></div>
             <div class="form-group"><label>De</label><input type="date" name="de" required value="{hoje}"></div>
             <div class="form-group"><label>Até</label><input type="date" name="ate" required value="{hoje}"></div>
           </div>
@@ -4131,7 +4140,7 @@ def detencoes_cmd():
         nii = request.form.get("nii", "").strip()
         de = request.form.get("de", "").strip()
         ate = request.form.get("ate", "").strip()
-        motivo = _val_text(request.form.get("motivo", ""))
+        motivo = _val_text(request.form.get("motivo", ""))[:500]
 
         db_u = sr.user_by_nii(nii)
         if not db_u:
@@ -4255,9 +4264,9 @@ def detencoes_cmd():
           <div class="grid grid-2">
             <div class="form-group">
               <label>NII do aluno</label>
-              <input type="text" name="nii" required placeholder="NII" list="alunos_list">
+              <input type="text" name="nii" maxlength="32" required placeholder="NII" list="alunos_list">
             </div>
-            <div class="form-group"><label>Motivo (opcional)</label><input type="text" name="motivo" placeholder="Ex: detido por..."></div>
+            <div class="form-group"><label>Motivo (opcional)</label><input type="text" name="motivo" maxlength="500" placeholder="Ex: detido por..."></div>
             <div class="form-group"><label>De</label><input type="date" name="de" required value="{hoje}"></div>
             <div class="form-group"><label>Até</label><input type="date" name="ate" required value="{hoje}"></div>
           </div>
@@ -4760,8 +4769,8 @@ def admin_utilizadores():
         b = f'<a class="btn btn-gold btn-sm" href="?edit_user={ne}" title="Editar utilizador">✏️ Editar</a>'
         b += f'<a class="btn btn-ghost btn-sm" href="?edit_contactos={ne}" title="Editar email/telemóvel">✉️</a>'
         if r.get("locked_until"):
-            b += f'<form method="post" style="display:inline">{csrf_input()}<input type="hidden" name="acao" value="desbloquear"><input type="hidden" name="nii" value="{ne}"><button class="btn btn-ghost btn-sm">🔓</button></form>'
-        b += f'<form method="post" style="display:inline" onsubmit="return confirm(\'Eliminar {ne}?\');">{csrf_input()}<input type="hidden" name="acao" value="eliminar"><input type="hidden" name="nii" value="{ne}"><button class="btn btn-danger btn-sm">🗑</button></form>'
+            b += f'<form method="post" style="display:inline">{csrf_input()}<input type="hidden" name="acao" value="desbloquear"><input type="hidden" name="nii" maxlength="32" value="{ne}"><button class="btn btn-ghost btn-sm">🔓</button></form>'
+        b += f'<form method="post" style="display:inline" onsubmit="return confirm(\'Eliminar {ne}?\');">{csrf_input()}<input type="hidden" name="acao" value="eliminar"><input type="hidden" name="nii" maxlength="32" value="{ne}"><button class="btn btn-danger btn-sm">🗑</button></form>'
         return b
 
     rows_html = "".join(
@@ -4792,7 +4801,7 @@ def admin_utilizadores():
           <form method="post">
             {csrf_input()}
             <input type="hidden" name="acao" value="editar_user">
-            <input type="hidden" name="nii" value="{esc(er["NII"])}">
+            <input type="hidden" name="nii" maxlength="32" value="{esc(er["NII"])}">
             <div class="grid grid-3">
               <div class="form-group"><label>Nome completo</label><input type="text" name="nome" value="{esc(er["Nome_completo"])}" required></div>
               <div class="form-group"><label>NI</label><input type="text" name="ni" value="{esc(er["NI"] or "")}"></div>
@@ -4822,7 +4831,7 @@ def admin_utilizadores():
           <form method="post">
             {csrf_input()}
             <input type="hidden" name="acao" value="editar_contactos">
-            <input type="hidden" name="nii" value="{esc(edit_row["NII"])}">
+            <input type="hidden" name="nii" maxlength="32" value="{esc(edit_row["NII"])}">
             <div class="grid grid-2">
               <div class="form-group"><label>Email</label>
                 <input type="email" name="email" value="{esc(edit_row.get("email") or "")}" placeholder="nome@exemplo.pt">
@@ -4861,7 +4870,7 @@ def admin_utilizadores():
           {csrf_input()}
           <input type="hidden" name="acao" value="criar">
           <div class="grid grid-3">
-            <div class="form-group"><label>NII</label><input type="text" name="nii" required></div>
+            <div class="form-group"><label>NII</label><input type="text" name="nii" maxlength="32" required></div>
             <div class="form-group"><label>NI</label><input type="text" name="ni" required></div>
             <div class="form-group"><label>Nome completo</label><input type="text" name="nome" required></div>
             <div class="form-group"><label>Ano</label>
