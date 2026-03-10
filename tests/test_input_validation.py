@@ -224,7 +224,7 @@ class TestCriarUtilizadorValidacao:
 
         ok, err = _criar_utilizador("val03", "102", "Nome", "1", "aluno", "abc")
         assert ok is False
-        assert "6" in err  # mínimo 6 caracteres
+        assert "8" in err  # mínimo 8 caracteres
 
 
 class TestAlunoPerfil:

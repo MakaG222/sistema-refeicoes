@@ -436,8 +436,9 @@ def _criar_utilizador(nii, ni, nome, ano, perfil, pw):
         if not perfil:
             return False, "Perfil inválido."
         pw = str(pw).strip()[:256]
-        if len(pw) < 6:
-            return False, "Password deve ter pelo menos 6 caracteres."
+        pw_ok, pw_msg = _validate_password(pw)
+        if not pw_ok:
+            return False, pw_msg
         pw_hash = generate_password_hash(pw)
         with sr.db() as conn:
             conn.execute(
@@ -1407,6 +1408,7 @@ def login():
                 sr.reg_login(nii, 0, ip=_client_ip())
                 error = "NII não encontrado."
         if u:
+            session["_csrf_token"] = secrets.token_urlsafe(32)  # Rodar CSRF token
             session["user"] = u
             session.permanent = True  # ativa timeout de inatividade
             _audit(nii, "login", f"perfil={u['perfil']} IP={_client_ip()}")
@@ -7377,7 +7379,7 @@ def health():
     t0 = _time.monotonic()
     try:
         with sr.db() as conn:
-            row = conn.execute("SELECT COUNT(*) as n FROM utilizadores").fetchone()
+            conn.execute("SELECT 1 FROM utilizadores LIMIT 1").fetchone()
         latency_ms = round((_time.monotonic() - t0) * 1000, 1)
         resp = {
             "status": "ok",
@@ -7385,9 +7387,6 @@ def health():
             "latency_ms": latency_ms,
             "ts": datetime.now().isoformat(),
         }
-        if not _is_production:
-            resp["utilizadores"] = row["n"]
-            resp["db_path"] = sr.BASE_DADOS
         return resp, 200
     except Exception as exc:
         app.logger.error(f"health: BD falhou — {exc}")

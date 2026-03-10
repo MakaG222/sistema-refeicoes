@@ -202,3 +202,98 @@ class TestCSRFProtection:
         )
         # Com CSRF válido e credenciais corretas, deve redirecionar para dashboard
         assert resp.status_code in (200, 302)
+
+
+# ── Criar Utilizador — Password Validation ──────────────────────────────────
+
+
+class TestCriarUtilizadorPasswordValidation:
+    """_criar_utilizador() deve rejeitar passwords fracas (mesma regra que alterar)."""
+
+    def test_criar_utilizador_rejects_short_password(self):
+        import app as app_module
+
+        ok, msg = app_module._criar_utilizador(
+            "weakpw1", "WK001", "Weak Password", "1", "aluno", "abc"
+        )
+        assert not ok
+        assert "8 caracteres" in msg
+
+    def test_criar_utilizador_rejects_digits_only(self):
+        import app as app_module
+
+        ok, msg = app_module._criar_utilizador(
+            "weakpw2", "WK002", "Weak Password", "1", "aluno", "12345678"
+        )
+        assert not ok
+        assert "letras" in msg
+
+    def test_criar_utilizador_rejects_alpha_only(self):
+        import app as app_module
+
+        ok, msg = app_module._criar_utilizador(
+            "weakpw3", "WK003", "Weak Password", "1", "aluno", "abcdefgh"
+        )
+        assert not ok
+        assert "letras" in msg or "números" in msg
+
+    def test_criar_utilizador_accepts_strong_password(self, app):
+        import app as app_module
+
+        ok, msg = app_module._criar_utilizador(
+            "strongpw1", "ST001", "Strong Password", "1", "aluno", "Secure12"
+        )
+        assert ok, f"Deveria aceitar password forte, mas falhou: {msg}"
+
+
+# ── Health Endpoint — Sem Info Sensível ──────────────────────────────────────
+
+
+class TestHealthNoSensitiveInfo:
+    def test_health_no_user_count(self, client):
+        """O endpoint /health não deve expor contagem de utilizadores."""
+        import json
+
+        resp = client.get("/health")
+        data = json.loads(resp.data)
+        assert "utilizadores" not in data
+
+    def test_health_no_db_path(self, client):
+        """O endpoint /health não deve expor caminho da base de dados."""
+        import json
+
+        resp = client.get("/health")
+        data = json.loads(resp.data)
+        assert "db_path" not in data
+
+
+# ── CSRF Token Rotation ─────────────────────────────────────────────────────
+
+
+class TestCSRFTokenRotation:
+    def test_csrf_token_changes_after_login(self, app, client):
+        """CSRF token deve ser regenerado após login bem-sucedido."""
+        create_system_user("csrfuser", "admin", pw="Csrftest12")
+
+        # Obter token pré-login
+        client.get("/login")
+        with client.session_transaction() as sess:
+            pre_login_token = sess.get("_csrf_token", "")
+
+        # Fazer login com CSRF válido
+        client.post(
+            "/login",
+            data={
+                "nii": "csrfuser",
+                "password": "Csrftest12",
+                "csrf_token": pre_login_token,
+            },
+            follow_redirects=True,
+        )
+
+        # Verificar que o token mudou
+        with client.session_transaction() as sess:
+            post_login_token = sess.get("_csrf_token", "")
+
+        # O token pré-login não deve existir na sessão autenticada
+        assert pre_login_token != post_login_token
