@@ -57,4 +57,4 @@ jobs:
       - name: Run tests with coverage
         run: |
           coverage run -m pytest tests/ -v --tb=short
-          coverage report
+          coverage report --fail-under=75

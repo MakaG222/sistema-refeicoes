@@ -4,3 +4,10 @@ target-version = "py39"
 [tool.ruff.lint]
 select = ["E", "F", "W"]
 ignore = ["E402", "E501"]
+
+[tool.coverage.run]
+source = ["."]
+omit = ["tests/*", "sistema_refeicoes_v8_4.py"]
+
+[tool.coverage.report]
+show_missing = true

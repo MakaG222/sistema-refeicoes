@@ -1239,6 +1239,9 @@ def before():
         sr.wal_checkpoint()
 
     if request.method == "POST":
+        # Endpoints de API com Bearer token não usam CSRF (têm autenticação própria)
+        if request.endpoint in ("api_backup_cron", "api_autopreencher_cron"):
+            return
         t = session.get("_csrf_token", "")
         ft = request.form.get("csrf_token", "")
         if not t or not ft or not secrets.compare_digest(t, ft):
@@ -2589,6 +2592,18 @@ def exportar_mensal():
 def aluno_password():
     u = current_user()
     if request.method == "POST":
+        # Rate limiting: máx 10 tentativas por 5 minutos
+        import time as _t
+
+        pw_attempts = session.get("_pw_attempts", [])
+        now = _t.time()
+        pw_attempts = [t for t in pw_attempts if now - t < 300]
+        if len(pw_attempts) >= 10:
+            flash("Demasiadas tentativas. Aguarda uns minutos.", "error")
+            return redirect(url_for("aluno_password"))
+        pw_attempts.append(now)
+        session["_pw_attempts"] = pw_attempts
+
         old = request.form.get("old", "")
         new = request.form.get("new", "")
         conf = request.form.get("conf", "")
@@ -2602,6 +2617,7 @@ def aluno_password():
             )
             if ok:
                 session.pop("must_change_password", None)
+                session.pop("_pw_attempts", None)
                 return redirect(url_for("dashboard"))
 
     is_forced = session.get("must_change_password")
@@ -2672,6 +2688,11 @@ def aluno_perfil():
                     (email_n, telef_n, uid),
                 )
                 conn.commit()
+            _audit(
+                current_user().get("nii", "?"),
+                "aluno_perfil_update",
+                f"uid={uid}",
+            )
             flash("Perfil atualizado com sucesso!", "ok")
             return redirect(url_for("aluno_perfil"))
         except Exception as ex:
@@ -4729,18 +4750,35 @@ def admin_utilizadores():
                             (email_e, tel_e, nii_e),
                         )
                         conn.commit()
+                    _audit(
+                        current_user().get("nii", "admin"),
+                        "editar_contactos",
+                        f"NII={nii_e}",
+                    )
                     flash("Contactos atualizados.", "ok")
                 except Exception as ex:
                     flash(f"Erro: {ex}", "error")
         elif acao == "reset_pw":
             nii = request.form.get("nii", "")
             ok, nova_pw = _reset_pw(nii)
+            if ok:
+                _audit(
+                    current_user().get("nii", "admin"),
+                    "reset_pw_admin",
+                    f"NII={nii}",
+                )
             flash(
                 f"Password resetada. Temporária: {nova_pw}" if ok else nova_pw,
                 "ok" if ok else "error",
             )
         elif acao == "desbloquear":
-            _unblock_user(request.form.get("nii", ""))
+            nii_d = request.form.get("nii", "")
+            _unblock_user(nii_d)
+            _audit(
+                current_user().get("nii", "admin"),
+                "desbloquear",
+                f"NII={nii_d}",
+            )
             flash("Desbloqueado.", "ok")
         elif acao == "eliminar":
             nii = request.form.get("nii", "")
