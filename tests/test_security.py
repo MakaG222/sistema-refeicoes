@@ -6,7 +6,6 @@ password validation e maxlength.
 """
 
 import os
-import pytest
 
 os.environ.setdefault("ENV", "development")
 os.environ.setdefault("SECRET_KEY", "test-secret-key-not-for-production")
@@ -28,7 +27,7 @@ class TestAdminPasswordEditStoresHash:
         login_as(client, "secadmin", "secadmin123")
 
         csrf = get_csrf(client)
-        resp = client.post(
+        client.post(
             "/admin/utilizadores",
             data={
                 "acao": "editar_user",

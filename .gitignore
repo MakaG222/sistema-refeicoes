@@ -44,3 +44,6 @@ credentials.json
 .coverage
 htmlcov/
 .pytest_cache/
+
+# Claude Code
+.claude/

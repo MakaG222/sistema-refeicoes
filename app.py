@@ -415,6 +415,7 @@ def _validate_password(pw: str) -> tuple:
         return False, "A password deve conter letras e números."
     return True, ""
 
+
 def _criar_utilizador(nii, ni, nome, ano, perfil, pw):
     try:
         if not all([nii, ni, nome, ano, perfil, pw]):
@@ -4299,9 +4300,9 @@ def licencas_entradas_saidas():
     dt = _parse_date(d_str)
 
     if request.method == "POST":
-        acao   = request.form.get("acao", "")
+        acao = request.form.get("acao", "")
         lic_id = request.form.get("lic_id", "")
-        agora  = datetime.now().strftime("%H:%M")
+        agora = datetime.now().strftime("%H:%M")
 
         with sr.db() as conn:
             if acao == "saida" and lic_id:
@@ -4321,11 +4322,15 @@ def licencas_entradas_saidas():
                 flash("✅ Entrada registada.", "ok")
 
             elif acao == "limpar_saida" and lic_id:
-                conn.execute("UPDATE licencas SET hora_saida=NULL WHERE id=?", (lic_id,))
+                conn.execute(
+                    "UPDATE licencas SET hora_saida=NULL WHERE id=?", (lic_id,)
+                )
                 conn.commit()
 
             elif acao == "limpar_entrada" and lic_id:
-                conn.execute("UPDATE licencas SET hora_entrada=NULL WHERE id=?", (lic_id,))
+                conn.execute(
+                    "UPDATE licencas SET hora_entrada=NULL WHERE id=?", (lic_id,)
+                )
                 conn.commit()
 
         return redirect(url_for("licencas_entradas_saidas", d=d_str))
@@ -4337,7 +4342,7 @@ def licencas_entradas_saidas():
             """SELECT COUNT(*) c FROM licencas l
                JOIN utilizadores uu ON uu.id=l.utilizador_id
                WHERE l.data=? AND uu.perfil='aluno'""",
-            (d_str,)
+            (d_str,),
         ).fetchone()["c"]
 
         # Saíram hoje (têm hora_saida)
@@ -4345,7 +4350,7 @@ def licencas_entradas_saidas():
             """SELECT COUNT(*) c FROM licencas l
                JOIN utilizadores uu ON uu.id=l.utilizador_id
                WHERE l.data=? AND uu.perfil='aluno' AND l.hora_saida IS NOT NULL""",
-            (d_str,)
+            (d_str,),
         ).fetchone()["c"]
 
         # Regressaram (têm hora_entrada)
@@ -4353,7 +4358,7 @@ def licencas_entradas_saidas():
             """SELECT COUNT(*) c FROM licencas l
                JOIN utilizadores uu ON uu.id=l.utilizador_id
                WHERE l.data=? AND uu.perfil='aluno' AND l.hora_entrada IS NOT NULL""",
-            (d_str,)
+            (d_str,),
         ).fetchone()["c"]
 
         # Fora da unidade = saíram (em qualquer data) mas ainda não regressaram
@@ -4405,7 +4410,7 @@ def licencas_entradas_saidas():
         return '<span class="badge badge-muted" style="font-size:.65rem">🌙 Após jantar</span>'
 
     def _build_row(r, mostrar_data=False):
-        saiu   = r["hora_saida"]
+        saiu = r["hora_saida"]
         entrou = r["hora_entrada"]
 
         if saiu and not entrou:
@@ -4439,7 +4444,9 @@ def licencas_entradas_saidas():
         else:
             col_entrada = "—"
 
-        data_td = f'<td class="small text-muted">{r["data"]}</td>' if mostrar_data else ""
+        data_td = (
+            f'<td class="small text-muted">{r["data"]}</td>' if mostrar_data else ""
+        )
 
         return (
             f"<tr>"
