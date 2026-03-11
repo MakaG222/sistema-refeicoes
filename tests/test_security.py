@@ -62,22 +62,22 @@ class TestCronEndpointRequiresToken:
     Podem retornar 302 (CSRF redirect), 401 ou 403."""
 
     def test_backup_cron_no_token(self, app):
-        import app as app_module
+        import config as cfg
 
-        original = app_module.CRON_API_TOKEN
-        app_module.CRON_API_TOKEN = "real-secret-token"
+        original = cfg.CRON_API_TOKEN
+        cfg.CRON_API_TOKEN = "real-secret-token"
         try:
             with app.test_client() as c:
                 resp = c.post("/api/backup-cron")
             assert resp.status_code == 403
         finally:
-            app_module.CRON_API_TOKEN = original
+            cfg.CRON_API_TOKEN = original
 
     def test_backup_cron_invalid_token(self, app):
-        import app as app_module
+        import config as cfg
 
-        original = app_module.CRON_API_TOKEN
-        app_module.CRON_API_TOKEN = "real-secret-token"
+        original = cfg.CRON_API_TOKEN
+        cfg.CRON_API_TOKEN = "real-secret-token"
         try:
             with app.test_client() as c:
                 resp = c.post(
@@ -86,25 +86,25 @@ class TestCronEndpointRequiresToken:
                 )
             assert resp.status_code == 403
         finally:
-            app_module.CRON_API_TOKEN = original
+            cfg.CRON_API_TOKEN = original
 
     def test_autopreencher_cron_no_token(self, app):
-        import app as app_module
+        import config as cfg
 
-        original = app_module.CRON_API_TOKEN
-        app_module.CRON_API_TOKEN = "real-secret-token"
+        original = cfg.CRON_API_TOKEN
+        cfg.CRON_API_TOKEN = "real-secret-token"
         try:
             with app.test_client() as c:
                 resp = c.post("/api/autopreencher-cron")
             assert resp.status_code == 403
         finally:
-            app_module.CRON_API_TOKEN = original
+            cfg.CRON_API_TOKEN = original
 
     def test_autopreencher_cron_invalid_token(self, app):
-        import app as app_module
+        import config as cfg
 
-        original = app_module.CRON_API_TOKEN
-        app_module.CRON_API_TOKEN = "real-secret-token"
+        original = cfg.CRON_API_TOKEN
+        cfg.CRON_API_TOKEN = "real-secret-token"
         try:
             with app.test_client() as c:
                 resp = c.post(
@@ -113,18 +113,18 @@ class TestCronEndpointRequiresToken:
                 )
             assert resp.status_code == 403
         finally:
-            app_module.CRON_API_TOKEN = original
+            cfg.CRON_API_TOKEN = original
 
 
 class TestCronEndpointHappyPath:
     """CRON endpoints devem funcionar com token válido."""
 
     def test_backup_cron_with_valid_token(self, app):
-        import app as app_module
+        import config as cfg
 
         test_token = "test-cron-token-valid-123"
-        original = app_module.CRON_API_TOKEN
-        app_module.CRON_API_TOKEN = test_token
+        original = cfg.CRON_API_TOKEN
+        cfg.CRON_API_TOKEN = test_token
         try:
             with app.test_client() as c:
                 resp = c.post(
@@ -135,14 +135,14 @@ class TestCronEndpointHappyPath:
             data = resp.get_json()
             assert data["status"] == "ok"
         finally:
-            app_module.CRON_API_TOKEN = original
+            cfg.CRON_API_TOKEN = original
 
     def test_autopreencher_cron_with_valid_token(self, app):
-        import app as app_module
+        import config as cfg
 
         test_token = "test-cron-token-valid-456"
-        original = app_module.CRON_API_TOKEN
-        app_module.CRON_API_TOKEN = test_token
+        original = cfg.CRON_API_TOKEN
+        cfg.CRON_API_TOKEN = test_token
         try:
             with app.test_client() as c:
                 resp = c.post(
@@ -153,7 +153,7 @@ class TestCronEndpointHappyPath:
             data = resp.get_json()
             assert data["status"] == "ok"
         finally:
-            app_module.CRON_API_TOKEN = original
+            cfg.CRON_API_TOKEN = original
 
 
 # ── Security Headers ─────────────────────────────────────────────────────────
