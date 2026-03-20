@@ -275,7 +275,6 @@ app.jinja_env.globals["prazo_label"] = _prazo_label
 app.jinja_env.globals["ano_label"] = _ano_label
 
 
-
 # ── Registar Blueprints ──────────────────────────────────────────────────
 from blueprints.api import api_bp  # noqa: E402
 from blueprints.auth import auth_bp  # noqa: E402

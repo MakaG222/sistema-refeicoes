@@ -13,7 +13,7 @@ def setup_reporting(app):
     create_system_user("adm_rep", "admin", nome="Admin Report", pw="AdmRep1234")
     create_system_user("coz_rep", "cozinha", nome="Cozinha Report", pw="CozRep1234")
     create_system_user("ofd_rep", "oficialdia", nome="OFD Report", pw="OfdRep1234")
-    create_aluno("al_rep1", "AR01", "Aluno Report", ano="1")
+    create_aluno("al_rep1", "RP01", "Aluno Report", ano="1")
 
 
 def _login_admin(client):
