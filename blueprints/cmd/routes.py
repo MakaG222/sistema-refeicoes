@@ -97,57 +97,14 @@ def cmd_editar_aluno(nii):
                 flash(f"Erro: {ex}", "error")
 
     back_url = url_for("operations.lista_alunos_ano", ano=ano_ret, d=d_ret)
-    content = f"""
-    <div class="container">
-      <div class="page-header">
-        {_back_btn(back_url, f"{ano_ret}º Ano")}
-        <div class="page-title">👤 Editar aluno — {esc(aluno.get("Nome_completo", ""))}</div>
-      </div>
-      <div class="card" style="max-width:560px">
-        <div class="card-title">ℹ️ Dados do aluno
-          <span class="badge badge-info" style="margin-left:.4rem">{aluno["ano"]}º Ano</span>
-        </div>
-        <form method="post">
-          {csrf_input()}
-          <div class="grid grid-2">
-            <div class="form-group">
-              <label>Nome completo</label>
-              <input type="text" name="nome" value="{esc(aluno.get("Nome_completo", ""))}" required>
-            </div>
-            <div class="form-group">
-              <label>NI <span class="text-muted small">(número interno)</span></label>
-              <input type="text" name="ni" value="{esc(aluno.get("NI") or "")}">
-            </div>
-            <div class="form-group">
-              <label>📧 Email</label>
-              <input type="email" name="email" value="{esc(aluno.get("email") or "")}" placeholder="email@exemplo.pt">
-            </div>
-            <div class="form-group">
-              <label>📱 Telemóvel</label>
-              <input type="tel" name="telemovel" value="{esc(aluno.get("telemovel") or "")}" placeholder="+351XXXXXXXXX">
-            </div>
-          </div>
-          <div class="alert alert-info" style="font-size:.81rem;margin-bottom:.8rem">
-            📌 NII: <strong>{esc(aluno["NII"])}</strong> — Este campo não pode ser alterado aqui.
-            Para alterar o NII contacta o administrador.
-          </div>
-          <div class="gap-btn">
-            <button class="btn btn-ok">💾 Guardar alterações</button>
-            <a class="btn btn-ghost" href="{back_url}">Cancelar</a>
-          </div>
-        </form>
-        <hr style="margin:1rem 0">
-        <form method="post" action="{url_for(".cmd_reset_password", nii=nii)}"
-              onsubmit="return confirm('Tens a certeza que queres resetar a password de {esc(aluno.get("Nome_completo", ""))}?')">
-          {csrf_input()}
-          <input type="hidden" name="ano" value="{ano_ret}">
-          <input type="hidden" name="d" value="{d_ret}">
-          <button class="btn btn-danger btn-sm">🔑 Resetar password</button>
-          <span class="text-muted small" style="margin-left:.5rem">Gera uma password temporária (o aluno terá de mudar no próximo login)</span>
-        </form>
-      </div>
-    </div>"""
-    return render_template("cmd/editar_aluno.html", content=Markup(content))
+    return render_template(
+        "cmd/editar_aluno.html",
+        aluno=aluno,
+        back_url=back_url,
+        ano_ret=ano_ret,
+        d_ret=d_ret,
+        nii=nii,
+    )
 
 
 @cmd_bp.route("/cmd/reset-password/<nii>", methods=["POST"])
@@ -262,74 +219,21 @@ def ver_perfil_aluno(nii):
 
     ref_hoje = dict(ref_hoje) if ref_hoje else {}
 
-    def yn(v, t=None):
-        return (
-            f'<span class="badge badge-ok">{t or "✅"}</span>'
-            if v
-            else '<span class="badge badge-muted">—</span>'
-        )
-
-    aus_html = ""
-    for a in aus_recentes:
-        aus_html += f'<div style="font-size:.82rem;padding:.25rem 0;border-bottom:1px solid var(--border)">{a["ausente_de"]} → {a["ausente_ate"]} <span class="text-muted small">{esc(a["motivo"] or "—")}</span></div>'
-
     back_url = url_for(
         "operations.lista_alunos_ano", ano=ano_ret or aluno["ano"], d=d_ret
     )
-    content = f"""
-    <div class="container">
-      <div class="page-header">
-        {_back_btn(back_url, f"{ano_ret or aluno['ano']}º Ano")}
-        <div class="page-title">👁 Perfil — {esc(aluno.get("Nome_completo", ""))}</div>
-        <span class="badge badge-info">Só leitura</span>
-      </div>
-      <div class="grid grid-2">
-        <div class="card">
-          <div class="card-title">ℹ️ Informação pessoal</div>
-          <div style="display:flex;flex-direction:column;gap:.7rem;font-size:.9rem">
-            <div><span class="text-muted">Nome completo:</span><br><strong>{esc(aluno["Nome_completo"])}</strong></div>
-            <div><span class="text-muted">NII:</span><br><strong>{esc(aluno["NII"])}</strong></div>
-            <div><span class="text-muted">NI:</span><br><strong>{esc(aluno.get("NI") or "—")}</strong></div>
-            <div><span class="text-muted">Ano:</span><br><strong>{aluno["ano"]}º Ano</strong></div>
-            <div><span class="text-muted">📧 Email:</span><br><strong>{esc(aluno.get("email") or "—")}</strong></div>
-            <div><span class="text-muted">📱 Telemóvel:</span><br><strong>{esc(aluno.get("telemovel") or "—")}</strong></div>
-          </div>
-          <hr style="margin:1rem 0">
-          <div class="grid grid-2">
-            <div class="stat-box"><div class="stat-num">{total_ref}</div><div class="stat-lbl">Refeições registadas</div></div>
-            <div class="stat-box"><div class="stat-num" style="color:{"var(--warn)" if ausencias_ativas else "var(--ok)"}">{ausencias_ativas}</div><div class="stat-lbl">Ausências ativas</div></div>
-          </div>
-        </div>
-        <div class="card">
-          <div class="card-title">🍽️ Refeições de hoje — {hoje.strftime("%d/%m/%Y")}</div>
-          <div style="display:grid;grid-template-columns:1fr 1fr;gap:.6rem;margin-bottom:.8rem">
-            <div style="padding:.6rem;background:#f8f9fa;border-radius:8px;text-align:center">
-              <div class="text-muted small">☕ Pequeno Almoço</div>
-              <div style="margin-top:.3rem">{yn(ref_hoje.get("pequeno_almoco"))}</div>
-            </div>
-            <div style="padding:.6rem;background:#f8f9fa;border-radius:8px;text-align:center">
-              <div class="text-muted small">🥐 Lanche</div>
-              <div style="margin-top:.3rem">{yn(ref_hoje.get("lanche"))}</div>
-            </div>
-            <div style="padding:.6rem;background:#f8f9fa;border-radius:8px;text-align:center">
-              <div class="text-muted small">🍽️ Almoço</div>
-              <div style="margin-top:.3rem"><strong>{ref_hoje.get("almoco") or "—"}</strong></div>
-            </div>
-            <div style="padding:.6rem;background:#f8f9fa;border-radius:8px;text-align:center">
-              <div class="text-muted small">🌙 Jantar</div>
-              <div style="margin-top:.3rem"><strong>{ref_hoje.get("jantar_tipo") or "—"}</strong></div>
-            </div>
-          </div>
-          {'<div class="alert alert-warn" style="font-size:.82rem">⚠️ Aluno com ausência ativa hoje</div>' if ausencias_ativas else ""}
-          <div class="card-title" style="margin-top:.8rem">📋 Ausências recentes</div>
-          {aus_html or '<div class="text-muted small">Sem ausências registadas.</div>'}
-        </div>
-      </div>
-      <div class="alert alert-info" style="font-size:.82rem">
-        🔒 Estás no modo de visualização. Para editar dados do aluno, contacta o Comandante de Companhia ou o Administrador.
-      </div>
-    </div>"""
-    return render_template("cmd/perfil_aluno.html", content=Markup(content))
+    return render_template(
+        "cmd/perfil_aluno.html",
+        aluno=aluno,
+        back_url=back_url,
+        ano_ret=ano_ret,
+        d_ret=d_ret,
+        total_ref=total_ref,
+        ausencias_ativas=ausencias_ativas,
+        aus_recentes=aus_recentes,
+        ref_hoje=ref_hoje,
+        hoje=hoje,
+    )
 
 
 # ═══════════════════════════════════════════════════════════════════════════

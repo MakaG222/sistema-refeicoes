@@ -12,8 +12,6 @@ from flask import (
     request,
     url_for,
 )
-from markupsafe import Markup
-
 import sistema_refeicoes_v8_4 as sr
 from blueprints.reporting import report_bp
 from utils.auth import (
@@ -23,10 +21,8 @@ from utils.auth import (
 )
 from utils.constants import ABREV_DIAS, NOMES_DIAS
 from utils.helpers import (
-    _back_btn,
     _parse_date,
     _parse_date_strict,
-    esc,
 )
 
 
@@ -321,12 +317,11 @@ def calendario_publico():
     cal_grid = _cal.monthcalendar(ano_m, mes_m)
     DIAS_CAB = ["Seg", "Ter", "Qua", "Qui", "Sex", "Sáb", "Dom"]
 
-    grid_html = ""
+    # Pré-computar dados de cada dia para o template
+    dias_info = {}
     for semana in cal_grid:
-        grid_html += "<tr>"
         for dia_n in semana:
             if dia_n == 0:
-                grid_html += '<td style="background:#f9fafb;border:1px solid var(--border);border-radius:6px"></td>'
                 continue
             d_obj = date(ano_m, mes_m, dia_n)
             entrada = entradas.get(d_obj.isoformat())
@@ -336,47 +331,11 @@ def calendario_publico():
                 else ("fim_semana" if d_obj.weekday() >= 5 else "normal")
             )
             nota = entrada["nota"] if entrada else ""
-            is_hoje = d_obj == hoje
-            bg = CORES.get(tipo, "#fff")
-            tc = CORES_TEXT.get(tipo, "#1a2533")
-            ic = ICONES.get(tipo, "✅")
-            border_style = (
-                "border:2.5px solid var(--primary)"
-                if is_hoje
-                else "border:1px solid var(--border)"
-            )
-            hoje_label = (
-                '<div style="font-size:.58rem;color:var(--primary);font-weight:900;text-align:center">HOJE</div>'
-                if is_hoje
-                else ""
-            )
-            nota_html = (
-                '<div style="font-size:.62rem;color:'
-                + tc
-                + ';margin-top:.12rem">'
-                + esc(nota)
-                + "</div>"
-                if nota
-                else ""
-            )
-            grid_html += (
-                '<td style="background:'
-                + bg
-                + ";"
-                + border_style
-                + ';border-radius:7px;padding:.38rem;vertical-align:top">'
-                + hoje_label
-                + '<div style="font-weight:800;font-size:.82rem;color:'
-                + tc
-                + '">'
-                + str(dia_n)
-                + '</div><div style="font-size:.6rem">'
-                + ic
-                + "</div>"
-                + nota_html
-                + "</td>"
-            )
-        grid_html += "</tr>"
+            dias_info[dia_n] = {
+                "tipo": tipo,
+                "nota": nota,
+                "is_hoje": d_obj == hoje,
+            }
 
     if mes_m == 1:
         prev_mes = f"{ano_m - 1}-12"
@@ -413,58 +372,23 @@ def calendario_publico():
         )
     )
 
-    legenda_html = "".join(
-        '<span style="display:inline-flex;align-items:center;gap:.3rem;font-size:.78rem">'
-        '<span style="width:.75rem;height:.75rem;background:'
-        + CORES[t]
-        + ";border:1px solid "
-        + CORES_TEXT[t]
-        + ';border-radius:3px;display:inline-block"></span>'
-        + LABELS[t]
-        + "</span>"
-        for t in ["normal", "fim_semana", "feriado", "exercicio"]
+    return render_template(
+        "reporting/calendario.html",
+        cal_grid=cal_grid,
+        dias_info=dias_info,
+        DIAS_CAB=DIAS_CAB,
+        ICONES=ICONES,
+        LABELS=LABELS,
+        CORES=CORES,
+        CORES_TEXT=CORES_TEXT,
+        prev_mes=prev_mes,
+        next_mes=next_mes,
+        mes_titulo=mes_titulo,
+        perfil=perfil,
+        back_url=back_url,
+        ano_m=ano_m,
+        mes_m=mes_m,
     )
-
-    header_cells = "".join(
-        '<th style="text-align:center;padding:.3rem;font-size:.78rem;color:var(--primary);font-weight:700">'
-        + d
-        + "</th>"
-        for d in DIAS_CAB
-    )
-
-    admin_link = (
-        '<a class="btn btn-primary btn-sm" href="'
-        + url_for("admin.admin_calendario")
-        + '">⚙️ Gerir calendário</a>'
-        if perfil in ("admin", "cmd")
-        else '<div class="alert alert-info" style="margin-top:.6rem;font-size:.82rem">📌 O calendário é gerido pelo administrador.</div>'
-    )
-
-    c = (
-        '<div class="container">'
-        '<div class="page-header">'
-        + _back_btn(back_url)
-        + '<div class="page-title">📅 Calendário Operacional</div></div>'
-        '<div class="card">'
-        '<div class="flex-between" style="margin-bottom:.9rem">'
-        '<a class="btn btn-ghost btn-sm" href="'
-        + url_for(".calendario_publico", mes=prev_mes)
-        + '">← Mês anterior</a>'
-        '<strong style="font-size:1.05rem">' + mes_titulo + "</strong>"
-        '<a class="btn btn-ghost btn-sm" href="'
-        + url_for(".calendario_publico", mes=next_mes)
-        + '">Mês seguinte →</a>'
-        "</div>"
-        '<div class="table-wrap"><table style="width:100%;border-collapse:separate;border-spacing:3px">'
-        "<thead><tr>" + header_cells + "</tr></thead>"
-        "<tbody>" + grid_html + "</tbody></table></div>"
-        '<div style="margin-top:.8rem;display:flex;gap:.75rem;flex-wrap:wrap">'
-        + legenda_html
-        + "</div>"
-        + admin_link
-        + "</div></div>"
-    )
-    return render_template("reporting/calendario.html", content=Markup(c))
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -519,86 +443,25 @@ def dashboard_semanal():
     )
     max_pa = max((d["t"]["pa"] for d in dias), default=1) or 1
 
-    def bar(val, maximo, cor, label):
-        pct = int(round(100 * val / maximo)) if maximo else 0
-        return (
-            f'<div style="display:flex;align-items:flex-end;gap:.2rem;height:80px">'
-            f'<div style="width:100%;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;height:100%">'
-            f'<span style="font-size:.7rem;font-weight:700;color:#1a2533;margin-bottom:.15rem">{val}</span>'
-            f'<div style="width:100%;background:{cor};border-radius:5px 5px 0 0;height:{max(4, pct)}%"></div>'
-            f"</div></div>"
-        )
-
-    # Chart almoços por dia
-    alm_chart = ""
-    jan_chart = ""
-    pa_chart = ""
-    table_rows = ""
-
+    # Pré-computar dados de visualização para cada dia
     for d in dias:
         t = d["t"]
-        di = d["data"]
         alm = t["alm_norm"] + t["alm_veg"] + t["alm_dieta"]
         jan = t["jan_norm"] + t["jan_veg"] + t["jan_dieta"]
-        tipo = d["tipo"]
-        is_wk = d["is_wknd"]
-        off = tipo in ("feriado", "exercicio")
-        col_bg = "#f9fafb" if off else ("#fffdf5" if is_wk else "#fff")
-        dow_col = "#c9a227" if is_wk else "#0a2d4e"
+        off = d["tipo"] in ("feriado", "exercicio")
+        d["alm"] = alm
+        d["jan"] = jan
+        d["col_bg"] = "#f9fafb" if off else ("#fffdf5" if d["is_wknd"] else "#fff")
+        d["dow_col"] = "#c9a227" if d["is_wknd"] else "#0a2d4e"
+        d["dow"] = ABREV_DIAS[d["data"].weekday()]
+        d["data_fmt"] = d["data"].strftime("%d/%m")
+        # Bar heights (px out of 80)
+        d["pn"] = int(round(80 * (t["alm_norm"] / max_alm))) if max_alm else 0
+        d["pv"] = int(round(80 * (t["alm_veg"] / max_alm))) if max_alm else 0
+        d["pd"] = int(round(80 * (t["alm_dieta"] / max_alm))) if max_alm else 0
+        d["pj"] = int(round(80 * (jan / max_jan))) if max_jan else 0
+        d["pp"] = int(round(80 * (t["pa"] / max_pa))) if max_pa else 0
 
-        # Stacked bar almoço
-        alm_tot = alm or 0
-        pn = int(round(80 * (t["alm_norm"] / max_alm))) if max_alm else 0
-        pv = int(round(80 * (t["alm_veg"] / max_alm))) if max_alm else 0
-        pd = int(round(80 * (t["alm_dieta"] / max_alm))) if max_alm else 0
-        alm_chart += f"""
-        <div style="display:flex;flex-direction:column;align-items:center;flex:1;background:{col_bg};padding:.4rem .2rem;border-radius:6px">
-          <div style="width:100%;height:80px;display:flex;flex-direction:column;justify-content:flex-end;align-items:center">
-            <span style="font-size:.68rem;font-weight:800;color:#1a2533;margin-bottom:.1rem">{alm_tot or "–"}</span>
-            <div style="width:70%;display:flex;flex-direction:column;border-radius:4px 4px 0 0;overflow:hidden">
-              {'<div style="height:' + str(pd) + 'px;background:#d68910"></div>' if pd else ""}
-              {'<div style="height:' + str(pv) + 'px;background:#2471a3"></div>' if pv else ""}
-              {'<div style="height:' + str(pn) + 'px;background:#1e8449"></div>' if pn else ""}
-            </div>
-          </div>
-          <div style="font-size:.68rem;font-weight:800;color:{dow_col};margin-top:.2rem">{ABREV_DIAS[di.weekday()]}</div>
-          <div style="font-size:.62rem;color:#6c757d">{di.strftime("%d/%m")}</div>
-        </div>"""
-
-        # Bar jantar
-        pj = int(round(80 * (jan / max_jan))) if max_jan else 0
-        jan_chart += f"""
-        <div style="display:flex;flex-direction:column;align-items:center;flex:1;background:{col_bg};padding:.4rem .2rem;border-radius:6px">
-          <div style="width:100%;height:80px;display:flex;flex-direction:column;justify-content:flex-end;align-items:center">
-            <span style="font-size:.68rem;font-weight:800;color:#1a2533;margin-bottom:.1rem">{jan or "–"}</span>
-            <div style="width:70%;height:{max(0, pj)}px;background:#1a5276;border-radius:4px 4px 0 0"></div>
-          </div>
-          <div style="font-size:.68rem;font-weight:800;color:{dow_col};margin-top:.2rem">{ABREV_DIAS[di.weekday()]}</div>
-        </div>"""
-
-        # Bar PA
-        pp = int(round(80 * (t["pa"] / max_pa))) if max_pa else 0
-        pa_chart += f"""
-        <div style="display:flex;flex-direction:column;align-items:center;flex:1;background:{col_bg};padding:.4rem .2rem;border-radius:6px">
-          <div style="width:100%;height:80px;display:flex;flex-direction:column;justify-content:flex-end;align-items:center">
-            <span style="font-size:.68rem;font-weight:800;color:#1a2533;margin-bottom:.1rem">{t["pa"] or "–"}</span>
-            <div style="width:70%;height:{max(0, pp)}px;background:#c9a227;border-radius:4px 4px 0 0"></div>
-          </div>
-          <div style="font-size:.68rem;font-weight:800;color:{dow_col};margin-top:.2rem">{ABREV_DIAS[di.weekday()]}</div>
-        </div>"""
-
-        sai_td = (
-            "" if perfil == "cozinha" else f'<td class="center">{t["jan_sai"]}</td>'
-        )
-        table_rows += f"""<tr style="background:{col_bg}">
-          <td><strong style="color:{dow_col}">{ABREV_DIAS[di.weekday()]}</strong> {di.strftime("%d/%m")}</td>
-          <td class="center">{t["pa"]}</td><td class="center">{t["lan"]}</td>
-          <td class="center">{t["alm_norm"]}</td><td class="center">{t["alm_veg"]}</td><td class="center">{t["alm_dieta"]}</td>
-          <td class="center">{t["jan_norm"]}</td><td class="center">{t["jan_veg"]}</td><td class="center">{t["jan_dieta"]}</td>
-          {sai_td}
-        </tr>"""
-
-    sai_th = "" if perfil == "cozinha" else '<th class="center">Sai</th>'
     _keys = [
         "pa",
         "lan",
@@ -611,8 +474,18 @@ def dashboard_semanal():
         "jan_sai",
     ]
     totais_semana = {k: sum(d["t"][k] for d in dias) for k in _keys}
+    totais_semana["alm_total"] = (
+        totais_semana["alm_norm"]
+        + totais_semana["alm_veg"]
+        + totais_semana["alm_dieta"]
+    )
+    totais_semana["jan_total"] = (
+        totais_semana["jan_norm"]
+        + totais_semana["jan_veg"]
+        + totais_semana["jan_dieta"]
+    )
 
-    # Totais da semana anterior para comparação (1 query batch)
+    # Totais da semana anterior para comparação
     prev_d0 = d0 - timedelta(days=7)
     prev_d1 = d0 - timedelta(days=1)
     prev_map, _ = sr.get_totais_periodo(prev_d0.isoformat(), prev_d1.isoformat())
@@ -621,139 +494,25 @@ def dashboard_semanal():
         for k in _keys:
             totais_prev[k] += t_p[k]
 
-    def _wk_delta(curr, prev):
-        d = curr - prev
-        if d > 0:
-            return f'<span style="color:#1e8449">↑{d}</span>'
-        if d < 0:
-            return f'<span style="color:#c0392b">↓{abs(d)}</span>'
-        return '<span style="color:#6c757d">=</span>'
-
-    _sai_total = (
-        ""
-        if perfil == "cozinha"
-        else f'<td class="center"><strong>{totais_semana["jan_sai"]}</strong></td>'
-    )
-    _sai_prev = (
-        ""
-        if perfil == "cozinha"
-        else f'<td class="center">{totais_prev["jan_sai"]}</td>'
-    )
-    _sai_var = (
-        ""
-        if perfil == "cozinha"
-        else f'<td class="center">{_wk_delta(totais_semana["jan_sai"], totais_prev["jan_sai"])}</td>'
-    )
-    comparison_rows = f"""
-        <tr style="background:#f0f4f8;font-weight:700;border-top:2px solid #0a2d4e">
-          <td>Total semana</td>
-          <td class="center">{totais_semana["pa"]}</td><td class="center">{totais_semana["lan"]}</td>
-          <td class="center">{totais_semana["alm_norm"]}</td><td class="center">{totais_semana["alm_veg"]}</td><td class="center">{totais_semana["alm_dieta"]}</td>
-          <td class="center">{totais_semana["jan_norm"]}</td><td class="center">{totais_semana["jan_veg"]}</td><td class="center">{totais_semana["jan_dieta"]}</td>
-          {_sai_total}
-        </tr>
-        <tr style="background:#fef9e7;font-size:.82rem">
-          <td>Semana anterior</td>
-          <td class="center">{totais_prev["pa"]}</td><td class="center">{totais_prev["lan"]}</td>
-          <td class="center">{totais_prev["alm_norm"]}</td><td class="center">{totais_prev["alm_veg"]}</td><td class="center">{totais_prev["alm_dieta"]}</td>
-          <td class="center">{totais_prev["jan_norm"]}</td><td class="center">{totais_prev["jan_veg"]}</td><td class="center">{totais_prev["jan_dieta"]}</td>
-          {_sai_prev}
-        </tr>
-        <tr style="background:#fff;font-size:.82rem">
-          <td>Variação</td>
-          <td class="center">{_wk_delta(totais_semana["pa"], totais_prev["pa"])}</td>
-          <td class="center">{_wk_delta(totais_semana["lan"], totais_prev["lan"])}</td>
-          <td class="center">{_wk_delta(totais_semana["alm_norm"], totais_prev["alm_norm"])}</td>
-          <td class="center">{_wk_delta(totais_semana["alm_veg"], totais_prev["alm_veg"])}</td>
-          <td class="center">{_wk_delta(totais_semana["alm_dieta"], totais_prev["alm_dieta"])}</td>
-          <td class="center">{_wk_delta(totais_semana["jan_norm"], totais_prev["jan_norm"])}</td>
-          <td class="center">{_wk_delta(totais_semana["jan_veg"], totais_prev["jan_veg"])}</td>
-          <td class="center">{_wk_delta(totais_semana["jan_dieta"], totais_prev["jan_dieta"])}</td>
-          {_sai_var}
-        </tr>"""
-
     back_url = (
         url_for("admin.admin_home")
         if perfil == "admin"
         else url_for("operations.painel_dia")
     )
 
-    legenda_alm = "".join(
-        f'<span style="display:inline-flex;align-items:center;gap:.3rem;font-size:.72rem">'
-        f'<span style="width:.65rem;height:.65rem;background:{c};border-radius:2px;display:inline-block"></span>{lb}</span>'
-        for lb, c in [("Normal", "#1e8449"), ("Veg.", "#2471a3"), ("Dieta", "#d68910")]
+    return render_template(
+        "reporting/dashboard_semanal.html",
+        dias=dias,
+        totais_semana=totais_semana,
+        totais_prev=totais_prev,
+        perfil=perfil,
+        d0=d0,
+        d1=d1,
+        d0_str=d0_str,
+        prev_w=prev_w,
+        next_w=next_w,
+        back_url=back_url,
     )
-
-    content = f"""
-    <div class="container">
-      <div class="page-header">
-        {_back_btn(back_url)}
-        <div class="page-title">📊 Dashboard Semanal</div>
-      </div>
-      <div class="card" style="padding:.85rem 1.1rem;margin-bottom:.75rem">
-        <div class="flex-between">
-          <div class="flex">
-            <a class="btn btn-ghost btn-sm" href="{url_for(".dashboard_semanal", d0=prev_w)}">← Semana anterior</a>
-            <strong>{d0.strftime("%d/%m/%Y")} — {d1.strftime("%d/%m/%Y")}</strong>
-            <a class="btn btn-ghost btn-sm" href="{url_for(".dashboard_semanal", d0=next_w)}">Semana seguinte →</a>
-          </div>
-          <form method="get" style="display:flex;gap:.3rem">
-            <input type="date" name="d0" value="{d0_str}" style="width:auto">
-            <button class="btn btn-primary btn-sm">Ir</button>
-          </form>
-        </div>
-      </div>
-
-      <div class="grid grid-4" style="margin-bottom:.85rem">
-        <div class="stat-box"><div class="stat-num">{totais_semana["pa"]}</div><div class="stat-lbl">PA semana</div></div>
-        <div class="stat-box"><div class="stat-num">{totais_semana["alm_norm"] + totais_semana["alm_veg"] + totais_semana["alm_dieta"]}</div><div class="stat-lbl">Almoços semana</div></div>
-        <div class="stat-box"><div class="stat-num">{totais_semana["jan_norm"] + totais_semana["jan_veg"] + totais_semana["jan_dieta"]}</div><div class="stat-lbl">Jantares semana</div></div>
-        <div class="stat-box"><div class="stat-num">{totais_semana["lan"]}</div><div class="stat-lbl">Lanches semana</div></div>
-      </div>
-
-      <div class="card">
-        <div class="card-title">🍽️ Almoços por dia
-          <span style="margin-left:.6rem;display:inline-flex;gap:.6rem">{legenda_alm}</span>
-        </div>
-        <div style="display:flex;gap:.3rem;align-items:flex-end;padding:.3rem 0">
-          {alm_chart}
-        </div>
-        <div style="border-top:2px solid #e9ecef;margin-top:.3rem"></div>
-      </div>
-
-      <div class="grid grid-2">
-        <div class="card">
-          <div class="card-title">🌙 Jantares por dia</div>
-          <div style="display:flex;gap:.3rem;align-items:flex-end;padding:.3rem 0">{jan_chart}</div>
-        </div>
-        <div class="card">
-          <div class="card-title">☕ Pequenos Almoços por dia</div>
-          <div style="display:flex;gap:.3rem;align-items:flex-end;padding:.3rem 0">{pa_chart}</div>
-        </div>
-      </div>
-
-      <div class="card">
-        <div class="card-title">📋 Tabela detalhada</div>
-        <div class="table-wrap">
-          <table>
-            <thead><tr><th>Dia</th><th>PA</th><th>Lan</th><th>Alm N</th><th>Alm V</th><th>Alm D</th><th>Jan N</th><th>Jan V</th><th>Jan D</th>{sai_th}</tr></thead>
-            <tbody>{table_rows}{comparison_rows}</tbody>
-          </table>
-        </div>
-        <div class="gap-btn" style="margin-top:.8rem">
-          <a class="btn btn-primary" href="{url_for(".exportar_relatorio", d0=d0_str, fmt="csv")}">⬇ CSV</a>
-          <a class="btn btn-primary" href="{url_for(".exportar_relatorio", d0=d0_str, fmt="xlsx")}">⬇ Excel</a>
-        </div>
-      </div>
-      <div class="card">
-        <div class="card-title">📅 Relatório Mensal</div>
-        <div class="gap-btn">
-          <a class="btn btn-gold" href="{url_for(".exportar_mensal", mes=d0.strftime("%Y-%m"), fmt="xlsx")}">📊 Excel mês {d0.strftime("%m/%Y")}</a>
-          <a class="btn btn-ghost" href="{url_for(".exportar_mensal", mes=d0.strftime("%Y-%m"), fmt="csv")}">📄 CSV mês {d0.strftime("%m/%Y")}</a>
-        </div>
-      </div>
-    </div>"""
-    return render_template("reporting/dashboard_semanal.html", content=Markup(content))
 
 
 # ═══════════════════════════════════════════════════════════════════════════
