@@ -293,17 +293,30 @@ def ausencias_cmd():
             )
         return redirect(url_for(".ausencias_cmd"))
 
-    filtro_ano = f"AND u.ano={ano_cmd}" if perfil == "cmd" else ""
     with sr.db() as conn:
-        rows = [
-            dict(r)
-            for r in conn.execute(f"""
-            SELECT a.id, u.NII, u.Nome_completo, u.NI, u.ano,
-                   a.ausente_de, a.ausente_ate, a.motivo
-            FROM ausencias a JOIN utilizadores u ON u.id=a.utilizador_id
-            WHERE u.perfil='aluno' {filtro_ano}
-            ORDER BY a.ausente_de DESC""").fetchall()
-        ]
+        if perfil == "cmd":
+            rows = [
+                dict(r)
+                for r in conn.execute(
+                    """SELECT a.id, u.NII, u.Nome_completo, u.NI, u.ano,
+                       a.ausente_de, a.ausente_ate, a.motivo
+                    FROM ausencias a JOIN utilizadores u ON u.id=a.utilizador_id
+                    WHERE u.perfil='aluno' AND u.ano=?
+                    ORDER BY a.ausente_de DESC""",
+                    (ano_cmd,),
+                ).fetchall()
+            ]
+        else:
+            rows = [
+                dict(r)
+                for r in conn.execute(
+                    """SELECT a.id, u.NII, u.Nome_completo, u.NI, u.ano,
+                       a.ausente_de, a.ausente_ate, a.motivo
+                    FROM ausencias a JOIN utilizadores u ON u.id=a.utilizador_id
+                    WHERE u.perfil='aluno'
+                    ORDER BY a.ausente_de DESC"""
+                ).fetchall()
+            ]
 
     # Alunos do ano para pesquisa rápida
     with sr.db() as conn:
@@ -474,21 +487,32 @@ def detencoes_cmd():
         )
         return redirect(url_for(".detencoes_cmd"))
 
-    filtro_ano = f"AND uu.ano={int(ano_cmd)}" if perfil == "cmd" else ""
     with sr.db() as conn:
-        rows = [
-            dict(r)
-            for r in conn.execute(
-                f"""
-            SELECT d.id, uu.NII, uu.Nome_completo, uu.NI, uu.ano,
-                   d.detido_de, d.detido_ate, d.motivo
-            FROM detencoes d
-            JOIN utilizadores uu ON uu.id=d.utilizador_id
-            WHERE uu.perfil='aluno' {filtro_ano}
-            ORDER BY d.detido_de DESC
-        """
-            ).fetchall()
-        ]
+        if perfil == "cmd":
+            rows = [
+                dict(r)
+                for r in conn.execute(
+                    """SELECT d.id, uu.NII, uu.Nome_completo, uu.NI, uu.ano,
+                       d.detido_de, d.detido_ate, d.motivo
+                    FROM detencoes d
+                    JOIN utilizadores uu ON uu.id=d.utilizador_id
+                    WHERE uu.perfil='aluno' AND uu.ano=?
+                    ORDER BY d.detido_de DESC""",
+                    (ano_cmd,),
+                ).fetchall()
+            ]
+        else:
+            rows = [
+                dict(r)
+                for r in conn.execute(
+                    """SELECT d.id, uu.NII, uu.Nome_completo, uu.NI, uu.ano,
+                       d.detido_de, d.detido_ate, d.motivo
+                    FROM detencoes d
+                    JOIN utilizadores uu ON uu.id=d.utilizador_id
+                    WHERE uu.perfil='aluno'
+                    ORDER BY d.detido_de DESC"""
+                ).fetchall()
+            ]
 
     with sr.db() as conn:
         if perfil == "cmd":

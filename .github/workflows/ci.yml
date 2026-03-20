@@ -28,8 +28,11 @@ jobs:
           ruff check .
           ruff format --check .
 
-      - name: Security audit
+      - name: Security audit (dependencies)
         run: pip-audit
+
+      - name: Security scan (code)
+        run: pip install bandit && bandit -r blueprints/ utils/ app.py -ll --skip B101,B104,B704
 
   test:
     name: Tests
@@ -57,4 +60,4 @@ jobs:
       - name: Run tests with coverage
         run: |
           coverage run -m pytest tests/ -v --tb=short
-          coverage report --fail-under=50
+          coverage report --fail-under=70
