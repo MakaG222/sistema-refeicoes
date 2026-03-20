@@ -1,2 +1,66 @@
 {% extends "base.html" %}
-{% block content %}{{ content }}{% endblock %}
+{% block content %}
+<div class="container">
+  <div class="page-header">
+    {{ back_btn(back_url) }}
+    <div class="page-title">📅 Calendário Operacional</div>
+  </div>
+  <div class="card">
+    <div class="flex-between" style="margin-bottom:.9rem">
+      <a class="btn btn-ghost btn-sm" href="{{ url_for('.calendario_publico', mes=prev_mes) }}">← Mês anterior</a>
+      <strong style="font-size:1.05rem">{{ mes_titulo }}</strong>
+      <a class="btn btn-ghost btn-sm" href="{{ url_for('.calendario_publico', mes=next_mes) }}">Mês seguinte →</a>
+    </div>
+    <div class="table-wrap">
+      <table style="width:100%;border-collapse:separate;border-spacing:3px">
+        <thead>
+          <tr>
+            {% for d in DIAS_CAB %}
+            <th style="text-align:center;padding:.3rem;font-size:.78rem;color:var(--primary);font-weight:700">{{ d }}</th>
+            {% endfor %}
+          </tr>
+        </thead>
+        <tbody>
+          {% for semana in cal_grid %}
+          <tr>
+            {% for dia_n in semana %}
+            {% if dia_n == 0 %}
+            <td style="background:#f9fafb;border:1px solid var(--border);border-radius:6px"></td>
+            {% else %}
+            {% set di = dias_info[dia_n] %}
+            {% set bg = CORES.get(di.tipo, '#fff') %}
+            {% set tc = CORES_TEXT.get(di.tipo, '#1a2533') %}
+            {% set ic = ICONES.get(di.tipo, '✅') %}
+            <td style="background:{{ bg }};{{ 'border:2.5px solid var(--primary)' if di.is_hoje else 'border:1px solid var(--border)' }};border-radius:7px;padding:.38rem;vertical-align:top">
+              {% if di.is_hoje %}
+              <div style="font-size:.58rem;color:var(--primary);font-weight:900;text-align:center">HOJE</div>
+              {% endif %}
+              <div style="font-weight:800;font-size:.82rem;color:{{ tc }}">{{ dia_n }}</div>
+              <div style="font-size:.6rem">{{ ic }}</div>
+              {% if di.nota %}
+              <div style="font-size:.62rem;color:{{ tc }};margin-top:.12rem">{{ di.nota }}</div>
+              {% endif %}
+            </td>
+            {% endif %}
+            {% endfor %}
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    <div style="margin-top:.8rem;display:flex;gap:.75rem;flex-wrap:wrap">
+      {% for t in ['normal', 'fim_semana', 'feriado', 'exercicio'] %}
+      <span style="display:inline-flex;align-items:center;gap:.3rem;font-size:.78rem">
+        <span style="width:.75rem;height:.75rem;background:{{ CORES[t] }};border:1px solid {{ CORES_TEXT[t] }};border-radius:3px;display:inline-block"></span>
+        {{ LABELS[t] }}
+      </span>
+      {% endfor %}
+    </div>
+    {% if perfil in ('admin', 'cmd') %}
+    <a class="btn btn-primary btn-sm" href="{{ url_for('admin.admin_calendario') }}">⚙️ Gerir calendário</a>
+    {% else %}
+    <div class="alert alert-info" style="margin-top:.6rem;font-size:.82rem">📌 O calendário é gerido pelo administrador.</div>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

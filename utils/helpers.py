@@ -89,16 +89,16 @@ def _refeicao_set(uid, dt, pa, lanche, alm, jan, sai, alterado_por="sistema"):
 
 def _back_btn(href, label="Voltar"):
     """Botão de voltar HTML."""
-    return f'<a class="back-btn" href="{href}">\u2190 {label}</a>'
+    return Markup(f'<a class="back-btn" href="{href}">\u2190 {label}</a>')
 
 
 def _bar_html(val, cap):
     """Barra de ocupação HTML."""
     if cap is None or cap <= 0:
-        return f'<div class="occ-label">{val} (sem limite)</div>'
+        return Markup(f'<div class="occ-label">{val} (sem limite)</div>')
     pct = min(100, int(round(100 * val / cap)))
     color = "#1e8449" if pct < 80 else ("#d68910" if pct < 95 else "#c0392b")
-    return (
+    return Markup(
         f'<div class="occ-bar"><span style="width:{pct}%;background:{color}"></span></div>'
         f'<div class="occ-label">{val} / {cap} ({pct}%)</div>'
     )
@@ -108,17 +108,19 @@ def _prazo_label(d):
     """Label de prazo de edição para uma data."""
     ok, _ = sr.refeicao_editavel(d)
     if ok:
-        return ""
+        return Markup("")
     if sr.PRAZO_LIMITE_HORAS is not None:
         prazo_dt = datetime(d.year, d.month, d.day) - timedelta(
             hours=sr.PRAZO_LIMITE_HORAS
         )
         h = (prazo_dt - datetime.now()).total_seconds() / 3600
         if h <= 0:
-            return '<span class="prazo-lock">\U0001f512 Prazo expirado</span>'
+            return Markup('<span class="prazo-lock">\U0001f512 Prazo expirado</span>')
         if h <= 24:
-            return f'<span class="prazo-warn">\u26a0\ufe0f Prazo em {int(h)}h</span>'
-    return '<span class="prazo-lock">\U0001f512 Prazo expirado</span>'
+            return Markup(
+                f'<span class="prazo-warn">\u26a0\ufe0f Prazo em {int(h)}h</span>'
+            )
+    return Markup('<span class="prazo-lock">\U0001f512 Prazo expirado</span>')
 
 
 # ═══════════════════════════════════════════════════════════════════════════

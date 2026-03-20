@@ -1,2 +1,52 @@
 {% extends "base.html" %}
-{% block content %}{{ content }}{% endblock %}
+{% block content %}
+    <div class="container">
+      <div class="page-header">
+        {{ back_btn(back_url, ano_ret ~ "º Ano") }}
+        <div class="page-title">👤 Editar aluno — {{ aluno.get("Nome_completo", "") }}</div>
+      </div>
+      <div class="card" style="max-width:560px">
+        <div class="card-title">ℹ️ Dados do aluno
+          <span class="badge badge-info" style="margin-left:.4rem">{{ aluno["ano"] }}º Ano</span>
+        </div>
+        <form method="post">
+          {{ csrf_input() }}
+          <div class="grid grid-2">
+            <div class="form-group">
+              <label>Nome completo</label>
+              <input type="text" name="nome" value="{{ aluno.get("Nome_completo", "") }}" required>
+            </div>
+            <div class="form-group">
+              <label>NI <span class="text-muted small">(número interno)</span></label>
+              <input type="text" name="ni" value="{{ aluno.get("NI") or "" }}">
+            </div>
+            <div class="form-group">
+              <label>📧 Email</label>
+              <input type="email" name="email" value="{{ aluno.get("email") or "" }}" placeholder="email@exemplo.pt">
+            </div>
+            <div class="form-group">
+              <label>📱 Telemóvel</label>
+              <input type="tel" name="telemovel" value="{{ aluno.get("telemovel") or "" }}" placeholder="+351XXXXXXXXX">
+            </div>
+          </div>
+          <div class="alert alert-info" style="font-size:.81rem;margin-bottom:.8rem">
+            📌 NII: <strong>{{ aluno["NII"] }}</strong> — Este campo não pode ser alterado aqui.
+            Para alterar o NII contacta o administrador.
+          </div>
+          <div class="gap-btn">
+            <button class="btn btn-ok">💾 Guardar alterações</button>
+            <a class="btn btn-ghost" href="{{ back_url }}">Cancelar</a>
+          </div>
+        </form>
+        <hr style="margin:1rem 0">
+        <form method="post" action="{{ url_for(".cmd_reset_password", nii=nii) }}"
+              onsubmit="return confirm('Tens a certeza que queres resetar a password de {{ aluno.get("Nome_completo", "") }}?')">
+          {{ csrf_input() }}
+          <input type="hidden" name="ano" value="{{ ano_ret }}">
+          <input type="hidden" name="d" value="{{ d_ret }}">
+          <button class="btn btn-danger btn-sm">🔑 Resetar password</button>
+          <span class="text-muted small" style="margin-left:.5rem">Gera uma password temporária (o aluno terá de mudar no próximo login)</span>
+        </form>
+      </div>
+    </div>
+{% endblock %}
