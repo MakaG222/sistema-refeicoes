@@ -1,8 +1,10 @@
 """Funções de exportação CSV e XLSX."""
 
+from __future__ import annotations
+
 import csv
 import os
-from typing import List
+from datetime import date
 
 from core.constants import EXPORT_DIR
 from core.database import db
@@ -14,7 +16,7 @@ from core.meals import (
 )
 
 
-def export_csv(rows: List[dict], headers: List[str], name: str) -> str:
+def export_csv(rows: list[dict], headers: list[str], name: str) -> str:
     path = os.path.join(EXPORT_DIR, name + ".csv")
     with open(path, "w", newline="", encoding="utf-8") as f:
         w = csv.writer(f)
@@ -24,7 +26,7 @@ def export_csv(rows: List[dict], headers: List[str], name: str) -> str:
     return path
 
 
-def export_xlsx(rows: List[dict], headers: List[str], name: str) -> str:
+def export_xlsx(rows: list[dict], headers: list[str], name: str) -> str:
     """Exporta para Excel (.xlsx). Requer openpyxl."""
     try:
         from openpyxl import Workbook
@@ -63,14 +65,14 @@ def export_xlsx(rows: List[dict], headers: List[str], name: str) -> str:
     return path
 
 
-def export_both(rows: List[dict], headers: List[str], name: str) -> tuple:
+def export_both(rows: list[dict], headers: list[str], name: str) -> tuple[str, str]:
     """Exporta CSV e XLSX e devolve ambos os caminhos."""
     p1 = export_csv(rows, headers, name)
     p2 = export_xlsx(rows, headers, name)
     return p1, p2
 
 
-def exportacoes_do_dia(d, ano=None):
+def exportacoes_do_dia(d: date, ano: int | None = None) -> None:
     """Gera CSV + XLSX do dia d."""
 
     di = d.isoformat()

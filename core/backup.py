@@ -9,7 +9,7 @@ import core.constants
 from core.constants import BACKUP_DIR, BACKUP_RETENCAO_DIAS
 
 
-def ensure_daily_backup():
+def ensure_daily_backup() -> None:
     """Cria backup automático 1x por dia (nome inclui data)."""
     try:
         ts_date = datetime.now().strftime("%Y%m%d")
@@ -22,7 +22,7 @@ def ensure_daily_backup():
         print(f"Falha a criar backup diário: {e}")
 
 
-def limpar_backups_antigos():
+def limpar_backups_antigos() -> None:
     """Remove backups mais antigos que BACKUP_RETENCAO_DIAS dias."""
     if BACKUP_RETENCAO_DIAS is None:
         return

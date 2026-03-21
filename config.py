@@ -52,19 +52,36 @@ class Config:
 
 # ── Logging ──────────────────────────────────────────────────────────────────
 def configure_logging(flask_app) -> None:
-    """Configura o logger da app Flask para stdout com formato legível."""
+    """Configura o logger da app Flask — JSON em produção, legível em dev."""
+    import json
     import sys
 
+    class JsonFormatter(logging.Formatter):
+        """Formatter que produz uma linha JSON por log entry."""
+
+        def format(self, record: logging.LogRecord) -> str:
+            entry = {
+                "ts": self.formatTime(record, self.datefmt),
+                "level": record.levelname,
+                "logger": record.name,
+                "msg": record.getMessage(),
+            }
+            if record.exc_info and record.exc_info[0] is not None:
+                entry["exception"] = self.formatException(record.exc_info)
+            return json.dumps(entry, ensure_ascii=False)
+
     handler = logging.StreamHandler(sys.stdout)
-    handler.setFormatter(
-        logging.Formatter(
-            "%(asctime)s %(levelname)s [%(name)s]: %(message)s",
-            datefmt="%Y-%m-%d %H:%M:%S",
+    if is_production:
+        handler.setFormatter(JsonFormatter(datefmt="%Y-%m-%dT%H:%M:%S"))
+    else:
+        handler.setFormatter(
+            logging.Formatter(
+                "%(asctime)s %(levelname)s [%(name)s]: %(message)s",
+                datefmt="%Y-%m-%d %H:%M:%S",
+            )
         )
-    )
     flask_app.logger.addHandler(handler)
     flask_app.logger.setLevel(logging.INFO)
-    # SQLite warnings
     logging.getLogger("sqlite3").setLevel(logging.WARNING)
 
 

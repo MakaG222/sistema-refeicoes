@@ -1,5 +1,7 @@
 """Camada de acesso à base de dados SQLite."""
 
+from __future__ import annotations
+
 import sqlite3
 
 import core.constants
@@ -34,7 +36,7 @@ def db() -> sqlite3.Connection:
     return _new_conn()
 
 
-def close_request_db(exc=None) -> None:
+def close_request_db(exc: BaseException | None = None) -> None:
     """Fecha a conexão da request (chamado pelo teardown do Flask)."""
     try:
         from flask import g
@@ -69,7 +71,7 @@ def sqlite_quick_check() -> bool:
         return False
 
 
-def ensure_schema():
+def ensure_schema() -> None:
     with db() as conn:
         fts_ok = False
         try:

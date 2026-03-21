@@ -1,7 +1,10 @@
 """Auto-preenchimento semanal de refeições."""
 
+from __future__ import annotations
+
 import logging
 from datetime import date, timedelta
+from typing import Any
 
 from core.absences import utilizador_ausente
 from core.database import db
@@ -16,7 +19,7 @@ from core.meals import (
 
 
 # Re-export para backward-compat
-def _default_refeicao_para_dia(d: date) -> dict:
+def _default_refeicao_para_dia(d: date) -> dict[str, Any]:
     """Marks all meals Mon-Fri, except dinner on Fridays."""
     if not _is_weekday_mon_to_fri(d):
         return {
@@ -39,7 +42,9 @@ def _default_refeicao_para_dia(d: date) -> dict:
     return base
 
 
-def _carry_forward_from_last_week(uid: int, d: date, base: dict) -> dict:
+def _carry_forward_from_last_week(
+    uid: int, d: date, base: dict[str, Any]
+) -> dict[str, Any]:
     prev = refeicao_get(uid, d - timedelta(days=7))
     out = dict(base)
     for k in [
@@ -57,7 +62,7 @@ def _carry_forward_from_last_week(uid: int, d: date, base: dict) -> dict:
     return out
 
 
-def autopreencher_refeicoes_semanais(dias_a_gerar: int = 14):
+def autopreencher_refeicoes_semanais(dias_a_gerar: int = 14) -> None:
     """Preenche automaticamente refeições para os próximos dias."""
     try:
         today = date.today()

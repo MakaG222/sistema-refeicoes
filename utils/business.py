@@ -1,7 +1,13 @@
-"""Lógica de negócio partilhada entre blueprints (ausências, licenças, detenções, etc.)."""
+"""Lógica de negócio partilhada entre blueprints (ausências, licenças, detenções, etc.).
 
-from datetime import date, timedelta
-from datetime import datetime
+Funções de resultado seguem o padrão tuple[bool, str]:
+    (True, "")           — sucesso
+    (False, "mensagem")  — erro com motivo legível
+"""
+
+from __future__ import annotations
+
+from datetime import date, datetime, timedelta
 
 from flask import current_app
 
@@ -19,7 +25,9 @@ from utils.helpers import _refeicao_set
 # ── Ausências ────────────────────────────────────────────────────────────
 
 
-def _registar_ausencia(uid, de, ate, motivo, criado_por):
+def _registar_ausencia(
+    uid: int, de: str, ate: str, motivo: str, criado_por: str
+) -> tuple[bool, str]:
     try:
         datetime.strptime(de, "%Y-%m-%d")
         datetime.strptime(ate, "%Y-%m-%d")
@@ -37,13 +45,15 @@ def _registar_ausencia(uid, de, ate, motivo, criado_por):
     return True, ""
 
 
-def _remover_ausencia(aid):
+def _remover_ausencia(aid: int) -> None:
     with db() as conn:
         conn.execute("DELETE FROM ausencias WHERE id=?", (aid,))
         conn.commit()
 
 
-def _editar_ausencia(aid, uid, de, ate, motivo):
+def _editar_ausencia(
+    aid: int, uid: int, de: str, ate: str, motivo: str
+) -> tuple[bool, str]:
     try:
         datetime.strptime(de, "%Y-%m-%d")
         datetime.strptime(ate, "%Y-%m-%d")
@@ -61,7 +71,7 @@ def _editar_ausencia(aid, uid, de, ate, motivo):
     return True, ""
 
 
-def _tem_ausencia_ativa(uid, d=None):
+def _tem_ausencia_ativa(uid: int, d: date | None = None) -> bool:
     """Verifica se utilizador tem ausência ativa na data (ou hoje)."""
     d_str = (d or date.today()).isoformat()
     with db() as conn:
@@ -76,7 +86,7 @@ def _tem_ausencia_ativa(uid, d=None):
 # ── Detenções ────────────────────────────────────────────────────────────
 
 
-def _tem_detencao_ativa(uid, d=None):
+def _tem_detencao_ativa(uid: int, d: date | None = None) -> bool:
     """Verifica se utilizador tem detenção ativa na data (ou hoje)."""
     try:
         d_str = (d or date.today()).isoformat()
@@ -91,7 +101,9 @@ def _tem_detencao_ativa(uid, d=None):
         return False
 
 
-def _auto_marcar_refeicoes_detido(uid, d_de, d_ate, alterado_por="sistema"):
+def _auto_marcar_refeicoes_detido(
+    uid: int, d_de: date, d_ate: date, alterado_por: str = "sistema"
+) -> None:
     """Auto-marca todas as refeições para dias de detenção se não estiverem marcadas."""
     try:
         d = d_de
@@ -171,7 +183,7 @@ def _licencas_semana_usadas(uid: int, d: date) -> int:
     return row["c"] or 0
 
 
-def _pode_marcar_licenca(uid: int, d: date, ano: int, ni: str) -> tuple:
+def _pode_marcar_licenca(uid: int, d: date, ano: int, ni: str) -> tuple[bool, str]:
     """Verifica se o aluno pode marcar licença para o dia 'd'.
 
     Retorna (pode: bool, motivo: str).
@@ -214,7 +226,7 @@ def _pode_marcar_licenca(uid: int, d: date, ano: int, ni: str) -> tuple:
 # ── Dia editável ─────────────────────────────────────────────────────────
 
 
-def _dia_editavel_aluno(d):
+def _dia_editavel_aluno(d: date) -> tuple[bool, str]:
     """Editável pelo aluno: futuro, dentro de DIAS_ANTECEDENCIA, prazo ok. Fins de semana permitidos."""
     hoje = date.today()
     if d < hoje:
@@ -230,7 +242,7 @@ def _dia_editavel_aluno(d):
 # ── Licença FDS ──────────────────────────────────────────────────────────
 
 
-def _marcar_licenca_fds(uid: int, sexta: date, alterado_por: str) -> tuple:
+def _marcar_licenca_fds(uid: int, sexta: date, alterado_por: str) -> tuple[bool, str]:
     """
     Marca 'licença fim de semana' para um aluno:
     - Sexta: licença antes_jantar (retira jantar, marca sai_unidade)
@@ -272,7 +284,7 @@ def _marcar_licenca_fds(uid: int, sexta: date, alterado_por: str) -> tuple:
         return False, str(exc)
 
 
-def _cancelar_licenca_fds(uid: int, sexta: date, alterado_por: str) -> tuple:
+def _cancelar_licenca_fds(uid: int, sexta: date, alterado_por: str) -> tuple[bool, str]:
     """
     Cancela 'licença fim de semana':
     - Remove a licença da sexta
@@ -303,14 +315,14 @@ def _cancelar_licenca_fds(uid: int, sexta: date, alterado_por: str) -> tuple:
 # ── Ocupação ─────────────────────────────────────────────────────────────
 
 
-def _get_ocupacao_dia(dt):
+def _get_ocupacao_dia(dt: date) -> dict[str, tuple[int, int]]:
     return get_ocupacao_capacidade(dt)
 
 
 # ── Alertas painel ───────────────────────────────────────────────────────
 
 
-def _alertas_painel(d_str: str, perfil: str) -> list:
+def _alertas_painel(d_str: str, perfil: str) -> list[dict[str, str]]:
     """Gera alertas operacionais para o painel do dia (sem tabela extra)."""
     alertas: list = []
     if perfil not in ("oficialdia", "cmd", "admin"):

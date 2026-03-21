@@ -8,6 +8,7 @@ Acede em:   http://localhost:8080
 import os
 import sys
 import secrets
+import threading
 import time
 from werkzeug.middleware.proxy_fix import ProxyFix
 from flask import (
@@ -391,6 +392,10 @@ def _bootstrap_dev_system_accounts(conn=None) -> None:
 
 _init_app_once()
 
+# ── Métricas básicas (in-memory, thread-safe) ────────────────────────────
+_metrics_lock = threading.Lock()
+_metrics = {"request_count": 0, "error_count": 0, "total_latency_ms": 0.0}
+
 _WAL_CHECKPOINT_INTERVAL = 300  # checkpoint WAL a cada 5 min
 _last_wal_checkpoint = 0.0
 
@@ -437,10 +442,15 @@ def after(r):
         "Content-Security-Policy",
         "default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'",
     )
-    # Logging de performance — avisar para requests lentos
+    # Logging de performance + métricas
     t0 = getattr(g, "_t0", None)
     if t0 is not None:
         dt_ms = (time.perf_counter() - t0) * 1000
+        with _metrics_lock:
+            _metrics["request_count"] += 1
+            _metrics["total_latency_ms"] += dt_ms
+            if r.status_code >= 500:
+                _metrics["error_count"] += 1
         if dt_ms > 500:
             app.logger.warning(
                 "Slow request: %s %s %.0fms", request.method, request.path, dt_ms
@@ -466,7 +476,13 @@ def err404(e):
 def err500(e):
     from flask import render_template
 
-    app.logger.exception("Erro 500")
+    app.logger.critical(
+        "CRITICAL ERROR: %s | path=%s method=%s user=%s",
+        e,
+        request.path if request else "unknown",
+        request.method if request else "unknown",
+        session.get("user", {}).get("nii", "anonymous") if session else "no-session",
+    )
     return render_template("errors/500.html", content=""), 500
 
 

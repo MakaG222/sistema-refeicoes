@@ -1,7 +1,8 @@
 """Funções de autenticação e lookup de utilizadores."""
 
+from __future__ import annotations
+
 import sqlite3
-from typing import Optional
 
 try:
     from werkzeug.security import check_password_hash as _wz_check_password_hash
@@ -38,7 +39,7 @@ def verify_password(pw: str, stored: str) -> bool:
     return pw == stored
 
 
-def reg_login(nii: str, ok: int, ip: Optional[str] = None):
+def reg_login(nii: str, ok: int, ip: str | None = None) -> None:
     """Regista evento de login na BD (com IP opcional)."""
     try:
         ip = (ip or "127.0.0.1")[:64]
@@ -78,7 +79,7 @@ def recent_failures_by_ip(ip: str, minutes: int = 15) -> int:
         return r["c"] if r else 0
 
 
-def block_user(nii: str, minutes: int = 15):
+def block_user(nii: str, minutes: int = 15) -> None:
     with db() as conn:
         conn.execute(
             "UPDATE utilizadores SET locked_until=datetime('now','localtime',?) WHERE NII=?",
@@ -95,7 +96,7 @@ def existe_admin() -> bool:
         return bool(r and r["c"] > 0)
 
 
-def user_by_nii(nii: str):
+def user_by_nii(nii: str) -> dict | None:
     nii = (nii or "").strip()
     if not nii:
         return None
@@ -106,7 +107,7 @@ def user_by_nii(nii: str):
         return dict(r) if r else None
 
 
-def user_by_ni(ni: str):
+def user_by_ni(ni: str) -> sqlite3.Row | None:
     ni = (ni or "").strip()
     if not ni:
         return None
@@ -115,6 +116,6 @@ def user_by_ni(ni: str):
         return r
 
 
-def user_id_by_nii(nii: str) -> Optional[int]:
+def user_id_by_nii(nii: str) -> int | None:
     u = user_by_nii(nii)
     return u["id"] if u else None
