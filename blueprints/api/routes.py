@@ -120,19 +120,17 @@ def health():
 @api_bp.route("/health/metrics")
 def health_metrics():
     """Métricas básicas de request — contadores in-memory."""
-    from app import _metrics, _metrics_lock
+    from core.middleware import get_metrics
 
-    with _metrics_lock:
-        count = _metrics["request_count"]
-        return _api_ok(
-            {
-                "request_count": count,
-                "error_count": _metrics["error_count"],
-                "avg_latency_ms": round(
-                    _metrics["total_latency_ms"] / max(count, 1), 1
-                ),
-            }
-        )
+    m = get_metrics()
+    count = m["request_count"]
+    return _api_ok(
+        {
+            "request_count": count,
+            "error_count": m["error_count"],
+            "avg_latency_ms": round(m["total_latency_ms"] / max(count, 1), 1),
+        }
+    )
 
 
 @api_bp.route("/api/backup-cron", methods=["POST"])

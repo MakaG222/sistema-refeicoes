@@ -31,9 +31,12 @@ def app():
     constants.BASE_DADOS = tmp.name
     ensure_schema()
 
-    import app as app_module
+    from core.bootstrap import bootstrap_dev_accounts, ensure_extra_schema
 
-    app_module._ensure_extra_schema()
+    ensure_extra_schema()
+    bootstrap_dev_accounts()
+
+    import app as app_module
 
     flask_app = app_module.app
     flask_app.config["TESTING"] = True
