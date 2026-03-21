@@ -9,7 +9,7 @@ tests/test_medium_features.py — Testes para funcionalidades de média priorida
 
 from datetime import date, timedelta
 
-import sistema_refeicoes_v8_4 as sr
+from core.database import db
 from conftest import create_aluno, create_system_user, get_csrf, login_as
 
 
@@ -24,7 +24,7 @@ class TestEmentaAlunoEditar:
 
         # Inserir ementa para daqui a 5 dias (garante prazo editável)
         amanha = date.today() + timedelta(days=5)
-        with sr.db() as conn:
+        with db() as conn:
             conn.execute(
                 """INSERT OR REPLACE INTO menus_diarios
                    (data, pequeno_almoco, lanche, almoco_normal, almoco_veg,
@@ -56,7 +56,7 @@ class TestEmentaAlunoEditar:
         nii = "991"
         # Usar uma data futura sem ementa (longe o suficiente para ser editável)
         futuro = date.today() + timedelta(days=6)
-        with sr.db() as conn:
+        with db() as conn:
             conn.execute(
                 "DELETE FROM menus_diarios WHERE data=?", (futuro.isoformat(),)
             )
@@ -80,7 +80,7 @@ class TestExportacaoHistorico:
 
         # Inserir refeição
         hoje = date.today()
-        with sr.db() as conn:
+        with db() as conn:
             conn.execute(
                 """INSERT OR REPLACE INTO refeicoes
                    (utilizador_id, data, pequeno_almoco, lanche, almoco, jantar_tipo, jantar_sai_unidade)

@@ -19,7 +19,7 @@ from conftest import create_aluno, create_system_user, login_as, get_csrf
 class TestAdminPasswordEditStoresHash:
     def test_admin_password_edit_stores_hash(self, app, client):
         """Alteração de password pelo admin deve guardar hash, não plain text."""
-        import sistema_refeicoes_v8_4 as sr
+        from core.database import db
         from werkzeug.security import check_password_hash
 
         create_aluno("sectest1", "SEC001", "Security Test", pw="oldpw123")
@@ -42,7 +42,7 @@ class TestAdminPasswordEditStoresHash:
             follow_redirects=True,
         )
 
-        with sr.db() as conn:
+        with db() as conn:
             row = conn.execute(
                 "SELECT Palavra_chave FROM utilizadores WHERE NII='sectest1'"
             ).fetchone()

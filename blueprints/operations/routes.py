@@ -13,7 +13,16 @@ from flask import (
 )
 from markupsafe import Markup
 
-import sistema_refeicoes_v8_4 as sr
+from core.auth_db import user_by_nii
+from core.backup import ensure_daily_backup
+from core.database import db
+from core.meals import (
+    dias_operacionais_batch,
+    get_totais_dia,
+    get_totais_periodo,
+    refeicao_editavel,
+    refeicao_get,
+)
 from blueprints.operations import ops_bp
 from utils.auth import current_user, role_required
 from utils.business import (
@@ -49,14 +58,14 @@ def painel_dia():
         acao = request.form.get("acao", "")
         if acao == "backup":
             try:
-                sr.ensure_daily_backup()
+                ensure_daily_backup()
                 flash("Backup criado.", "ok")
             except Exception as e:
                 flash(f"Falha: {e}", "error")
         return redirect(url_for(".painel_dia", d=dt.isoformat()))
 
     ano_int = int(u["ano"]) if perfil == "cmd" and u.get("ano") else None
-    t = sr.get_totais_dia(dt.isoformat(), ano_int)
+    t = get_totais_dia(dt.isoformat(), ano_int)
     occ = _get_ocupacao_dia(dt)
 
     def occ_card(nome, icon):
@@ -89,7 +98,7 @@ def painel_dia():
     previsao_html = ""
     if perfil in ("cozinha", "admin"):
         amanha = dt + timedelta(days=1)
-        t_am = sr.get_totais_dia(amanha.isoformat(), ano_int)
+        t_am = get_totais_dia(amanha.isoformat(), ano_int)
 
         def _delta(h, a):
             d = a - h
@@ -196,7 +205,7 @@ def painel_dia():
     # Painel de detidos (oficialdia / admin)
     detidos_html = ""
     if perfil in ("oficialdia", "admin"):
-        with sr.db() as conn:
+        with db() as conn:
             detidos = [
                 dict(r)
                 for r in conn.execute(
@@ -226,7 +235,7 @@ def painel_dia():
     # Licenças do dia (oficialdia / admin)
     licencas_html = ""
     if perfil in ("oficialdia", "admin"):
-        with sr.db() as conn:
+        with db() as conn:
             lics = [
                 dict(r)
                 for r in conn.execute(
@@ -330,7 +339,7 @@ def lista_alunos_ano(ano):
                 u["nii"],
             )
         elif acao == "marcar_presente" and uid_t:
-            with sr.db() as conn:
+            with db() as conn:
                 conn.execute(
                     """DELETE FROM ausencias WHERE utilizador_id=?
                                 AND ausente_de=? AND ausente_ate=?""",
@@ -339,7 +348,7 @@ def lista_alunos_ano(ano):
                 conn.commit()
         return redirect(url_for(".lista_alunos_ano", ano=ano, d=d_str))
 
-    with sr.db() as conn:
+    with db() as conn:
         alunos = [
             dict(r)
             for r in conn.execute(
@@ -364,7 +373,7 @@ def lista_alunos_ano(ano):
             ).fetchall()
         ]
 
-    t = sr.get_totais_dia(dt.isoformat(), ano)
+    t = get_totais_dia(dt.isoformat(), ano)
     total_alunos = len(alunos)
     com_ref = sum(
         1
@@ -395,7 +404,7 @@ def lista_alunos_ano(ano):
         return f'<span class="meal-chip chip-no">{label} ✗</span>'
 
     # Validação de prazo para esta data
-    ok_prazo, _ = sr.refeicao_editavel(dt)
+    ok_prazo, _ = refeicao_editavel(dt)
 
     rows_html = ""
     for a in alunos:
@@ -543,8 +552,8 @@ def relatorio_semanal():
     }
 
     # Batch: totais e calendário para a semana toda
-    _rel_map, _rel_empty = sr.get_totais_periodo(d0.isoformat(), d1.isoformat())
-    _rel_cal = sr.dias_operacionais_batch(d0, d1)
+    _rel_map, _rel_empty = get_totais_periodo(d0.isoformat(), d1.isoformat())
+    _rel_cal = dias_operacionais_batch(d0, d1)
     res = []
     for i in range(7):
         di = d0 + timedelta(days=i)
@@ -666,7 +675,7 @@ def excecoes_dia(d):
 
     if request.method == "POST":
         nii = request.form.get("nii", "").strip()
-        db_u = sr.user_by_nii(nii)
+        db_u = user_by_nii(nii)
         if not db_u:
             flash("Utilizador não encontrado.", "error")
             return redirect(url_for(".excecoes_dia", d=dt.isoformat()))
@@ -686,8 +695,8 @@ def excecoes_dia(d):
         )
 
     nii_q = request.args.get("nii", "").strip()
-    u_info = sr.user_by_nii(nii_q) if nii_q else None
-    r = sr.refeicao_get(u_info["id"], dt) if u_info and u_info.get("id") else {}
+    u_info = user_by_nii(nii_q) if nii_q else None
+    r = refeicao_get(u_info["id"], dt) if u_info and u_info.get("id") else {}
 
     def tipos_opt(sel):
         return "".join(
@@ -705,11 +714,11 @@ def excecoes_dia(d):
         # Ausência ativa
         ausente_hoje = uid_info and _tem_ausencia_ativa(uid_info, dt)
         # Prazo — pode o aluno ainda alterar por si?
-        ok_prazo, _ = sr.refeicao_editavel(dt)
+        ok_prazo, _ = refeicao_editavel(dt)
         # Histórico recente de ausências
         aus_hist = []
         if uid_info:
-            with sr.db() as conn:
+            with db() as conn:
                 aus_hist = [
                     dict(r)
                     for r in conn.execute(
@@ -801,7 +810,7 @@ def ausencias():
             flash("Ausência removida.", "ok")
             return redirect(url_for(".ausencias"))
         nii = request.form.get("nii", "").strip()
-        db_u = sr.user_by_nii(nii)
+        db_u = user_by_nii(nii)
         if not db_u:
             flash("Utilizador não encontrado.", "error")
         else:
@@ -820,7 +829,7 @@ def ausencias():
             )
         return redirect(url_for(".ausencias"))
 
-    with sr.db() as conn:
+    with db() as conn:
         rows = [
             dict(r)
             for r in conn.execute("""
@@ -889,7 +898,7 @@ def licencas_entradas_saidas():
         lic_id = request.form.get("lic_id", "")
         agora = datetime.now().strftime("%H:%M")
 
-        with sr.db() as conn:
+        with db() as conn:
             if acao == "saida" and lic_id:
                 conn.execute(
                     "UPDATE licencas SET hora_saida=? WHERE id=? AND hora_saida IS NULL",
@@ -921,7 +930,7 @@ def licencas_entradas_saidas():
         return redirect(url_for(".licencas_entradas_saidas", d=d_str))
 
     # ── Contadores ────────────────────────────────────────────────────────
-    with sr.db() as conn:
+    with db() as conn:
         # Total de licenças marcadas para hoje
         total = conn.execute(
             """SELECT COUNT(*) c FROM licencas l
@@ -1144,7 +1153,7 @@ def controlo_presencas():
         ni_q = request.form.get("ni", "").strip()
 
         if acao == "consultar" and ni_q:
-            with sr.db() as conn:
+            with db() as conn:
                 aluno = conn.execute(
                     "SELECT id,NII,NI,Nome_completo,ano,email,telemovel FROM utilizadores WHERE NI=? AND perfil='aluno'",
                     (ni_q,),
@@ -1153,7 +1162,7 @@ def controlo_presencas():
                 aluno = dict(aluno)
                 uid = aluno["id"]
                 ausente = _tem_ausencia_ativa(uid, dt)
-                with sr.db() as conn:
+                with db() as conn:
                     ref = conn.execute(
                         "SELECT * FROM refeicoes WHERE utilizador_id=? AND data=?",
                         (uid, dt.isoformat()),
@@ -1175,7 +1184,7 @@ def controlo_presencas():
                 flash(f'NI "{ni_q}" não encontrado.', "error")
 
         elif acao == "dar_saida" and ni_q:
-            with sr.db() as conn:
+            with db() as conn:
                 aluno = conn.execute(
                     "SELECT id,NII,Nome_completo FROM utilizadores WHERE NI=? AND perfil='aluno'",
                     (ni_q,),
@@ -1191,7 +1200,7 @@ def controlo_presencas():
                 )
                 # Sincronizar hora_saida na licença (se existir)
                 agora = datetime.now().strftime("%H:%M")
-                with sr.db() as conn:
+                with db() as conn:
                     conn.execute(
                         "UPDATE licencas SET hora_saida=? WHERE utilizador_id=? AND data=? AND hora_saida IS NULL",
                         (agora, aluno["id"], dt.isoformat()),
@@ -1205,14 +1214,14 @@ def controlo_presencas():
                 flash(f'NI "{ni_q}" não encontrado.', "error")
 
         elif acao == "dar_entrada" and ni_q:
-            with sr.db() as conn:
+            with db() as conn:
                 aluno = conn.execute(
                     "SELECT id,NII,Nome_completo FROM utilizadores WHERE NI=? AND perfil='aluno'",
                     (ni_q,),
                 ).fetchone()
             if aluno:
                 aluno = dict(aluno)
-                with sr.db() as conn:
+                with db() as conn:
                     conn.execute(
                         """DELETE FROM ausencias WHERE utilizador_id=?
                                     AND ausente_de=? AND ausente_ate=?""",
@@ -1221,7 +1230,7 @@ def controlo_presencas():
                     conn.commit()
                 # Sincronizar hora_entrada na licença (se existir)
                 agora = datetime.now().strftime("%H:%M")
-                with sr.db() as conn:
+                with db() as conn:
                     conn.execute(
                         "UPDATE licencas SET hora_entrada=? WHERE utilizador_id=? AND data=? AND hora_entrada IS NULL",
                         (agora, aluno["id"], dt.isoformat()),
@@ -1241,7 +1250,7 @@ def controlo_presencas():
     # Resumo de todos os anos para a data
     anos_resumo = []
     for ano in _get_anos_disponiveis():
-        with sr.db() as conn:
+        with db() as conn:
             total = conn.execute(
                 "SELECT COUNT(*) c FROM utilizadores WHERE ano=? AND perfil='aluno'",
                 (ano,),
@@ -1452,7 +1461,7 @@ def imprimir_ano(ano):
     d_str = request.args.get("d", date.today().isoformat())
     dt = _parse_date(d_str)
 
-    with sr.db() as conn:
+    with db() as conn:
         alunos = [
             dict(r)
             for r in conn.execute(
@@ -1486,7 +1495,7 @@ def imprimir_ano(ano):
         for a in alunos
     )
 
-    t = sr.get_totais_dia(dt.isoformat(), ano)
+    t = get_totais_dia(dt.isoformat(), ano)
     gerado_em = datetime.now().strftime("%d/%m/%Y %H:%M")
 
     html = f"""<!doctype html>

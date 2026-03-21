@@ -14,7 +14,9 @@ from flask import (
 )
 from markupsafe import Markup
 
-import sistema_refeicoes_v8_4 as sr
+from core.constants import BASE_DADOS
+from core.database import db
+from core.meals import get_totais_dia
 from blueprints.admin import admin_bp
 from utils.auth import (
     current_user,
@@ -58,8 +60,8 @@ from utils.validators import (
 @role_required("admin")
 def admin_home():
     hoje = date.today()
-    t = sr.get_totais_dia(hoje.isoformat())
-    with sr.db() as conn:
+    t = get_totais_dia(hoje.isoformat())
+    with db() as conn:
         n_users = conn.execute("SELECT COUNT(*) c FROM utilizadores").fetchone()["c"]
 
     action_cards = [
@@ -204,14 +206,14 @@ def admin_utilizadores():
                 flash("Telemóvel inválido.", "error")
             else:
                 try:
-                    with sr.db() as conn:
+                    with db() as conn:
                         conn.execute(
                             "UPDATE utilizadores SET Nome_completo=?,NI=?,ano=?,perfil=?,email=?,telemovel=? WHERE NII=?",
                             (nome_e, ni_e, ano_e, perfil_e, email_e, tel_e, nii_e),
                         )
                         conn.commit()
                     if pw_e:
-                        with sr.db() as conn:
+                        with db() as conn:
                             conn.execute(
                                 "UPDATE utilizadores SET Palavra_chave=?,must_change_password=1 WHERE NII=?",
                                 (generate_password_hash(pw_e), nii_e),
@@ -237,7 +239,7 @@ def admin_utilizadores():
                 flash("Telemóvel inválido.", "error")
             else:
                 try:
-                    with sr.db() as conn:
+                    with db() as conn:
                         conn.execute(
                             "UPDATE utilizadores SET email=?, telemovel=? WHERE NII=?",
                             (email_e, tel_e, nii_e),
@@ -288,7 +290,7 @@ def admin_utilizadores():
     q = request.args.get("q", "").strip()
     ano_f = request.args.get("ano", "all")
     edit_nii = request.args.get("edit_contactos", "")
-    with sr.db() as conn:
+    with db() as conn:
         sql = "SELECT id,NII,NI,Nome_completo,ano,perfil,locked_until,email,telemovel FROM utilizadores WHERE 1=1"
         args = []
         if q:
@@ -478,7 +480,7 @@ def admin_importar_csv():
 
             preview_rows = []
             erros = []
-            with sr.db() as conn:
+            with db() as conn:
                 existentes = {
                     r["NII"]
                     for r in conn.execute("SELECT NII FROM utilizadores").fetchall()
@@ -540,7 +542,7 @@ def admin_importar_csv():
             criados = 0
             ignorados = 0
             erros_conf = []
-            with sr.db() as conn:
+            with db() as conn:
                 existentes = {
                     r["NII"]
                     for r in conn.execute("SELECT NII FROM utilizadores").fetchall()
@@ -725,7 +727,7 @@ def admin_menus():
             "jantar_dieta",
         ]
         vals = [request.form.get(c, "").strip() or None for c in campos]
-        with sr.db() as conn:
+        with db() as conn:
             conn.execute(
                 """INSERT OR REPLACE INTO menus_diarios
                 (data,pequeno_almoco,lanche,almoco_normal,almoco_veg,almoco_dieta,jantar_normal,jantar_veg,jantar_dieta)
@@ -758,7 +760,7 @@ def admin_menus():
         flash("Menu e capacidades guardados.", "ok")
         return redirect(url_for(".admin_menus", d=d_save))
 
-    with sr.db() as conn:
+    with db() as conn:
         menu = conn.execute(
             "SELECT * FROM menus_diarios WHERE data=?", (dt.isoformat(),)
         ).fetchone()
@@ -855,7 +857,7 @@ def admin_log():
     sql += " ORDER BY l.alterado_em DESC LIMIT ?"
     args.append(q_limit)
 
-    with sr.db() as conn:
+    with db() as conn:
         rows = conn.execute(sql, args).fetchall()
         total_logs = conn.execute("SELECT COUNT(*) c FROM refeicoes_log").fetchone()[
             "c"
@@ -978,7 +980,7 @@ def admin_audit():
     q_action = request.args.get("action", "").strip()
 
     try:
-        with sr.db() as conn:
+        with db() as conn:
             sql = "SELECT id,ts,actor,action,detail FROM admin_audit_log WHERE 1=1"
             args: list = []
             if q_actor:
@@ -1079,7 +1081,7 @@ def admin_calendario():
                         flash(range_msg, "error")
                     else:
                         count = 0
-                        with sr.db() as conn:
+                        with db() as conn:
                             cur = d_de
                             while cur <= d_ate:
                                 conn.execute(
@@ -1098,7 +1100,7 @@ def admin_calendario():
             except Exception as e:
                 flash(str(e), "error")
         elif acao == "remover":
-            with sr.db() as conn:
+            with db() as conn:
                 conn.execute(
                     "DELETE FROM calendario_operacional WHERE data=?",
                     (request.form.get("dia", ""),),
@@ -1108,7 +1110,7 @@ def admin_calendario():
         return redirect(url_for(".admin_calendario"))
 
     hoje = date.today()
-    with sr.db() as conn:
+    with db() as conn:
         entradas = conn.execute(
             "SELECT data,tipo,nota FROM calendario_operacional WHERE data >= ? ORDER BY data LIMIT 90",
             (hoje.isoformat(),),
@@ -1197,7 +1199,7 @@ def admin_companhias():
                     if ano_int is None:
                         flash("Ano inválido (0-8).", "error")
                         return redirect(url_for(".admin_companhias"))
-                    with sr.db() as conn:
+                    with db() as conn:
                         conn.execute(
                             "INSERT INTO turmas (nome, ano, descricao) VALUES (?,?,?)",
                             (nome_turma, ano_int, descricao or None),
@@ -1217,7 +1219,7 @@ def admin_companhias():
                 flash("ID de turma inválido.", "error")
                 return redirect(url_for(".admin_companhias"))
             try:
-                with sr.db() as conn:
+                with db() as conn:
                     # Desassociar alunos antes de eliminar
                     conn.execute(
                         "UPDATE utilizadores SET turma_id=NULL WHERE turma_id=?",
@@ -1236,7 +1238,7 @@ def admin_companhias():
             if nii_at:
                 try:
                     turma_val = int(tid_at) if tid_at else None
-                    with sr.db() as conn:
+                    with db() as conn:
                         conn.execute(
                             "UPDATE utilizadores SET turma_id=? WHERE NII=? AND perfil='aluno'",
                             (turma_val, nii_at),
@@ -1259,7 +1261,7 @@ def admin_companhias():
                 flash("Ano inválido (0-8).", "error")
             else:
                 try:
-                    with sr.db() as conn:
+                    with db() as conn:
                         conn.execute(
                             "UPDATE utilizadores SET ano=? WHERE NII=? AND perfil='aluno'",
                             (novo_ano_v, nii_m),
@@ -1276,7 +1278,7 @@ def admin_companhias():
             if uid_p is None:
                 flash("ID inválido.", "error")
                 return redirect(url_for(".admin_companhias"))
-            with sr.db() as conn:
+            with db() as conn:
                 al = conn.execute(
                     "SELECT ano,NI FROM utilizadores WHERE id=?", (uid_p,)
                 ).fetchone()
@@ -1287,7 +1289,7 @@ def admin_companhias():
                     novo_ano_p = 0
                 else:
                     novo_ano_p = ano_a + 1
-                with sr.db() as conn:
+                with db() as conn:
                     conn.execute(
                         "UPDATE utilizadores SET ano=?,NI=? WHERE id=?",
                         (novo_ano_p, novo_ni or al["NI"], uid_p),
@@ -1306,7 +1308,7 @@ def admin_companhias():
                 novo_ano_p = 0
             else:
                 novo_ano_p = ano_origem + 1
-            with sr.db() as conn:
+            with db() as conn:
                 conn.execute(
                     "UPDATE utilizadores SET ano=? WHERE perfil='aluno' AND ano=?",
                     (novo_ano_p, ano_origem),
@@ -1320,7 +1322,7 @@ def admin_companhias():
 
         # ── Promoção global todos os anos ────────────────────────────────
         elif acao == "promover_todos_anos":
-            with sr.db() as conn:
+            with db() as conn:
                 # Promover do maior para o menor para evitar conflitos
                 for ano_a in range(6, 0, -1):
                     novo_ano_p = 0 if ano_a >= 6 else ano_a + 1
@@ -1335,7 +1337,7 @@ def admin_companhias():
 
     # ── Carregar dados ───────────────────────────────────────────────────
     try:
-        with sr.db() as conn:
+        with db() as conn:
             turmas = [
                 dict(r)
                 for r in conn.execute(
@@ -1349,7 +1351,7 @@ def admin_companhias():
     anos_data = {}
     all_anos = list(range(1, 7)) + [7, 8]
     for a in all_anos:
-        with sr.db() as conn:
+        with db() as conn:
             cnt = conn.execute(
                 "SELECT COUNT(*) c FROM utilizadores WHERE ano=? AND perfil='aluno'",
                 (a,),
@@ -1367,7 +1369,7 @@ def admin_companhias():
         cards = ""
         promovable = list(range(1, 7)) + [7, 8]
         for a in promovable:
-            with sr.db() as conn:
+            with db() as conn:
                 alunos_a = [
                     dict(r)
                     for r in conn.execute(
@@ -1450,7 +1452,7 @@ def admin_companhias():
         </tr>"""
 
     # ── Alunos para mover / atribuir turma ──────────────────────────────
-    with sr.db() as conn:
+    with db() as conn:
         alunos_all = conn.execute(
             "SELECT NII, NI, Nome_completo, ano, turma_id FROM utilizadores WHERE perfil='aluno' ORDER BY ano, NI"
         ).fetchall()
@@ -1636,7 +1638,7 @@ def admin_backup_download():
     """Permite ao admin descarregar o ficheiro da base de dados."""
     from pathlib import Path
 
-    db_path = Path(sr.BASE_DADOS)
+    db_path = Path(BASE_DADOS)
     if not db_path.exists():
         flash("Ficheiro da base de dados não encontrado.", "error")
         return redirect(url_for(".admin_home"))

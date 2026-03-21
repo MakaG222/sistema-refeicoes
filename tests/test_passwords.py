@@ -5,7 +5,7 @@ tests/test_passwords.py — Testes de passwords e migração
 
 from werkzeug.security import generate_password_hash
 
-import sistema_refeicoes_v8_4 as sr
+from core.database import db
 
 from tests.conftest import create_aluno, get_csrf, login_as
 
@@ -44,7 +44,7 @@ class TestMigratePasswordHash:
         uid = create_aluno("T_PW_MIG1", "501", "Password Migrate A", "1", pw="temp")
 
         # Definir password em texto simples directamente
-        with sr.db() as conn:
+        with db() as conn:
             conn.execute(
                 "UPDATE utilizadores SET Palavra_chave='pass_clara' WHERE id=?",
                 (uid,),
@@ -55,7 +55,7 @@ class TestMigratePasswordHash:
         app_module._migrate_password_hash(uid, "pass_clara")
 
         # Verificar que agora é hash
-        with sr.db() as conn:
+        with db() as conn:
             row = conn.execute(
                 "SELECT Palavra_chave FROM utilizadores WHERE id=?", (uid,)
             ).fetchone()
@@ -70,7 +70,7 @@ class TestFirstLoginPasswordChange:
         uid = create_aluno("T_PW_FC1", "510", "First Change A", "1", pw="510pw")
 
         # Forçar must_change_password
-        with sr.db() as conn:
+        with db() as conn:
             conn.execute(
                 "UPDATE utilizadores SET must_change_password=1 WHERE id=?", (uid,)
             )
@@ -90,7 +90,7 @@ class TestFirstLoginPasswordChange:
         uid = create_aluno("T_PW_FC2", "511", "First Change B", "1", pw="511pw")
 
         # Forçar must_change_password
-        with sr.db() as conn:
+        with db() as conn:
             conn.execute(
                 "UPDATE utilizadores SET must_change_password=1 WHERE id=?", (uid,)
             )
@@ -113,7 +113,7 @@ class TestFirstLoginPasswordChange:
         assert resp.status_code == 302
 
         # Verificar flag limpa
-        with sr.db() as conn:
+        with db() as conn:
             row = conn.execute(
                 "SELECT must_change_password FROM utilizadores WHERE id=?", (uid,)
             ).fetchone()
@@ -145,7 +145,7 @@ class TestAdminPasswordEdit:
         assert resp.status_code == 302
 
         # Verificar que password é hash, não texto simples
-        with sr.db() as conn:
+        with db() as conn:
             row = conn.execute(
                 "SELECT Palavra_chave FROM utilizadores WHERE NII='T_PW_ADM1'"
             ).fetchone()

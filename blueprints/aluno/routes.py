@@ -17,7 +17,15 @@ from flask import (
 from markupsafe import Markup
 
 import config as cfg
-import sistema_refeicoes_v8_4 as sr
+from core.auth_db import user_id_by_nii
+from core.database import db
+from core.meals import (
+    dias_operacionais_batch,
+    get_menu_do_dia,
+    refeicao_get,
+    refeicoes_batch,
+)
+from core.absences import ausencias_batch, detencoes_batch, licencas_batch
 from blueprints.aluno import aluno_bp
 from utils.auth import current_user, login_required
 from utils.business import (
@@ -60,7 +68,7 @@ from utils.validators import (
 def aluno_licenca_fds():
     """Marcar ou cancelar licença de fim de semana."""
     u = current_user()
-    uid = sr.user_id_by_nii(u["nii"])
+    uid = user_id_by_nii(u["nii"])
     if not uid:
         flash("Conta de sistema — funcionalidade não disponível.", "error")
         return redirect(url_for(".aluno_home"))
@@ -96,7 +104,7 @@ def aluno_licenca_fds():
         )
     else:
         # Verificar regras de licença para a sexta
-        with sr.db() as conn:
+        with db() as conn:
             aluno_row = conn.execute(
                 "SELECT ano, NI FROM utilizadores WHERE id=?", (uid,)
             ).fetchone()
@@ -123,9 +131,9 @@ def aluno_licenca_fds():
 @login_required
 def aluno_home():
     u = current_user()
-    uid = sr.user_id_by_nii(u["nii"])
+    uid = user_id_by_nii(u["nii"])
     hoje = date.today()
-    menu = sr.get_menu_do_dia(hoje)
+    menu = get_menu_do_dia(hoje)
 
     # Banner ausência ativa hoje
     ausente_hoje = uid and _tem_ausencia_ativa(uid, hoje)
@@ -157,12 +165,12 @@ def aluno_home():
 
     # Batch-load: carregar todos os dados de uma vez (elimina N+1)
     d_ate = hoje + timedelta(days=cfg.DIAS_ANTECEDENCIA)
-    cal_map = sr.dias_operacionais_batch(hoje, d_ate)
+    cal_map = dias_operacionais_batch(hoje, d_ate)
     if uid:
-        ref_map, ref_defaults = sr.refeicoes_batch(uid, hoje, d_ate)
-        aus_set = sr.ausencias_batch(uid, hoje, d_ate)
-        det_set = sr.detencoes_batch(uid, hoje, d_ate)
-        lic_map = sr.licencas_batch(uid, hoje, d_ate)
+        ref_map, ref_defaults = refeicoes_batch(uid, hoje, d_ate)
+        aus_set = ausencias_batch(uid, hoje, d_ate)
+        det_set = detencoes_batch(uid, hoje, d_ate)
+        lic_map = licencas_batch(uid, hoje, d_ate)
     else:
         ref_map, ref_defaults = {}, {}
         aus_set = set()
@@ -268,7 +276,7 @@ def aluno_home():
     stats_html = ""
     if uid:
         d0 = (hoje - timedelta(days=30)).isoformat()
-        with sr.db() as conn:
+        with db() as conn:
             rows = conn.execute(
                 "SELECT pequeno_almoco,lanche,almoco,jantar_tipo FROM refeicoes WHERE utilizador_id=? AND data>=?",
                 (uid, d0),
@@ -311,7 +319,7 @@ def aluno_home():
 @login_required
 def aluno_editar(d):
     u = current_user()
-    uid = sr.user_id_by_nii(u["nii"])
+    uid = user_id_by_nii(u["nii"])
     dt = _parse_date(d)
 
     if not uid:
@@ -331,13 +339,13 @@ def aluno_editar(d):
         flash(f"Não é possível editar: {msg}", "warn")
         return redirect(url_for(".aluno_home"))
 
-    r = sr.refeicao_get(uid, dt)
+    r = refeicao_get(uid, dt)
     occ = _get_ocupacao_dia(dt)
     is_weekend = dt.weekday() >= 5
     detido = _tem_detencao_ativa(uid, dt)
 
     # Dados do aluno para regras de licença
-    with sr.db() as conn:
+    with db() as conn:
         aluno_row = conn.execute(
             "SELECT ano, NI FROM utilizadores WHERE id=?", (uid,)
         ).fetchone()
@@ -345,7 +353,7 @@ def aluno_editar(d):
     ni_aluno = aluno_row["NI"] if aluno_row else ""
 
     # Licença existente para este dia
-    with sr.db() as conn:
+    with db() as conn:
         lic_row = conn.execute(
             "SELECT tipo FROM licencas WHERE utilizador_id=? AND data=?",
             (uid, dt.isoformat()),
@@ -363,7 +371,7 @@ def aluno_editar(d):
 
         # Processar licença (antes_jantar / apos_jantar / vazio)
         licenca_tipo = request.form.get("licenca", "")
-        with sr.db() as conn:
+        with db() as conn:
             if licenca_tipo in ("antes_jantar", "apos_jantar"):
                 pode, motivo = _pode_marcar_licenca(uid, dt, ano_aluno, ni_aluno)
                 if pode:
@@ -468,7 +476,7 @@ def aluno_editar(d):
       </div>"""
 
     # Ementa do dia
-    menu = sr.get_menu_do_dia(dt)
+    menu = get_menu_do_dia(dt)
     ementa_html = ""
     if menu:
 
@@ -633,7 +641,7 @@ def aluno_editar(d):
 @login_required
 def aluno_ausencias():
     u = current_user()
-    uid = sr.user_id_by_nii(u["nii"])
+    uid = user_id_by_nii(u["nii"])
     if not uid:
         flash("Conta de sistema — funcionalidade não disponível.", "error")
         return redirect(url_for(".aluno_home"))
@@ -665,7 +673,7 @@ def aluno_ausencias():
         elif acao == "remover":
             aid = _val_int_id(request.form.get("id", ""))
             if aid is not None:
-                with sr.db() as conn:
+                with db() as conn:
                     conn.execute(
                         "DELETE FROM ausencias WHERE id=? AND utilizador_id=?",
                         (aid, uid),
@@ -674,7 +682,7 @@ def aluno_ausencias():
                 flash("Ausência removida.", "ok")
         return redirect(url_for(".aluno_ausencias"))
 
-    with sr.db() as conn:
+    with db() as conn:
         rows = [
             dict(r)
             for r in conn.execute(
@@ -789,11 +797,11 @@ def aluno_ausencias():
 @login_required
 def aluno_historico():
     u = current_user()
-    uid = sr.user_id_by_nii(u["nii"])
+    uid = user_id_by_nii(u["nii"])
     hoje = date.today()
     rows = []
     if uid:
-        with sr.db() as conn:
+        with db() as conn:
             rows = conn.execute(
                 """SELECT data,pequeno_almoco,lanche,almoco,jantar_tipo,jantar_sai_unidade
               FROM refeicoes WHERE utilizador_id=? AND data>=? ORDER BY data DESC""",
@@ -838,7 +846,7 @@ def aluno_historico():
 @login_required
 def exportar_historico_aluno():
     u = current_user()
-    uid = sr.user_id_by_nii(u["nii"])
+    uid = user_id_by_nii(u["nii"])
     fmt = (request.args.get("fmt", "csv") or "csv").strip().lower()
     if fmt not in {"csv", "xlsx"}:
         abort(400)
@@ -846,7 +854,7 @@ def exportar_historico_aluno():
     hoje = date.today()
     rows = []
     if uid:
-        with sr.db() as conn:
+        with db() as conn:
             rows = conn.execute(
                 """SELECT data,pequeno_almoco,lanche,almoco,jantar_tipo,jantar_sai_unidade
               FROM refeicoes WHERE utilizador_id=? AND data>=? ORDER BY data DESC""",
@@ -1002,12 +1010,12 @@ def aluno_password():
 @login_required
 def aluno_perfil():
     u = current_user()
-    uid = sr.user_id_by_nii(u["nii"])
+    uid = user_id_by_nii(u["nii"])
     if not uid:
         flash("Conta de sistema — funcionalidade não disponível.", "error")
         return redirect(url_for(".aluno_home"))
 
-    with sr.db() as conn:
+    with db() as conn:
         row = dict(
             conn.execute(
                 "SELECT NII, NI, Nome_completo, ano, email, telemovel FROM utilizadores WHERE id=?",
@@ -1025,7 +1033,7 @@ def aluno_perfil():
             flash("Telemóvel inválido.", "error")
             return redirect(url_for(".aluno_perfil"))
         try:
-            with sr.db() as conn:
+            with db() as conn:
                 conn.execute(
                     "UPDATE utilizadores SET email=?, telemovel=? WHERE id=?",
                     (email_n, telef_n, uid),
@@ -1042,7 +1050,7 @@ def aluno_perfil():
             flash(f"Erro: {ex}", "error")
 
     hoje = date.today()
-    with sr.db() as conn:
+    with db() as conn:
         total_ref = conn.execute(
             "SELECT COUNT(*) c FROM refeicoes WHERE utilizador_id=?", (uid,)
         ).fetchone()["c"]

@@ -25,10 +25,11 @@ def app():
     tmp.close()
     os.environ["DB_PATH"] = tmp.name
 
-    import sistema_refeicoes_v8_4 as sr
+    import core.constants as constants
+    from core.database import ensure_schema
 
-    sr.BASE_DADOS = tmp.name
-    sr.ensure_schema()
+    constants.BASE_DADOS = tmp.name
+    ensure_schema()
 
     import app as app_module
 
@@ -64,12 +65,12 @@ def create_aluno(nii, ni, nome, ano="1", pw=None):
     """Cria um aluno de teste na BD. Retorna o user_id."""
     from werkzeug.security import generate_password_hash
 
-    import sistema_refeicoes_v8_4 as sr
+    from core.database import db
 
     if pw is None:
         pw = nii
     pw_hash = generate_password_hash(pw, method="pbkdf2")
-    with sr.db() as conn:
+    with db() as conn:
         conn.execute(
             """INSERT OR IGNORE INTO utilizadores
                (NII, NI, Nome_completo, Palavra_chave, ano, perfil, must_change_password)
@@ -85,14 +86,14 @@ def create_system_user(nii, perfil, nome=None, ano="0", pw=None):
     """Cria um utilizador de sistema (cmd, oficialdia, etc.)."""
     from werkzeug.security import generate_password_hash
 
-    import sistema_refeicoes_v8_4 as sr
+    from core.database import db
 
     if pw is None:
         pw = nii + "123"
     if nome is None:
         nome = f"Test {perfil.title()}"
     pw_hash = generate_password_hash(pw, method="pbkdf2")
-    with sr.db() as conn:
+    with db() as conn:
         conn.execute(
             """INSERT OR IGNORE INTO utilizadores
                (NII, NI, Nome_completo, Palavra_chave, ano, perfil, must_change_password)
