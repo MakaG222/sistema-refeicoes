@@ -1,2 +1,64 @@
 {% extends "base.html" %}
-{% block content %}{{ content }}{% endblock %}
+{% block content %}
+<div class="container">
+  <div class="page-header">{{ back_btn(back_url) }}<div class="page-title">{{ titulo }}</div></div>
+  <div class="card">
+    <div class="card-title">Registar detenção</div>
+    {% if alunos_ano %}
+    <datalist id="alunos_list">
+      {% for a in alunos_ano %}
+      <option value="{{ a.NII }}">{{ a.NI }} — {{ a.Nome_completo }}</option>
+      {% endfor %}
+    </datalist>
+    {% endif %}
+    <form method="post">
+      {{ csrf_input() }}
+      <div class="grid grid-2">
+        <div class="form-group">
+          <label>NII do aluno</label>
+          <input type="text" name="nii" maxlength="32" required placeholder="NII" {% if alunos_ano %}list="alunos_list"{% endif %}>
+        </div>
+        <div class="form-group"><label>Motivo (opcional)</label><input type="text" name="motivo" maxlength="500" placeholder="Ex: detido por..."></div>
+        <div class="form-group"><label>De</label><input type="date" name="de" required value="{{ hoje }}"></div>
+        <div class="form-group"><label>Até</label><input type="date" name="ate" required value="{{ hoje }}"></div>
+      </div>
+      <button class="btn btn-ok">Registar detenção</button>
+    </form>
+  </div>
+  <div class="card">
+    <div class="card-title">Detenções registadas</div>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Aluno</th><th>De</th><th>Até</th><th>Motivo</th><th>Estado</th><th>Ações</th></tr></thead>
+        <tbody>
+          {% for r in rows %}
+          <tr>
+            <td><strong>{{ r.Nome_completo }}</strong><br><span class="text-muted small">{{ r.NII }} · {{ r.ano }}º ano</span></td>
+            <td>{{ r.detido_de }}</td>
+            <td>{{ r.detido_ate }}</td>
+            <td>{{ r.motivo or "—" }}</td>
+            <td>
+              {% if r.detido_de <= hoje and hoje <= r.detido_ate %}
+              <span class="badge badge-warn">Atual</span>
+              {% else %}
+              <span class="badge badge-muted">Inativa</span>
+              {% endif %}
+            </td>
+            <td>
+              <form method="post" style="display:inline">
+                {{ csrf_input() }}
+                <input type="hidden" name="acao" value="remover">
+                <input type="hidden" name="id" value="{{ r.id }}">
+                <button class="btn btn-danger btn-sm">🗑</button>
+              </form>
+            </td>
+          </tr>
+          {% else %}
+          <tr><td colspan="6" class="text-muted center" style="padding:1.5rem">Sem detenções.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+{% endblock %}

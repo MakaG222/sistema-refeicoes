@@ -7,7 +7,7 @@ ignore = ["E402", "E501"]
 
 [tool.coverage.run]
 source = ["."]
-omit = ["tests/*", "sistema_refeicoes_v8_4.py", "test_*.py"]
+omit = ["tests/*", "test_*.py"]
 
 [tool.coverage.report]
 show_missing = true

@@ -1,2 +1,86 @@
 {% extends "base.html" %}
-{% block content %}{{ content }}{% endblock %}
+{% block content %}
+    <div class="container">
+      <div class="page-header">
+        {{ back_btn(url_for(".aluno_home"))|safe }}
+        <div class="page-title">🚫 As minhas ausências</div>
+      </div>
+      <div class="alert alert-info">
+        📌 Com uma ausência ativa as tuas refeições não são contabilizadas e não podes editar refeições para esse período.
+      </div>
+      <div class="card" style="max-width:520px">
+        <div class="card-title">{{ form_title }}</div>
+        <form method="post">
+          {{ csrf_input() }}
+          <input type="hidden" name="acao" value="{{ form_action }}">
+          {% if edit_row %}
+          <input type="hidden" name="id" value="{{ edit_row.id }}">
+          {% endif %}
+          <div class="grid grid-2">
+            <div class="form-group">
+              <label>De</label>
+              <input type="date" name="de" value="{{ form_de }}" required min="{{ hoje }}">
+            </div>
+            <div class="form-group">
+              <label>Até</label>
+              <input type="date" name="ate" value="{{ form_ate }}" required min="{{ hoje }}">
+            </div>
+          </div>
+          <div class="form-group">
+            <label>Motivo (opcional)</label>
+            <input type="text" name="motivo" maxlength="500" value="{{ form_motivo }}" placeholder="Ex: deslocação, exercício, visita...">
+          </div>
+          <div class="gap-btn">
+            <button class="btn btn-ok">{{ "Atualizar" if edit_row else "Registar ausência" }}</button>
+            {% if edit_row %}
+            <a class="btn btn-ghost" href="{{ url_for(".aluno_ausencias") }}">Cancelar</a>
+            {% endif %}
+          </div>
+        </form>
+      </div>
+      <div class="card">
+        <div class="card-title">Histórico de ausências</div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>De</th><th>Até</th><th>Motivo</th><th>Estado</th><th>Ações</th></tr></thead>
+            <tbody>
+              {% for r in rows %}
+              {% set is_atual = r.ausente_de <= hoje <= r.ausente_ate %}
+              {% set is_futura = r.ausente_de > hoje %}
+              {% set pode = is_atual or is_futura %}
+              <tr>
+                <td>{{ r.ausente_de }}</td>
+                <td>{{ r.ausente_ate }}</td>
+                <td>{{ r.motivo or "—" }}</td>
+                <td>
+                  {% if is_atual %}
+                  <span class="badge badge-warn">Atual</span>
+                  {% elif is_futura %}
+                  <span class="badge badge-info">Futura</span>
+                  {% else %}
+                  <span class="badge badge-muted">Passada</span>
+                  {% endif %}
+                </td>
+                <td>
+                  <div class="gap-btn">
+                    {% if pode %}
+                    <a class="btn btn-ghost btn-sm" href="{{ url_for(".aluno_ausencias") }}?edit={{ r.id }}">✏️</a>
+                    <form method="post" style="display:inline">
+                      {{ csrf_input() }}
+                      <input type="hidden" name="acao" value="remover">
+                      <input type="hidden" name="id" value="{{ r.id }}">
+                      <button class="btn btn-danger btn-sm" onclick="return confirm('Remover ausência?')">🗑</button>
+                    </form>
+                    {% endif %}
+                  </div>
+                </td>
+              </tr>
+              {% else %}
+              <tr><td colspan="5" class="text-muted" style="padding:1.5rem;text-align:center">Sem ausências registadas.</td></tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+{% endblock %}

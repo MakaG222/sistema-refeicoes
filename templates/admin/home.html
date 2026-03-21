@@ -1,2 +1,32 @@
 {% extends "base.html" %}
-{% block content %}{{ content }}{% endblock %}
+{% block content %}
+<div class="container">
+  <div class="page-header"><div class="page-title">⚓ Administração — Escola Naval</div></div>
+  <div class="card">
+    <div class="card-title">📊 Hoje — {{ hoje.strftime("%d/%m/%Y") }}</div>
+    <div class="grid grid-4">
+      <div class="stat-box"><div class="stat-num">{{ t.pa }}</div><div class="stat-lbl">Pequenos Almoços</div></div>
+      <div class="stat-box"><div class="stat-num">{{ t.lan }}</div><div class="stat-lbl">Lanches</div></div>
+      <div class="stat-box"><div class="stat-num">{{ total_alm }}</div><div class="stat-lbl">Almoços</div></div>
+      <div class="stat-box"><div class="stat-num">{{ total_jan }}</div><div class="stat-lbl">Jantares</div></div>
+    </div>
+  </div>
+  <div class="card">
+    <div class="card-title">⚡ Módulos</div>
+    <div class="grid grid-4">
+      {% for href, icon, label, desc in action_cards %}
+      <a class="action-card" href="{{ href }}"><div class="icon">{{ icon }}</div><div class="label">{{ label }}</div><div class="desc">{{ desc }}</div></a>
+      {% endfor %}
+    </div>
+  </div>
+  <div class="card">
+    <div class="card-title">👥 Lista por ano</div>
+    <div class="grid grid-4">
+      {% for a in anos %}
+      <a class="action-card" href="{{ url_for('operations.lista_alunos_ano', ano=a, d=hoje.isoformat()) }}">
+        <div class="icon">👥</div><div class="label">{{ ano_label(a) }}</div><div class="desc">Lista de presenças</div></a>
+      {% endfor %}
+    </div>
+  </div>
+</div>
+{% endblock %}

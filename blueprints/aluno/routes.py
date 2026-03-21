@@ -14,7 +14,6 @@ from flask import (
     session,
     url_for,
 )
-from markupsafe import Markup
 
 import config as cfg
 from core.auth_db import user_id_by_nii
@@ -44,14 +43,9 @@ from utils.business import (
 from utils.constants import ABREV_DIAS, NOMES_DIAS
 from utils.helpers import (
     _audit,
-    _back_btn,
-    _bar_html,
     _parse_date,
     _parse_date_strict,
-    _prazo_label,
     _refeicao_set,
-    csrf_input,
-    esc,
 )
 from utils.passwords import _alterar_password
 from utils.validators import (
@@ -137,31 +131,6 @@ def aluno_home():
 
     # Banner ausência ativa hoje
     ausente_hoje = uid and _tem_ausencia_ativa(uid, hoje)
-    ausente_html = ""
-    if ausente_hoje:
-        ausente_html = '<div class="ausente-banner">⚓ Tens uma <strong>ausência registada</strong> para hoje. As tuas refeições não serão contabilizadas.</div>'
-
-    menu_html = ""
-    if menu:
-
-        def mv(k):
-            return esc(menu.get(k) or "—")
-
-        menu_html = f"""
-        <div class="card">
-          <div class="card-title">🍽️ Ementa de hoje — {hoje.strftime("%d/%m/%Y")}</div>
-          <div class="grid grid-4">
-            <div><strong>Peq. Almoço</strong><br><span class="text-muted">{mv("pequeno_almoco")}</span></div>
-            <div><strong>Lanche</strong><br><span class="text-muted">{mv("lanche")}</span></div>
-            <div><strong>Almoço</strong><br>N: {mv("almoco_normal")}<br>V: {mv("almoco_veg")}<br>D: {mv("almoco_dieta")}</div>
-            <div><strong>Jantar</strong><br>N: {mv("jantar_normal")}<br>V: {mv("jantar_veg")}<br>D: {mv("jantar_dieta")}</div>
-          </div>
-        </div>"""
-
-    def chip(val, label, tp=None):
-        if val:
-            return f'<span class="meal-chip chip-{"type" if tp else "ok"}">{tp or label} ✓</span>'
-        return f'<span class="meal-chip chip-no">{label} ✗</span>'
 
     # Batch-load: carregar todos os dados de uma vez (elimina N+1)
     d_ate = hoje + timedelta(days=cfg.DIAS_ANTECEDENCIA)
@@ -177,103 +146,59 @@ def aluno_home():
         det_set = set()
         lic_map = {}
 
-    dias_html = ""
+    dias = []
     for i in range(cfg.DIAS_ANTECEDENCIA + 1):
         d = hoje + timedelta(days=i)
         d_iso = d.isoformat()
         tipo = cal_map.get(d_iso, "fim_semana" if d.weekday() >= 5 else "normal")
         r = ref_map.get(d_iso, ref_defaults) if uid else {}
         ok_edit, _ = _dia_editavel_aluno(d)
-        prazo = _prazo_label(d)
         ausente_d = d_iso in aus_set
         detido_d = d_iso in det_set
         is_weekend = d.weekday() >= 5
         is_off = tipo in ("feriado", "exercicio")
-
-        if is_off:
-            ic = {"feriado": "🔴", "exercicio": "🟡"}.get(tipo, "⚪")
-            lb = {"feriado": "Feriado", "exercicio": "Exercício"}.get(tipo, tipo)
-            dias_html += f"""
-            <div class="week-card day-off">
-              <div class="week-dow">{ABREV_DIAS[d.weekday()]}</div>
-              <div class="week-date">{d.strftime("%d/%m")}</div>
-              <span class="text-muted small">{ic} {lb}</span>
-            </div>"""
-            continue
-
-        aus_chip = (
-            '<span class="meal-chip chip-type" style="background:#fef3cd;color:#856404;margin-bottom:.3rem;display:block">⚓ Ausente</span>'
-            if ausente_d
-            else ""
-        )
-        det_chip = (
-            '<span class="meal-chip chip-type" style="background:#fdecea;color:#7a1c1c;margin-bottom:.3rem;display:block">🚫 Detido</span>'
-            if detido_d
-            else ""
-        )
-        # Licença do batch
-        lic_chip = ""
-        lic_tipo = lic_map.get(d_iso)
-        if uid and not detido_d and lic_tipo:
-            lic_lbl = "Antes jantar" if lic_tipo == "antes_jantar" else "Após jantar"
-            lic_chip = f'<span class="meal-chip chip-type" style="background:#d4efdf;color:#1e8449;margin-bottom:.3rem;display:block">🚪 {lic_lbl}</span>'
-        alm_t = r.get("almoco")
-        jan_t = r.get("jantar_tipo")
-        meals = f"""<div class="week-meals">
-            {chip(r.get("pequeno_almoco"), "PA")}
-            {chip(r.get("lanche"), "Lan")}
-            {chip(alm_t, "Alm", alm_t[:3] if alm_t else None)}
-            {chip(jan_t, "Jan", jan_t[:3] if jan_t else None)}
-          </div>{prazo}"""
-        btn = (
-            f'<a class="btn btn-primary btn-sm" style="margin-top:.38rem" href="{url_for(".aluno_editar", d=d.isoformat())}">✏️ Editar</a>'
-            if ok_edit and not ausente_d
-            else ""
-        )
-
-        # ── Botão licença FDS (sextas-feiras) ────────────────────────
-        fds_btn_html = ""
         is_friday = d.weekday() == 4
-        if is_friday and uid and not is_off:
-            tem_licenca_fds = lic_map.get(d_iso) == "antes_jantar"
-            nao_detido = not detido_d
-            nao_ausente = not ausente_d
 
-            if ok_edit and nao_detido and nao_ausente:
-                if tem_licenca_fds:
-                    fds_btn_html = f"""
-                    <form method="post" action="{url_for(".aluno_licenca_fds")}" style="margin-top:.4rem">
-                      {csrf_input()}
-                      <input type="hidden" name="sexta" value="{d_iso}">
-                      <input type="hidden" name="acao_fds" value="cancelar">
-                      <button class="btn btn-danger btn-sm" style="width:100%;font-size:.7rem"
-                        onclick="return confirm('Cancelar licença de fim de semana?')">
-                        🔄 Cancelar licença FDS
-                      </button>
-                    </form>"""
-                else:
-                    fds_btn_html = f"""
-                    <form method="post" action="{url_for(".aluno_licenca_fds")}" style="margin-top:.4rem">
-                      {csrf_input()}
-                      <input type="hidden" name="sexta" value="{d_iso}">
-                      <input type="hidden" name="acao_fds" value="marcar">
-                      <button class="btn btn-gold btn-sm" style="width:100%;font-size:.7rem"
-                        onclick="return confirm('Marcar licença de fim de semana?\\nIsto vai:\\n• Retirar o jantar de sexta\\n• Apagar refeições de sábado e domingo')">
-                        🏖️ Licença FDS
-                      </button>
-                    </form>"""
+        lic_tipo = lic_map.get(d_iso)
+        lic_label = ""
+        if uid and not detido_d and lic_tipo:
+            lic_label = "Antes jantar" if lic_tipo == "antes_jantar" else "Após jantar"
 
-        card_cls = "weekend-active" if is_weekend else ""
-        dow_cls = "weekend" if is_weekend else ""
+        # FDS button logic
+        show_fds_btn = is_friday and uid and not is_off
+        tem_licenca_fds = lic_map.get(d_iso) == "antes_jantar"
+        show_fds_marcar = (
+            show_fds_btn
+            and ok_edit
+            and not detido_d
+            and not ausente_d
+            and not tem_licenca_fds
+        )
 
-        dias_html += f"""
-        <div class="week-card {card_cls}">
-          <div class="week-dow {dow_cls}">{ABREV_DIAS[d.weekday()]}</div>
-          <div class="week-date">{d.strftime("%d/%m/%Y")}</div>
-          {aus_chip}{det_chip}{lic_chip}{meals}{fds_btn_html}{btn}
-        </div>"""
+        dia = {
+            "d_iso": d_iso,
+            "date_obj": d,
+            "date_str": d.strftime("%d/%m"),
+            "date_full": d.strftime("%d/%m/%Y"),
+            "abrev": ABREV_DIAS[d.weekday()],
+            "r": r,
+            "ok_edit": ok_edit,
+            "ausente": ausente_d,
+            "detido": detido_d,
+            "is_weekend": is_weekend,
+            "is_off": is_off,
+            "icon": {"feriado": "\U0001f534", "exercicio": "\U0001f7e1"}.get(
+                tipo, "\u26aa"
+            ),
+            "label": {"feriado": "Feriado", "exercicio": "Exercício"}.get(tipo, tipo),
+            "lic_label": lic_label,
+            "show_fds_btn": show_fds_btn and ok_edit and not detido_d and not ausente_d,
+            "tem_licenca_fds": tem_licenca_fds,
+            "show_fds_marcar": show_fds_marcar,
+        }
+        dias.append(dia)
 
-    stats_html = ""
+    stats = None
     if uid:
         d0 = (hoje - timedelta(days=30)).isoformat()
         with db() as conn:
@@ -282,37 +207,23 @@ def aluno_home():
                 (uid, d0),
             ).fetchall()
         if rows:
-            stats_html = f"""
-            <div class="card">
-              <div class="card-title">📊 Últimos 30 dias</div>
-              <div class="grid grid-4">
-                <div class="stat-box"><div class="stat-num">{sum(1 for r in rows if r["pequeno_almoco"])}</div><div class="stat-lbl">Pequenos Almoços</div></div>
-                <div class="stat-box"><div class="stat-num">{sum(1 for r in rows if r["lanche"])}</div><div class="stat-lbl">Lanches</div></div>
-                <div class="stat-box"><div class="stat-num">{sum(1 for r in rows if r["almoco"])}</div><div class="stat-lbl">Almoços</div></div>
-                <div class="stat-box"><div class="stat-num">{sum(1 for r in rows if r["jantar_tipo"])}</div><div class="stat-lbl">Jantares</div></div>
-              </div>
-            </div>"""
+            stats = {
+                "pa": sum(1 for r in rows if r["pequeno_almoco"]),
+                "lanche": sum(1 for r in rows if r["lanche"]),
+                "almoco": sum(1 for r in rows if r["almoco"]),
+                "jantar": sum(1 for r in rows if r["jantar_tipo"]),
+            }
 
-    content = f"""
-    <div class="container">
-      <div class="page-header"><div class="page-title">Olá, {esc(u["nome"])} 👋</div></div>
-      {ausente_html}{menu_html}
-      <div class="card">
-        <div class="card-title">📆 Próximos {cfg.DIAS_ANTECEDENCIA} dias
-
-        </div>
-        <div class="week-grid">{dias_html}</div>
-      </div>
-      {stats_html}
-      <div class="gap-btn">
-        <a class="btn btn-ghost" href="{url_for(".aluno_historico")}">🕘 Histórico (30 dias)</a>
-        <a class="btn btn-gold" href="{url_for(".aluno_ausencias")}">🚫 Gerir ausências</a>
-        <a class="btn btn-ghost" href="{url_for(".aluno_password")}">🔑 Alterar password</a>
-        <a class="btn btn-ghost" href="{url_for("reporting.calendario_publico")}">📅 Calendário</a>
-        <a class="btn btn-primary" href="{url_for(".aluno_perfil")}">👤 O meu perfil</a>
-      </div>
-    </div>"""
-    return render_template("aluno/home.html", content=Markup(content))
+    return render_template(
+        "aluno/home.html",
+        u=u,
+        hoje=hoje,
+        menu=menu,
+        ausente_hoje=ausente_hoje,
+        dias=dias,
+        dias_antecedencia=cfg.DIAS_ANTECEDENCIA,
+        stats=stats,
+    )
 
 
 @aluno_bp.route("/aluno/editar/<d>", methods=["GET", "POST"])
@@ -401,24 +312,6 @@ def aluno_editar(d):
             flash("Erro ao guardar.", "error")
         return redirect(url_for(".aluno_home"))
 
-    def occ_row(nome):
-        val, cap = occ.get(nome, (0, -1))
-        return f'<div style="margin-bottom:.65rem"><strong style="font-size:.84rem">{nome}</strong>{_bar_html(val, cap)}</div>'
-
-    wknd_note = (
-        '<div class="alert alert-info" style="margin-bottom:.8rem">Fim de semana — refeições opcionais.</div>'
-        if is_weekend
-        else ""
-    )
-
-    detido_note = (
-        '<div class="alert alert-warn" style="margin-bottom:.8rem">'
-        "🚫 Estás detido neste dia. Não podes sair da unidade."
-        "</div>"
-        if detido
-        else ""
-    )
-
     # Valores atuais
     pa_on = 1 if r.get("pequeno_almoco") else 0
     lan_on = 1 if r.get("lanche") else 0
@@ -426,212 +319,38 @@ def aluno_editar(d):
     jan_val = r.get("jantar_tipo") or ""
     jan_blocked = licenca_atual == "antes_jantar"
 
-    # Secção de licença — oculta se detido
-    licenca_html = ""
+    # Ementa do dia
+    menu = get_menu_do_dia(dt)
+
+    # Quota info for licença section
+    usadas_semana = 0
+    max_uteis = 0
+    is_weekday = dt.weekday() < 4
     if not detido:
         regras = _regras_licenca(ano_aluno, ni_aluno)
         usadas_semana = _licencas_semana_usadas(uid, dt)
         max_uteis = regras["max_dias_uteis"]
-        lic_disabled = "" if pode_lic else " disabled"
-        lic_warn = (
-            f'<div class="alert alert-warn" style="margin-top:.5rem">{esc(motivo_lic)}</div>'
-            if not pode_lic and motivo_lic
-            else ""
-        )
 
-        sel_antes = " checked" if licenca_atual == "antes_jantar" else ""
-        sel_apos = " checked" if licenca_atual == "apos_jantar" else ""
-        sel_nenhuma = " checked" if not licenca_atual else ""
-
-        if dt.weekday() < 4:
-            quota_info = f'<span class="text-muted small">Seg-Qui usadas: <strong>{usadas_semana}/{max_uteis}</strong></span>'
-        else:
-            quota_info = (
-                '<span class="text-muted small">Fim de semana — sem limite.</span>'
-            )
-
-        licenca_html = f"""
-      <div class="card" style="border-top:3px solid #2e86c1">
-        <div class="card-title">🚪 Licença de saída</div>
-        {quota_info}
-        <div class="sw-group" style="margin-top:.6rem">
-          <label class="sw-row{"  sw-on" if not licenca_atual else ""}" data-lic>
-            <input type="radio" name="licenca" value=""{sel_nenhuma}{lic_disabled}>
-            <span class="sw-label">Sem licença</span>
-          </label>
-          <label class="sw-row{"  sw-on" if licenca_atual == "antes_jantar" else ""}" data-lic>
-            <input type="radio" name="licenca" value="antes_jantar"{sel_antes}{lic_disabled}>
-            <span class="sw-icon">🌅</span>
-            <span class="sw-label">Antes do jantar</span>
-            <span class="sw-hint">(não janta)</span>
-          </label>
-          <label class="sw-row{"  sw-on" if licenca_atual == "apos_jantar" else ""}" data-lic>
-            <input type="radio" name="licenca" value="apos_jantar"{sel_apos}{lic_disabled}>
-            <span class="sw-icon">🌙</span>
-            <span class="sw-label">Após o jantar</span>
-            <span class="sw-hint">(janta na unidade)</span>
-          </label>
-        </div>
-        {lic_warn}
-      </div>"""
-
-    # Ementa do dia
-    menu = get_menu_do_dia(dt)
-    ementa_html = ""
-    if menu:
-
-        def _mv(k):
-            return esc(menu.get(k) or "—")
-
-        ementa_html = f"""
-      <div class="card" style="border-top:3px solid #f39c12">
-        <div class="card-title">📋 Ementa — {dt.strftime("%d/%m/%Y")}</div>
-        <div class="grid grid-4" style="font-size:.85rem">
-          <div><strong>Peq. Almoço</strong><br><span class="text-muted">{_mv("pequeno_almoco")}</span></div>
-          <div><strong>Lanche</strong><br><span class="text-muted">{_mv("lanche")}</span></div>
-          <div><strong>Almoço</strong><br>N: {_mv("almoco_normal")}<br>V: {_mv("almoco_veg")}<br>D: {_mv("almoco_dieta")}</div>
-          <div><strong>Jantar</strong><br>N: {_mv("jantar_normal")}<br>V: {_mv("jantar_veg")}<br>D: {_mv("jantar_dieta")}</div>
-        </div>
-      </div>"""
-
-    content = f"""
-    <style>
-      .sw-group{{display:flex;flex-direction:column;gap:.45rem}}
-      .sw-row{{display:flex;align-items:center;gap:.55rem;cursor:pointer;padding:.7rem .85rem;
-        border:2px solid var(--border);border-radius:12px;transition:all .2s;
-        user-select:none;-webkit-tap-highlight-color:transparent;background:#fff}}
-      .sw-row:active{{transform:scale(.97)}}
-      .sw-row.sw-on{{background:#eafaf1;border-color:#27ae60}}
-      .sw-row input[type=hidden],.sw-row input[type=radio]{{display:none}}
-      .sw-icon{{font-size:1.25rem;flex-shrink:0}}
-      .sw-label{{flex:1;font-weight:600;font-size:.9rem}}
-      .sw-hint{{font-size:.75rem;color:var(--muted);font-weight:400}}
-      .sw-mark{{width:28px;height:28px;border-radius:8px;border:2px solid var(--border);
-        display:flex;align-items:center;justify-content:center;font-size:.85rem;font-weight:800;
-        color:transparent;transition:all .2s;background:#fff;flex-shrink:0}}
-      .sw-row.sw-on .sw-mark{{background:#27ae60;border-color:#27ae60;color:#fff}}
-      .sw-pills{{display:flex;gap:.35rem;flex-wrap:wrap}}
-      .sw-pill{{padding:.5rem .75rem;border:2px solid var(--border);border-radius:10px;cursor:pointer;
-        font-weight:600;font-size:.82rem;transition:all .2s;user-select:none;
-        -webkit-tap-highlight-color:transparent;text-align:center;min-width:60px;background:#fff}}
-      .sw-pill:active{{transform:scale(.95)}}
-      .sw-pill.sw-sel{{background:#eafaf1;border-color:#27ae60;color:#1a5c38}}
-      .sw-pill-group{{display:flex;flex-direction:column;gap:.35rem}}
-      .sw-pill-row{{display:flex;align-items:center;gap:.55rem;padding:.5rem .85rem;
-        border:2px solid var(--border);border-radius:12px;background:#fff}}
-      .sw-pill-row.sw-on{{border-color:#27ae60;background:#f0faf4}}
-      .sw-pill-label{{font-weight:600;font-size:.9rem;min-width:auto;white-space:nowrap}}
-      .sw-pill-icon{{font-size:1.25rem;flex-shrink:0}}
-      .sw-pill-opts{{display:flex;gap:.3rem;flex:1;justify-content:flex-end;flex-wrap:wrap}}
-    </style>
-    <div class="container">
-      <div class="page-header">
-        {_back_btn(url_for(".aluno_home"))}
-        <div class="page-title">🍽️ {NOMES_DIAS[dt.weekday()]}, {dt.strftime("%d/%m/%Y")}</div>
-      </div>
-      {wknd_note}{detido_note}{ementa_html}
-      <div class="card">
-        <div class="card-title">📊 Ocupação</div>
-        {occ_row("Pequeno Almoço")}{occ_row("Lanche")}{occ_row("Almoço")}{occ_row("Jantar")}
-      </div>
-      <div class="card">
-        <div class="card-title">✏️ Marcar refeições</div>
-        <form method="post" id="mealForm">
-          {csrf_input()}
-          <input type="hidden" name="pa" id="h_pa" value="{pa_on}">
-          <input type="hidden" name="lanche" id="h_lanche" value="{lan_on}">
-          <input type="hidden" name="almoco" id="h_almoco" value="{esc(alm_val)}">
-          <input type="hidden" name="jantar" id="h_jantar" value="{esc(jan_val)}">
-          <div class="sw-group">
-            <!-- PA toggle -->
-            <div class="sw-row{"  sw-on" if pa_on else ""}" data-meal="pa" onclick="toggleMeal(this)">
-              <span class="sw-icon">☕</span>
-              <span class="sw-label">Pequeno Almoço</span>
-              <span class="sw-mark">{"✓" if pa_on else ""}</span>
-            </div>
-            <!-- Lanche toggle -->
-            <div class="sw-row{"  sw-on" if lan_on else ""}" data-meal="lanche" onclick="toggleMeal(this)">
-              <span class="sw-icon">🥐</span>
-              <span class="sw-label">Lanche</span>
-              <span class="sw-mark">{"✓" if lan_on else ""}</span>
-            </div>
-            <!-- Almoço pill selector -->
-            <div class="sw-pill-row{"  sw-on" if alm_val else ""}" id="alm_row">
-              <span class="sw-pill-icon">🍽️</span>
-              <span class="sw-pill-label">Almoço</span>
-              <div class="sw-pill-opts">
-                <div class="sw-pill{" sw-sel" if alm_val == "Normal" else ""}" onclick="setPill('almoco','Normal',this)">Normal</div>
-                <div class="sw-pill{" sw-sel" if alm_val == "Vegetariano" else ""}" onclick="setPill('almoco','Vegetariano',this)">Veg</div>
-                <div class="sw-pill{" sw-sel" if alm_val == "Dieta" else ""}" onclick="setPill('almoco','Dieta',this)">Dieta</div>
-              </div>
-            </div>
-            <!-- Jantar pill selector -->
-            <div class="sw-pill-row{"  sw-on" if jan_val and not jan_blocked else ""}" id="jan_row"{"  style=opacity:.4;pointer-events:none" if jan_blocked else ""}>
-              <span class="sw-pill-icon">🌙</span>
-              <span class="sw-pill-label">Jantar</span>
-              <div class="sw-pill-opts">
-                <div class="sw-pill{" sw-sel" if jan_val == "Normal" else ""}" onclick="setPill('jantar','Normal',this)">Normal</div>
-                <div class="sw-pill{" sw-sel" if jan_val == "Vegetariano" else ""}" onclick="setPill('jantar','Vegetariano',this)">Veg</div>
-                <div class="sw-pill{" sw-sel" if jan_val == "Dieta" else ""}" onclick="setPill('jantar','Dieta',this)">Dieta</div>
-              </div>
-            </div>
-          </div>
-          {licenca_html}
-          <hr>
-          <div class="gap-btn">
-            <button class="btn btn-ok" style="flex:1;justify-content:center;padding:.7rem">💾 Guardar</button>
-            <a class="btn btn-ghost" href="{url_for(".aluno_home")}">Cancelar</a>
-          </div>
-        </form>
-      </div>
-    </div>
-    <script>
-    function toggleMeal(el){{
-      var key=el.getAttribute('data-meal');
-      var h=document.getElementById('h_'+key);
-      var on=h.value==='1'||h.value==='on';
-      h.value=on?'0':'1';
-      el.classList.toggle('sw-on',!on);
-      el.querySelector('.sw-mark').textContent=on?'':'✓';
-    }}
-    function setPill(meal,val,pill){{
-      var h=document.getElementById('h_'+meal);
-      var row=pill.closest('.sw-pill-row');
-      var pills=row.querySelectorAll('.sw-pill');
-      if(h.value===val){{
-        h.value='';
-        pills.forEach(function(p){{p.classList.remove('sw-sel')}});
-        row.classList.remove('sw-on');
-      }} else {{
-        h.value=val;
-        pills.forEach(function(p){{p.classList.remove('sw-sel')}});
-        pill.classList.add('sw-sel');
-        row.classList.add('sw-on');
-      }}
-    }}
-    // Licença radio: highlight active + block jantar se antes_jantar
-    document.querySelectorAll('[data-lic] input[type=radio]').forEach(function(r){{
-      r.addEventListener('change',function(){{
-        document.querySelectorAll('[data-lic]').forEach(function(l){{l.classList.remove('sw-on')}});
-        r.closest('[data-lic]').classList.add('sw-on');
-        syncJantar();
-      }});
-    }});
-    function syncJantar(){{
-      var antes=document.querySelector('input[name=licenca][value=antes_jantar]');
-      var jr=document.getElementById('jan_row');
-      if(!jr)return;
-      if(antes && antes.checked){{
-        jr.style.opacity='.4';jr.style.pointerEvents='none';
-        document.getElementById('h_jantar').value='';
-        jr.querySelectorAll('.sw-pill').forEach(function(p){{p.classList.remove('sw-sel')}});
-        jr.classList.remove('sw-on');
-      }} else {{
-        jr.style.opacity='1';jr.style.pointerEvents='auto';
-      }}
-    }}
-    </script>"""
-    return render_template("aluno/editar.html", content=Markup(content))
+    return render_template(
+        "aluno/editar.html",
+        dt=dt,
+        nome_dia=NOMES_DIAS[dt.weekday()],
+        is_weekend=is_weekend,
+        detido=detido,
+        menu=menu,
+        occ=occ,
+        pa_on=pa_on,
+        lan_on=lan_on,
+        alm_val=alm_val,
+        jan_val=jan_val,
+        jan_blocked=jan_blocked,
+        licenca_atual=licenca_atual,
+        pode_lic=pode_lic,
+        motivo_lic=motivo_lic,
+        usadas_semana=usadas_semana,
+        max_uteis=max_uteis,
+        is_weekday=is_weekday,
+    )
 
 
 # ─── Aluno: Gerir ausências próprias ─────────────────────────────────────
@@ -701,96 +420,22 @@ def aluno_ausencias():
         form_de = edit_row["ausente_de"]
         form_ate = edit_row["ausente_ate"]
         form_motivo = edit_row["motivo"] or ""
-        form_id_inp = f'<input type="hidden" name="id" value="{edit_row["id"]}">'
-        cancel_btn = f'<a class="btn btn-ghost" href="{url_for(".aluno_ausencias")}">Cancelar</a>'
     else:
         form_title = "➕ Nova ausência"
         form_action = "criar"
         form_de = form_ate = form_motivo = ""
-        form_id_inp = ""
-        cancel_btn = ""
 
-    rows_html = ""
-    for r in rows:
-        is_atual = r["ausente_de"] <= hoje <= r["ausente_ate"]
-        is_futura = r["ausente_de"] > hoje
-        estado = (
-            '<span class="badge badge-warn">Atual</span>'
-            if is_atual
-            else (
-                '<span class="badge badge-info">Futura</span>'
-                if is_futura
-                else '<span class="badge badge-muted">Passada</span>'
-            )
-        )
-        pode = is_atual or is_futura
-        edit_btn = (
-            f'<a class="btn btn-ghost btn-sm" href="{url_for(".aluno_ausencias")}?edit={r["id"]}">✏️</a>'
-            if pode
-            else ""
-        )
-        rem_form = (
-            (
-                f'<form method="post" style="display:inline">{csrf_input()}'
-                f'<input type="hidden" name="acao" value="remover">'
-                f'<input type="hidden" name="id" value="{r["id"]}">'
-                f'<button class="btn btn-danger btn-sm" onclick="return confirm(\'Remover ausência?\')">🗑</button></form>'
-            )
-            if pode
-            else ""
-        )
-        rows_html += f"""<tr>
-          <td>{r["ausente_de"]}</td><td>{r["ausente_ate"]}</td>
-          <td>{esc(r["motivo"] or "—")}</td><td>{estado}</td>
-          <td><div class="gap-btn">{edit_btn}{rem_form}</div></td>
-        </tr>"""
-
-    content = f"""
-    <div class="container">
-      <div class="page-header">
-        {_back_btn(url_for(".aluno_home"))}
-        <div class="page-title">🚫 As minhas ausências</div>
-      </div>
-      <div class="alert alert-info">
-        📌 Com uma ausência ativa as tuas refeições não são contabilizadas e não podes editar refeições para esse período.
-      </div>
-      <div class="card" style="max-width:520px">
-        <div class="card-title">{form_title}</div>
-        <form method="post">
-          {csrf_input()}
-          <input type="hidden" name="acao" value="{form_action}">
-          {form_id_inp}
-          <div class="grid grid-2">
-            <div class="form-group">
-              <label>De</label>
-              <input type="date" name="de" value="{form_de}" required min="{date.today().isoformat()}">
-            </div>
-            <div class="form-group">
-              <label>Até</label>
-              <input type="date" name="ate" value="{form_ate}" required min="{date.today().isoformat()}">
-            </div>
-          </div>
-          <div class="form-group">
-            <label>Motivo (opcional)</label>
-            <input type="text" name="motivo" maxlength="500" value="{esc(form_motivo)}" placeholder="Ex: deslocação, exercício, visita...">
-          </div>
-          <div class="gap-btn">
-            <button class="btn btn-ok">{"Atualizar" if edit_row else "Registar ausência"}</button>
-            {cancel_btn}
-          </div>
-        </form>
-      </div>
-      <div class="card">
-        <div class="card-title">Histórico de ausências</div>
-        <div class="table-wrap">
-          <table>
-            <thead><tr><th>De</th><th>Até</th><th>Motivo</th><th>Estado</th><th>Ações</th></tr></thead>
-            <tbody>{rows_html or '<tr><td colspan="5" class="text-muted" style="padding:1.5rem;text-align:center">Sem ausências registadas.</td></tr>'}</tbody>
-          </table>
-        </div>
-      </div>
-    </div>"""
-    return render_template("aluno/ausencias.html", content=Markup(content))
+    return render_template(
+        "aluno/ausencias.html",
+        rows=rows,
+        hoje=hoje,
+        edit_row=edit_row,
+        form_title=form_title,
+        form_action=form_action,
+        form_de=form_de,
+        form_ate=form_ate,
+        form_motivo=form_motivo,
+    )
 
 
 @aluno_bp.route("/aluno/historico")
@@ -808,38 +453,7 @@ def aluno_historico():
                 (uid, (hoje - timedelta(days=30)).isoformat()),
             ).fetchall()
 
-    def yn(v):
-        return "✅" if v else "❌"
-
-    rows_html = "".join(
-        f"<tr><td>{r['data']}</td><td>{yn(r['pequeno_almoco'])}</td><td>{yn(r['lanche'])}</td>"
-        f"<td>{r['almoco'] or '—'}</td><td>{r['jantar_tipo'] or '—'}</td>"
-        f"<td>{'✅' if r['jantar_sai_unidade'] else '—'}</td></tr>"
-        for r in rows
-    )
-
-    export_btns = ""
-    if rows:
-        export_btns = f"""
-      <div class="gap-btn" style="margin-top:.8rem">
-        <a class="btn btn-ghost btn-sm" href="{url_for(".exportar_historico_aluno", fmt="csv")}">📄 Exportar CSV</a>
-        <a class="btn btn-ghost btn-sm" href="{url_for(".exportar_historico_aluno", fmt="xlsx")}">📊 Exportar Excel</a>
-      </div>"""
-
-    content = f"""
-    <div class="container">
-      <div class="page-header">{_back_btn(url_for(".aluno_home"))}<div class="page-title">🕘 Histórico — 30 dias</div></div>
-      <div class="card">
-        <div class="table-wrap">
-          <table>
-            <thead><tr><th>Data</th><th>PA</th><th>Lanche</th><th>Almoço</th><th>Jantar</th><th>Sai</th></tr></thead>
-            <tbody>{rows_html or '<tr><td colspan="6" class="text-muted center" style="padding:1.5rem">Sem registos.</td></tr>'}</tbody>
-          </table>
-        </div>
-        {export_btns}
-      </div>
-    </div>"""
-    return render_template("aluno/historico.html", content=Markup(content))
+    return render_template("aluno/historico.html", rows=rows)
 
 
 @aluno_bp.route("/aluno/exportar-historico")
@@ -972,35 +586,19 @@ def aluno_password():
                 return redirect(url_for("auth.dashboard"))
 
     is_forced = session.get("must_change_password")
-    title = "🔐 Definir nova password" if is_forced else "🔑 Alterar password"
+    title = (
+        "\U0001f510 Definir nova password"
+        if is_forced
+        else "\U0001f511 Alterar password"
+    )
     old_hint = "A tua password atual (NII se é o primeiro login)" if is_forced else ""
-    forced_note = (
-        '<div class="alert alert-warn" style="margin-bottom:1rem">⚠️ É o teu primeiro login. Define uma password pessoal para continuar.</div>'
-        if is_forced
-        else ""
-    )
-    cancel_btn = (
-        ""
-        if is_forced
-        else f'<a class="btn btn-ghost" href="{url_for(".aluno_home")}">Cancelar</a>'
-    )
-    back_btn = "" if is_forced else _back_btn(url_for(".aluno_home"))
 
-    content = f"""
-    <div class="container">
-      <div class="page-header">{back_btn}<div class="page-title">{title}</div></div>
-      {forced_note}
-      <div class="card" style="max-width:440px">
-        <form method="post">
-          {csrf_input()}
-          <div class="form-group"><label>Password atual</label><input type="password" name="old" maxlength="256" required placeholder="{old_hint}"></div>
-          <div class="form-group"><label>Nova password (mín. 8 caracteres, letras e números)</label><input type="password" name="new" maxlength="256" required minlength="8"></div>
-          <div class="form-group"><label>Confirmar nova password</label><input type="password" name="conf" maxlength="256" required></div>
-          <div class="gap-btn"><button class="btn btn-ok">💾 Guardar</button>{cancel_btn}</div>
-        </form>
-      </div>
-    </div>"""
-    return render_template("aluno/password.html", content=Markup(content))
+    return render_template(
+        "aluno/password.html",
+        is_forced=is_forced,
+        title=title,
+        old_hint=old_hint,
+    )
 
 
 # ─── Aluno: Perfil próprio ────────────────────────────────────────────────
@@ -1060,53 +658,9 @@ def aluno_perfil():
             (uid, hoje.isoformat(), hoje.isoformat()),
         ).fetchone()["c"]
 
-    content = f"""
-    <div class="container">
-      <div class="page-header">
-        {_back_btn(url_for(".aluno_home"))}
-        <div class="page-title">👤 O meu perfil</div>
-      </div>
-      <div class="grid grid-2">
-        <div class="card">
-          <div class="card-title">ℹ️ Informação pessoal</div>
-          <div style="display:flex;flex-direction:column;gap:.6rem;font-size:.9rem">
-            <div><span class="text-muted">Nome completo:</span><br><strong>{esc(row["Nome_completo"])}</strong></div>
-            <div><span class="text-muted">NII:</span><br><strong>{esc(row["NII"])}</strong></div>
-            <div><span class="text-muted">NI:</span><br><strong>{esc(row["NI"] or "—")}</strong></div>
-            <div><span class="text-muted">Ano:</span><br><strong>{row["ano"]}º Ano</strong></div>
-          </div>
-          <hr style="margin:1rem 0">
-          <div class="grid grid-2">
-            <div class="stat-box"><div class="stat-num">{total_ref}</div><div class="stat-lbl">Refeições registadas</div></div>
-            <div class="stat-box"><div class="stat-num" style="color:{"var(--warn)" if ausencias_ativas else "var(--ok)"}">{ausencias_ativas}</div><div class="stat-lbl">Ausências ativas</div></div>
-          </div>
-        </div>
-        <div class="card">
-          <div class="card-title">✉️ Contactos</div>
-          <form method="post">
-            {csrf_input()}
-            <div class="form-group">
-              <label>📧 Email</label>
-              <input type="email" name="email" value="{esc(row.get("email") or "")}" placeholder="o-teu-email@exemplo.pt">
-            </div>
-            <div class="form-group">
-              <label>📱 Telemóvel</label>
-              <input type="tel" name="telemovel" value="{esc(row.get("telemovel") or "")}" placeholder="+351XXXXXXXXX">
-            </div>
-            <div class="gap-btn">
-              <button class="btn btn-ok">💾 Guardar contactos</button>
-              <a class="btn btn-ghost" href="{url_for(".aluno_home")}">Cancelar</a>
-            </div>
-          </form>
-        </div>
-      </div>
-      <div class="card">
-        <div class="card-title">⚡ Ações rápidas</div>
-        <div class="gap-btn">
-          <a class="btn btn-ghost" href="{url_for(".aluno_ausencias")}">🚫 Gerir ausências</a>
-          <a class="btn btn-ghost" href="{url_for(".aluno_historico")}">🕘 Histórico de refeições</a>
-          <a class="btn btn-ghost" href="{url_for(".aluno_password")}">🔑 Alterar password</a>
-        </div>
-      </div>
-    </div>"""
-    return render_template("aluno/perfil.html", content=Markup(content))
+    return render_template(
+        "aluno/perfil.html",
+        aluno=row,
+        total_ref=total_ref,
+        ausencias_ativas=ausencias_ativas,
+    )

@@ -8,7 +8,7 @@ try:
 except Exception:
     _wz_check_password_hash = None
 
-from core.constants import FALLBACK_ADMIN, PERFIS_ADMIN, PERFIS_TESTE
+from core.constants import PERFIS_ADMIN, PERFIS_TESTE
 from core.database import db
 
 # Re-exportar constantes para consumidores
@@ -22,7 +22,6 @@ __all__ = [
     "user_by_nii",
     "user_by_ni",
     "user_id_by_nii",
-    "FALLBACK_ADMIN",
     "PERFIS_ADMIN",
     "PERFIS_TESTE",
 ]

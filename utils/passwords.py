@@ -1,8 +1,5 @@
 """Funções de gestão de passwords e utilizadores."""
 
-import secrets
-import string
-
 from flask import current_app
 from werkzeug.security import (
     check_password_hash,
@@ -135,12 +132,9 @@ def _criar_utilizador(nii, ni, nome, ano, perfil, pw):
         return False, str(e)
 
 
-def _reset_pw(nii, nova_pw=None):
-    """Reset de password (gera aleatória se não fornecida)."""
-    if not nova_pw:
-        alphabet = string.ascii_letters + string.digits
-        nova_pw = "".join(secrets.choice(alphabet) for _ in range(10))
-    nova_hash = generate_password_hash(nova_pw)
+def _reset_pw(nii):
+    """Reset de password — usa o NII como password temporária (must_change_password=1)."""
+    nova_hash = generate_password_hash(nii)
     with db() as conn:
         cur = conn.execute(
             """UPDATE utilizadores SET Palavra_chave=?, must_change_password=1,
@@ -150,7 +144,7 @@ def _reset_pw(nii, nova_pw=None):
         conn.commit()
     if cur.rowcount:
         _audit("sistema", "reset_password", f"NII={nii}")
-        return True, nova_pw  # devolve a password em claro para mostrar ao admin
+        return True, "ok"
     return False, "NII n\u00e3o encontrado."
 
 

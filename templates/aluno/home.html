@@ -1,2 +1,118 @@
 {% extends "base.html" %}
-{% block content %}{{ content }}{% endblock %}
+{% block content %}
+    <div class="container">
+      <div class="page-header"><div class="page-title">Olá, {{ u.nome }} 👋</div></div>
+      {% if ausente_hoje %}
+      <div class="ausente-banner">⚓ Tens uma <strong>ausência registada</strong> para hoje. As tuas refeições não serão contabilizadas.</div>
+      {% endif %}
+      {% if menu %}
+      <div class="card">
+        <div class="card-title">🍽️ Ementa de hoje — {{ hoje.strftime("%d/%m/%Y") }}</div>
+        <div class="grid grid-4">
+          <div><strong>Peq. Almoço</strong><br><span class="text-muted">{{ menu.get("pequeno_almoco") or "—" }}</span></div>
+          <div><strong>Lanche</strong><br><span class="text-muted">{{ menu.get("lanche") or "—" }}</span></div>
+          <div><strong>Almoço</strong><br>N: {{ menu.get("almoco_normal") or "—" }}<br>V: {{ menu.get("almoco_veg") or "—" }}<br>D: {{ menu.get("almoco_dieta") or "—" }}</div>
+          <div><strong>Jantar</strong><br>N: {{ menu.get("jantar_normal") or "—" }}<br>V: {{ menu.get("jantar_veg") or "—" }}<br>D: {{ menu.get("jantar_dieta") or "—" }}</div>
+        </div>
+      </div>
+      {% endif %}
+      <div class="card">
+        <div class="card-title">📆 Próximos {{ dias_antecedencia }} dias
+
+        </div>
+        <div class="week-grid">
+          {% for dia in dias %}
+          {% if dia.is_off %}
+            <div class="week-card day-off">
+              <div class="week-dow">{{ dia.abrev }}</div>
+              <div class="week-date">{{ dia.date_str }}</div>
+              <span class="text-muted small">{{ dia.icon }} {{ dia.label }}</span>
+            </div>
+          {% else %}
+            <div class="week-card {{ "weekend-active" if dia.is_weekend else "" }}">
+              <div class="week-dow {{ "weekend" if dia.is_weekend else "" }}">{{ dia.abrev }}</div>
+              <div class="week-date">{{ dia.date_full }}</div>
+              {% if dia.ausente %}
+              <span class="meal-chip chip-type" style="background:#fef3cd;color:#856404;margin-bottom:.3rem;display:block">⚓ Ausente</span>
+              {% endif %}
+              {% if dia.detido %}
+              <span class="meal-chip chip-type" style="background:#fdecea;color:#7a1c1c;margin-bottom:.3rem;display:block">🚫 Detido</span>
+              {% endif %}
+              {% if dia.lic_label %}
+              <span class="meal-chip chip-type" style="background:#d4efdf;color:#1e8449;margin-bottom:.3rem;display:block">🚪 {{ dia.lic_label }}</span>
+              {% endif %}
+              <div class="week-meals">
+                {% if dia.r.get("pequeno_almoco") %}
+                <span class="meal-chip chip-ok">PA ✓</span>
+                {% else %}
+                <span class="meal-chip chip-no">PA ✗</span>
+                {% endif %}
+                {% if dia.r.get("lanche") %}
+                <span class="meal-chip chip-ok">Lan ✓</span>
+                {% else %}
+                <span class="meal-chip chip-no">Lan ✗</span>
+                {% endif %}
+                {% set alm_t = dia.r.get("almoco") %}
+                {% if alm_t %}
+                <span class="meal-chip chip-type">{{ alm_t[:3] }} ✓</span>
+                {% else %}
+                <span class="meal-chip chip-no">Alm ✗</span>
+                {% endif %}
+                {% set jan_t = dia.r.get("jantar_tipo") %}
+                {% if jan_t %}
+                <span class="meal-chip chip-type">{{ jan_t[:3] }} ✓</span>
+                {% else %}
+                <span class="meal-chip chip-no">Jan ✗</span>
+                {% endif %}
+              </div>{{ prazo_label(dia.date_obj)|safe }}
+              {% if dia.show_fds_btn %}
+                {% if dia.tem_licenca_fds %}
+                <form method="post" action="{{ url_for(".aluno_licenca_fds") }}" style="margin-top:.4rem">
+                  {{ csrf_input() }}
+                  <input type="hidden" name="sexta" value="{{ dia.d_iso }}">
+                  <input type="hidden" name="acao_fds" value="cancelar">
+                  <button class="btn btn-danger btn-sm" style="width:100%;font-size:.7rem"
+                    onclick="return confirm('Cancelar licença de fim de semana?')">
+                    🔄 Cancelar licença FDS
+                  </button>
+                </form>
+                {% elif dia.show_fds_marcar %}
+                <form method="post" action="{{ url_for(".aluno_licenca_fds") }}" style="margin-top:.4rem">
+                  {{ csrf_input() }}
+                  <input type="hidden" name="sexta" value="{{ dia.d_iso }}">
+                  <input type="hidden" name="acao_fds" value="marcar">
+                  <button class="btn btn-gold btn-sm" style="width:100%;font-size:.7rem"
+                    onclick="return confirm('Marcar licença de fim de semana?\nIsto vai:\n• Retirar o jantar de sexta\n• Apagar refeições de sábado e domingo')">
+                    🏖️ Licença FDS
+                  </button>
+                </form>
+                {% endif %}
+              {% endif %}
+              {% if dia.ok_edit and not dia.ausente %}
+              <a class="btn btn-primary btn-sm" style="margin-top:.38rem" href="{{ url_for(".aluno_editar", d=dia.d_iso) }}">✏️ Editar</a>
+              {% endif %}
+            </div>
+          {% endif %}
+          {% endfor %}
+        </div>
+      </div>
+      {% if stats %}
+      <div class="card">
+        <div class="card-title">📊 Últimos 30 dias</div>
+        <div class="grid grid-4">
+          <div class="stat-box"><div class="stat-num">{{ stats.pa }}</div><div class="stat-lbl">Pequenos Almoços</div></div>
+          <div class="stat-box"><div class="stat-num">{{ stats.lanche }}</div><div class="stat-lbl">Lanches</div></div>
+          <div class="stat-box"><div class="stat-num">{{ stats.almoco }}</div><div class="stat-lbl">Almoços</div></div>
+          <div class="stat-box"><div class="stat-num">{{ stats.jantar }}</div><div class="stat-lbl">Jantares</div></div>
+        </div>
+      </div>
+      {% endif %}
+      <div class="gap-btn">
+        <a class="btn btn-ghost" href="{{ url_for(".aluno_historico") }}">🕘 Histórico (30 dias)</a>
+        <a class="btn btn-gold" href="{{ url_for(".aluno_ausencias") }}">🚫 Gerir ausências</a>
+        <a class="btn btn-ghost" href="{{ url_for(".aluno_password") }}">🔑 Alterar password</a>
+        <a class="btn btn-ghost" href="{{ url_for("reporting.calendario_publico") }}">📅 Calendário</a>
+        <a class="btn btn-primary" href="{{ url_for(".aluno_perfil") }}">👤 O meu perfil</a>
+      </div>
+    </div>
+{% endblock %}
