@@ -1,14 +1,16 @@
 """CRUD e queries de refeições."""
 
+from __future__ import annotations
+
 import sqlite3
 from datetime import date, datetime, timedelta
-from typing import Optional
+from typing import Any
 
 from core.constants import PRAZO_LIMITE_HORAS
 from core.database import db
 
 
-def refeicao_editavel(d: date) -> tuple:
+def refeicao_editavel(d: date) -> tuple[bool, str]:
     """Devolve (True, '') se a data d ainda pode ser editada, ou (False, motivo)."""
     agora_dt = datetime.now()
     hoje = agora_dt.date()
@@ -34,7 +36,7 @@ def refeicao_editavel(d: date) -> tuple:
     return True, ""
 
 
-def get_totais_dia(di: str, ano: Optional[int] = None) -> dict:
+def get_totais_dia(di: str, ano: int | None = None) -> dict[str, int]:
     """Devolve totais de todas as refeições para uma data ISO (di)."""
     _active = (
         "JOIN utilizadores u ON u.id=r.utilizador_id"
@@ -101,7 +103,9 @@ def get_totais_dia(di: str, ano: Optional[int] = None) -> dict:
     }
 
 
-def get_totais_periodo(d_de: str, d_ate: str, ano: Optional[int] = None):
+def get_totais_periodo(
+    d_de: str, d_ate: str, ano: int | None = None
+) -> tuple[dict[str, dict[str, int]], dict[str, int]]:
     """Totais agrupados por dia para um intervalo. Devolve ({iso_date: dict}, empty_dict)."""
     _active = (
         "JOIN utilizadores u ON u.id=r.utilizador_id"
@@ -160,7 +164,7 @@ def get_totais_periodo(d_de: str, d_ate: str, ano: Optional[int] = None):
     return result, _empty
 
 
-def get_ocupacao_capacidade(d: date) -> dict:
+def get_ocupacao_capacidade(d: date) -> dict[str, tuple[int, int]]:
     """Devolve ocupação e capacidade por refeição (capacidade -1 => sem limite)."""
     t = get_totais_dia(d.isoformat())
     with db() as conn:
@@ -185,7 +189,7 @@ def get_ocupacao_capacidade(d: date) -> dict:
     }
 
 
-def get_menu_do_dia(d: date) -> dict:
+def get_menu_do_dia(d: date) -> dict[str, Any]:
     with db() as conn:
         r = conn.execute(
             "SELECT * FROM menus_diarios WHERE data=?", (d.isoformat(),)
@@ -193,7 +197,7 @@ def get_menu_do_dia(d: date) -> dict:
         return dict(r) if r else {}
 
 
-def dias_operacionais_batch(d_de: date, d_ate: date) -> dict:
+def dias_operacionais_batch(d_de: date, d_ate: date) -> dict[str, str]:
     """Carrega tipos de dia do calendário operacional. Devolve {iso_date: tipo}."""
     with db() as conn:
         rows = conn.execute(
@@ -203,7 +207,7 @@ def dias_operacionais_batch(d_de: date, d_ate: date) -> dict:
     return {r["data"]: r["tipo"] for r in rows}
 
 
-def refeicao_get(uid: int, d: date) -> dict:
+def refeicao_get(uid: int, d: date) -> dict[str, Any]:
     with db() as conn:
         r = conn.execute(
             "SELECT * FROM refeicoes WHERE utilizador_id=? AND data=?",
@@ -220,7 +224,9 @@ def refeicao_get(uid: int, d: date) -> dict:
     }
 
 
-def refeicoes_batch(uid: int, d_de: date, d_ate: date):
+def refeicoes_batch(
+    uid: int, d_de: date, d_ate: date
+) -> tuple[dict[str, dict[str, Any]], dict[str, Any]]:
     """Carrega refeições de um aluno para um intervalo. Devolve ({iso_date: dict}, defaults)."""
     defaults = {
         "pequeno_almoco": 0,
@@ -240,7 +246,9 @@ def refeicoes_batch(uid: int, d_de: date, d_ate: date):
     return result, defaults
 
 
-def refeicao_save(uid: int, d: date, r: dict, alterado_por: str = "sistema") -> bool:
+def refeicao_save(
+    uid: int, d: date, r: dict[str, Any], alterado_por: str = "sistema"
+) -> bool:
     """Guarda refeição e regista no log de auditoria os campos que mudaram."""
     try:
         with db() as conn:
@@ -386,7 +394,9 @@ _HEADERS_DISTRIBUICAO = [
 ]
 
 
-def _totais_para_csv_row(di: str, t: dict, extra: dict = None) -> dict:
+def _totais_para_csv_row(
+    di: str, t: dict[str, int], extra: dict[str, Any] | None = None
+) -> dict[str, Any]:
     row = {
         "data": di,
         "PA_total": t["pa"],

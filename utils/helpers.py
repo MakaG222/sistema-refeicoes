@@ -1,5 +1,7 @@
 """Funções auxiliares partilhadas (rendering, auditoria, datas, etc.)."""
 
+from __future__ import annotations
+
 import secrets
 from datetime import date, datetime, timedelta
 
@@ -17,18 +19,18 @@ from utils.constants import ANOS_LABELS
 # ═══════════════════════════════════════════════════════════════════════════
 
 
-def render(content, status=200):
+def render(content: str, status: int = 200) -> Response:
     """Renderiza conteúdo HTML dentro do layout base (templates/base.html)."""
     html = render_template("base.html", content=content)
     return Response(html, status=status, mimetype="text/html")
 
 
-def esc(v):
+def esc(v: object) -> str:
     """Escapa HTML de forma segura."""
     return str(escape(str(v))) if v is not None else ""
 
 
-def csrf_input():
+def csrf_input() -> Markup:
     """Gera input hidden com token CSRF."""
     t = session.get("_csrf_token") or secrets.token_urlsafe(32)
     session["_csrf_token"] = t
@@ -40,7 +42,7 @@ def csrf_input():
 # ═══════════════════════════════════════════════════════════════════════════
 
 
-def _parse_date(s, default=None):
+def _parse_date(s: str | None, default: date | None = None) -> date:
     """Parse de data YYYY-MM-DD com fallback."""
     try:
         return datetime.strptime(s, "%Y-%m-%d").date()
@@ -48,7 +50,7 @@ def _parse_date(s, default=None):
         return default or date.today()
 
 
-def _parse_date_strict(s):
+def _parse_date_strict(s: str | None) -> date | None:
     """Parse de data YYYY-MM-DD estrito (devolve None se inválido)."""
     try:
         return datetime.strptime((s or "").strip(), "%Y-%m-%d").date()
@@ -61,12 +63,12 @@ def _parse_date_strict(s):
 # ═══════════════════════════════════════════════════════════════════════════
 
 
-def _ano_label(ano):
+def _ano_label(ano: int | str | None) -> str:
     """Label legível para um ano escolar."""
     return ANOS_LABELS.get(int(ano) if ano else 0, f"{ano}\u00ba Ano")
 
 
-def _get_anos_disponiveis():
+def _get_anos_disponiveis() -> list[int]:
     """Anos com alunos na BD."""
     with db() as conn:
         rows = conn.execute(
@@ -77,7 +79,16 @@ def _get_anos_disponiveis():
     return [r["ano"] for r in rows]
 
 
-def _refeicao_set(uid, dt, pa, lanche, alm, jan, sai, alterado_por="sistema"):
+def _refeicao_set(
+    uid: int,
+    dt: date,
+    pa: int,
+    lanche: int,
+    alm: str | None,
+    jan: str | None,
+    sai: int,
+    alterado_por: str = "sistema",
+) -> bool:
     """Guarda uma refeição completa."""
     r = {
         "pequeno_almoco": pa,
@@ -89,12 +100,12 @@ def _refeicao_set(uid, dt, pa, lanche, alm, jan, sai, alterado_por="sistema"):
     return refeicao_save(uid, dt, r, alterado_por=alterado_por)
 
 
-def _back_btn(href, label="Voltar"):
+def _back_btn(href: str, label: str = "Voltar") -> Markup:
     """Botão de voltar HTML."""
     return Markup(f'<a class="back-btn" href="{href}">\u2190 {label}</a>')
 
 
-def _bar_html(val, cap):
+def _bar_html(val: int, cap: int | None) -> Markup:
     """Barra de ocupação HTML."""
     if cap is None or cap <= 0:
         return Markup(f'<div class="occ-label">{val} (sem limite)</div>')
@@ -106,7 +117,7 @@ def _bar_html(val, cap):
     )
 
 
-def _prazo_label(d):
+def _prazo_label(d: date) -> Markup:
     """Label de prazo de edição para uma data."""
     ok, _ = refeicao_editavel(d)
     if ok:

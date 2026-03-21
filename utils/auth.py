@@ -1,11 +1,14 @@
 """Decoradores de autenticação e autorização."""
 
+from __future__ import annotations
+
 from functools import wraps
+from typing import Any
 
 from flask import flash, redirect, session, url_for
 
 
-def current_user():
+def current_user() -> dict[str, Any]:
     """Devolve o dicionário do utilizador autenticado (ou {} se não autenticado)."""
     return session.get("user", {})
 

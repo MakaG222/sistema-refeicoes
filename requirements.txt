@@ -2,15 +2,15 @@
 # Instalar com: pip install -r requirements.txt
 
 # ── Web framework ─────────────────────────────────────────────────────────────
-Flask>=3.0,<4.0
-Werkzeug>=3.0,<4.0        # geração e verificação de hashes de password
-MarkupSafe>=2.1           # escape seguro de HTML nos templates
+Flask>=3.0,<3.2
+Werkzeug>=3.0,<3.2        # geração e verificação de hashes de password
+MarkupSafe>=2.1,<2.3      # escape seguro de HTML nos templates
 
 # ── Servidor WSGI para produção ───────────────────────────────────────────────
-gunicorn>=22.0            # multi-worker, Railway/Docker ready
+gunicorn>=22.0,<23.0      # multi-worker, Railway/Docker ready
 
 # ── Excel / exportações ───────────────────────────────────────────────────────
-openpyxl>=3.1             # exportação .xlsx (obrigatório — não incluído no stdlib)
+openpyxl>=3.1,<3.2        # exportação .xlsx (obrigatório — não incluído no stdlib)
 
 # ── Segurança / utilitários ───────────────────────────────────────────────────
 # secrets, sqlite3, csv, shutil, pathlib, datetime — stdlib, não precisam de pip

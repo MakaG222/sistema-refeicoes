@@ -1,4 +1,11 @@
-"""Funções de gestão de passwords e utilizadores."""
+"""Funções de gestão de passwords e utilizadores.
+
+Funções de resultado seguem o padrão tuple[bool, str]:
+    (True, "")           — sucesso
+    (False, "mensagem")  — erro com motivo legível
+"""
+
+from __future__ import annotations
 
 from flask import current_app
 from werkzeug.security import (
@@ -21,7 +28,7 @@ def generate_password_hash(password: str) -> str:
         return _gen_pw_hash(password, method="pbkdf2:sha256")
 
 
-def _validate_password(pw: str) -> tuple:
+def _validate_password(pw: str) -> tuple[bool, str]:
     """Valida requisitos de password: mínimo 8 caracteres, letras e números."""
     if len(pw) < 8:
         return False, "A password deve ter pelo menos 8 caracteres."
@@ -53,7 +60,7 @@ def _migrate_password_hash(uid: int, plain_password: str) -> None:
         current_app.logger.warning(f"_migrate_password_hash uid={uid}: {exc}")
 
 
-def _alterar_password(nii, old, new):
+def _alterar_password(nii: str, old: str, new: str) -> tuple[bool, str]:
     """Altera a password de um utilizador (requer password antiga correcta)."""
     uid = user_id_by_nii(nii)
     if not uid:
@@ -84,7 +91,9 @@ def _alterar_password(nii, old, new):
     return True, ""
 
 
-def _criar_utilizador(nii, ni, nome, ano, perfil, pw):
+def _criar_utilizador(
+    nii: str, ni: str, nome: str, ano: str, perfil: str, pw: str
+) -> tuple[bool, str]:
     """Cria um novo utilizador na BD."""
     try:
         if not all([nii, ni, nome, ano, perfil, pw]):
@@ -132,7 +141,7 @@ def _criar_utilizador(nii, ni, nome, ano, perfil, pw):
         return False, str(e)
 
 
-def _reset_pw(nii):
+def _reset_pw(nii: str) -> tuple[bool, str]:
     """Reset de password — usa o NII como password temporária (must_change_password=1)."""
     nova_hash = generate_password_hash(nii)
     with db() as conn:
@@ -148,14 +157,14 @@ def _reset_pw(nii):
     return False, "NII n\u00e3o encontrado."
 
 
-def _unblock_user(nii):
+def _unblock_user(nii: str) -> None:
     """Desbloqueia um utilizador (remove locked_until)."""
     with db() as conn:
         conn.execute("UPDATE utilizadores SET locked_until=NULL WHERE NII=?", (nii,))
         conn.commit()
 
 
-def _eliminar_utilizador(nii):
+def _eliminar_utilizador(nii: str) -> bool:
     """Elimina um utilizador da BD."""
     with db() as conn:
         cur = conn.execute("DELETE FROM utilizadores WHERE NII=?", (nii,))

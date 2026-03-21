@@ -1,16 +1,19 @@
 """Funções de analytics e séries temporais."""
 
+from __future__ import annotations
+
 from datetime import date, timedelta
-from typing import Optional
 
 from core.database import db
 
 
-def period_days(base: date, days: int):
+def period_days(base: date, days: int) -> list[date]:
     return [(base - timedelta(days=i)) for i in range(days - 1, -1, -1)]
 
 
-def series_consumo_por_dia(d0: date, d1: date, ano: Optional[int] = None):
+def series_consumo_por_dia(
+    d0: date, d1: date, ano: int | None = None
+) -> tuple[list[date], list[int], list[int], list[int], list[int], list[int]]:
     days = (d1 - d0).days + 1
     idx = {(d0 + timedelta(days=i)).isoformat(): i for i in range(days)}
     pa = [0] * days
