@@ -1,2 +1,150 @@
 {% extends "base.html" %}
-{% block content %}{{ content }}{% endblock %}
+{% block content %}
+<div class="container">
+  <div class="page-header">
+    {{ back_btn(url_for('.painel_dia', d=d_str)) }}
+    <div class="page-title">🚪 Licenças / Entradas &amp; Saídas</div>
+  </div>
+  <div class="flex-between" style="margin-bottom:1rem">
+    <div class="flex">
+      <a class="btn btn-ghost btn-sm" href="{{ url_for('.licencas_entradas_saidas', d=prev_d) }}">← Anterior</a>
+      <strong>{{ dia_semana }}, {{ dt_fmt }}</strong>
+      <a class="btn btn-ghost btn-sm" href="{{ url_for('.licencas_entradas_saidas', d=next_d) }}">Próximo →</a>
+    </div>
+  </div>
+
+  <div class="grid grid-4" style="margin-bottom:1rem">
+    <div class="stat-box">
+      <div class="stat-num">{{ total }}</div>
+      <div class="stat-lbl">Licenças hoje</div>
+    </div>
+    <div class="stat-box">
+      <div class="stat-num">{{ saidas }}</div>
+      <div class="stat-lbl">Saíram hoje</div>
+    </div>
+    <div class="stat-box">
+      <div class="stat-num">{{ entradas }}</div>
+      <div class="stat-lbl">Regressaram hoje</div>
+    </div>
+    <div class="stat-box" style="{{ 'background:#fef3cd' if fora > 0 else '' }}">
+      <div class="stat-num" style="{{ 'color:var(--danger)' if fora > 0 else '' }}">{{ fora }}</div>
+      <div class="stat-lbl">Fora da unidade</div>
+    </div>
+  </div>
+
+  {% if rows_fora %}
+  <div class="card" style="border-left:4px solid var(--danger)">
+    <div class="card-title" style="color:var(--danger)">
+      ⚠️ Ainda fora da unidade — dias anteriores ({{ rows_fora|length }})
+    </div>
+    <div class="alert alert-warn" style="font-size:.82rem">
+      Estes alunos saíram em dias anteriores e ainda não regressaram.
+      Regista a entrada aqui quando voltarem.
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr><th>NI</th><th>Nome</th><th>Ano</th><th>Data saída</th><th>Tipo</th><th>Estado</th><th>Saída</th><th>Entrada</th></tr>
+        </thead>
+        <tbody>
+          {% for r in rows_fora %}
+          <tr>
+            <td>{{ r.NI }}</td>
+            <td><strong>{{ r.Nome_completo }}</strong></td>
+            <td>{{ r.ano }}º</td>
+            <td class="small text-muted">{{ r.data }}</td>
+            <td>
+              {% if r.tipo == "antes_jantar" %}
+              <span class="badge badge-info" style="font-size:.65rem">🌅 Antes jantar</span>
+              {% else %}
+              <span class="badge badge-muted" style="font-size:.65rem">🌙 Após jantar</span>
+              {% endif %}
+            </td>
+            <td>
+              {% if r.hora_saida and not r.hora_entrada %}
+              <span class="badge badge-warn">Fora</span>
+              {% elif r.hora_saida and r.hora_entrada %}
+              <span class="badge badge-ok">Regressou</span>
+              {% else %}
+              <span class="badge badge-muted">Pendente</span>
+              {% endif %}
+            </td>
+            <td>
+              {% if not r.hora_saida %}
+              <form method="post" style="display:inline">{{ csrf_input() }}<input type="hidden" name="acao" value="saida"><input type="hidden" name="lic_id" value="{{ r.id }}"><button class="btn btn-warn btn-sm">🚶 Registar saída</button></form>
+              {% else %}
+              <span class="text-muted small">{{ r.hora_saida }}</span>
+              {% endif %}
+            </td>
+            <td>
+              {% if r.hora_saida and not r.hora_entrada %}
+              <form method="post" style="display:inline">{{ csrf_input() }}<input type="hidden" name="acao" value="entrada"><input type="hidden" name="lic_id" value="{{ r.id }}"><button class="btn btn-ok btn-sm">✅ Registar entrada</button></form>
+              {% elif r.hora_entrada %}
+              <span class="text-muted small">{{ r.hora_entrada }}</span>
+              {% else %}
+              —
+              {% endif %}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+  {% endif %}
+
+  <div class="card">
+    <div class="card-title">Licenças de {{ dt_fmt }}</div>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr><th>NI</th><th>Nome</th><th>Ano</th><th>Tipo</th><th>Estado</th><th>Saída</th><th>Entrada</th></tr>
+        </thead>
+        <tbody>
+          {% for r in rows_hoje %}
+          <tr>
+            <td>{{ r.NI }}</td>
+            <td><strong>{{ r.Nome_completo }}</strong></td>
+            <td>{{ r.ano }}º</td>
+            <td>
+              {% if r.tipo == "antes_jantar" %}
+              <span class="badge badge-info" style="font-size:.65rem">🌅 Antes jantar</span>
+              {% else %}
+              <span class="badge badge-muted" style="font-size:.65rem">🌙 Após jantar</span>
+              {% endif %}
+            </td>
+            <td>
+              {% if r.hora_saida and not r.hora_entrada %}
+              <span class="badge badge-warn">Fora</span>
+              {% elif r.hora_saida and r.hora_entrada %}
+              <span class="badge badge-ok">Regressou</span>
+              {% else %}
+              <span class="badge badge-muted">Pendente</span>
+              {% endif %}
+            </td>
+            <td>
+              {% if not r.hora_saida %}
+              <form method="post" style="display:inline">{{ csrf_input() }}<input type="hidden" name="acao" value="saida"><input type="hidden" name="lic_id" value="{{ r.id }}"><button class="btn btn-warn btn-sm">🚶 Registar saída</button></form>
+              {% else %}
+              <span class="text-muted small">{{ r.hora_saida }}</span>
+              {% endif %}
+            </td>
+            <td>
+              {% if r.hora_saida and not r.hora_entrada %}
+              <form method="post" style="display:inline">{{ csrf_input() }}<input type="hidden" name="acao" value="entrada"><input type="hidden" name="lic_id" value="{{ r.id }}"><button class="btn btn-ok btn-sm">✅ Registar entrada</button></form>
+              {% elif r.hora_entrada %}
+              <span class="text-muted small">{{ r.hora_entrada }}</span>
+              {% else %}
+              —
+              {% endif %}
+            </td>
+          </tr>
+          {% else %}
+          <tr><td colspan="7" class="text-muted center" style="padding:1.5rem">Sem licenças para este dia.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+{% endblock %}

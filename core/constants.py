@@ -1,7 +1,6 @@
 """Constantes partilhadas — caminhos, limites e perfis de sistema."""
 
 import os
-import secrets
 from pathlib import Path
 
 # ---------------------------------------------------------------------------
@@ -108,12 +107,3 @@ if _ENV != "production":
     }
 else:
     PERFIS_TESTE = {}
-
-if _ENV != "production":
-    FALLBACK_ADMIN = {
-        "nii": "admin",
-        "pw": "admin123",
-        "nome": "Administrador (fallback)",
-    }
-else:
-    FALLBACK_ADMIN = {"nii": "", "pw": secrets.token_urlsafe(32), "nome": ""}

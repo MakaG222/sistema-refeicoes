@@ -1,2 +1,50 @@
 {% extends "base.html" %}
-{% block content %}{{ content }}{% endblock %}
+{% block content %}
+<div class="container">
+  <div class="page-header">{{ back_btn(url_for('.admin_home')) }}<div class="page-title">🔐 Auditoria de Ações</div></div>
+  <div class="card">
+    <div class="card-title">🔍 Filtros
+      <span class="badge badge-muted" style="margin-left:.5rem;font-size:.72rem">{{ total }} entradas</span>
+    </div>
+    <form method="get" style="display:flex;gap:.5rem;flex-wrap:wrap;align-items:flex-end">
+      <div class="form-group" style="margin:0;min-width:160px;flex:1">
+        <label style="font-size:.77rem">👤 Actor (NII)</label>
+        <input type="text" name="actor" value="{{ q_actor }}" placeholder="NII...">
+      </div>
+      <div class="form-group" style="margin:0;min-width:160px;flex:1">
+        <label style="font-size:.77rem">📌 Ação</label>
+        <input type="text" name="action" value="{{ q_action }}" placeholder="ex: login, criar_utilizador...">
+      </div>
+      <div class="form-group" style="margin:0">
+        <label style="font-size:.77rem">Máx.</label>
+        <select name="limite" style="width:auto">
+          {% for n in [100, 200, 500, 1000, 2000, 5000] %}
+          <option value="{{ n }}" {{ "selected" if limite|string == n|string }}>{{ n }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <button class="btn btn-primary btn-sm">🔍 Filtrar</button>
+      <a class="btn btn-ghost btn-sm" href="{{ url_for('.admin_audit') }}">✕ Limpar</a>
+    </form>
+  </div>
+  <div class="card">
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Quando</th><th>Actor</th><th>Ação</th><th>Detalhe</th></tr></thead>
+        <tbody>
+          {% for r in rows %}
+          <tr>
+            <td class="small text-muted" style="white-space:nowrap">{{ (r.ts or "")[:16] }}</td>
+            <td><strong>{{ r.actor }}</strong></td>
+            <td>{{ ACTION_ICONS.get(r.action, "📌") }} {{ r.action }}</td>
+            <td class="small text-muted">{{ r.detail or "—" }}</td>
+          </tr>
+          {% else %}
+          <tr><td colspan="4" class="text-muted center" style="padding:2rem">Sem registos.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+{% endblock %}

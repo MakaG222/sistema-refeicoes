@@ -6,6 +6,7 @@ Importar em app.py com:  from config import Config, is_production
 
 import os
 import logging
+import secrets
 
 # ── Ambiente ────────────────────────────────────────────────────────────────
 ENV = os.environ.get("ENV", "development").lower()
@@ -18,7 +19,7 @@ if is_production and not SECRET_KEY:
         "SECRET_KEY não definida! "
         "Define a variável de ambiente SECRET_KEY antes de arrancar em produção."
     )
-SECRET_KEY = SECRET_KEY or "escola-naval-dev-insecure-key-change-me"
+SECRET_KEY = SECRET_KEY or secrets.token_hex(32)
 
 # ── Token de cron ────────────────────────────────────────────────────────────
 # Gerar com: python -c "import secrets; print(secrets.token_urlsafe(32))"

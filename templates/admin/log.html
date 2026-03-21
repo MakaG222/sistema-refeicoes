@@ -1,2 +1,98 @@
 {% extends "base.html" %}
-{% block content %}{{ content }}{% endblock %}
+{% block content %}
+<div class="container">
+  <div class="page-header">{{ back_btn(url_for('.admin_home')) }}<div class="page-title">📜 Log de Alterações</div></div>
+  <div class="card">
+    <div class="card-title">🔍 Filtros
+      <span class="badge badge-muted" style="margin-left:.5rem;font-size:.72rem">{{ total_logs }} registos totais</span>
+      {% if filtros_ativos %}
+      <span class="badge badge-warn" style="margin-left:.3rem;font-size:.72rem">A mostrar {{ mostrando }}</span>
+      {% endif %}
+    </div>
+    <form method="get" style="display:flex;flex-wrap:wrap;gap:.5rem;align-items:flex-end">
+      <div class="form-group" style="margin:0;min-width:180px;flex:1">
+        <label style="font-size:.77rem">👤 Utilizador (nome)</label>
+        <input type="text" name="q_nome" value="{{ q_nome }}" placeholder="Nome do aluno..." style="font-size:.82rem">
+      </div>
+      <div class="form-group" style="margin:0;min-width:140px">
+        <label style="font-size:.77rem">✏️ Alterado por (NII)</label>
+        <input type="text" name="q_por" value="{{ q_por }}" placeholder="NII..." style="font-size:.82rem">
+      </div>
+      <div class="form-group" style="margin:0;min-width:140px">
+        <label style="font-size:.77rem">🏷 Campo</label>
+        <select name="q_campo" style="font-size:.82rem">
+          <option value="">Todos os campos</option>
+          {% for c in campos_disponiveis %}
+          <option value="{{ c }}" {{ "selected" if q_campo == c }}>{{ c }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="form-group" style="margin:0">
+        <label style="font-size:.77rem">📅 Data ref. de</label>
+        <input type="date" name="d0" value="{{ q_d0 }}" style="width:auto;font-size:.82rem">
+      </div>
+      <div class="form-group" style="margin:0">
+        <label style="font-size:.77rem">📅 até</label>
+        <input type="date" name="d1" value="{{ q_d1 }}" style="width:auto;font-size:.82rem">
+      </div>
+      <div class="form-group" style="margin:0">
+        <label style="font-size:.77rem">📊 Máx. linhas</label>
+        <select name="limite" style="width:auto;font-size:.82rem">
+          {% for n in [100, 200, 500, 1000, 2000, 5000] %}
+          <option value="{{ n }}" {{ "selected" if q_limit|string == n|string }}>{{ n }} linhas</option>
+          {% endfor %}
+        </select>
+      </div>
+      <button class="btn btn-primary btn-sm" style="align-self:flex-end">🔍 Filtrar</button>
+      {% if filtros_ativos %}
+      <a class="btn btn-ghost btn-sm" href="{{ url_for('.admin_log') }}">✕ Limpar filtros</a>
+      {% endif %}
+    </form>
+  </div>
+  <div class="card">
+    <div class="card-title">Resultados
+      <span class="badge badge-info" style="margin-left:.5rem;font-size:.72rem;font-weight:400">
+        {{ mostrando }} {{ "(filtrado)" if filtros_ativos else "mais recentes" }}
+      </span>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Quando</th>
+            <th>Utilizador</th>
+            <th>Data Ref.</th>
+            <th>Campo</th>
+            <th>Antes</th>
+            <th>Depois</th>
+            <th>Por (NII)</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for r in rows %}
+          <tr>
+            <td class="small" style="white-space:nowrap">{{ (r.alterado_em or "")[:16] }}</td>
+            <td>
+              <span style="font-weight:600">{{ r.Nome_completo or r.NII or "—" }}</span>
+              {% if r.Nome_completo %}
+              <br><span class="text-muted small">{{ r.NII }}{{ " · %sº ano"|format(r.ano) if r.ano else "" }}</span>
+              {% endif %}
+            </td>
+            <td style="white-space:nowrap">{{ r.data_refeicao }}</td>
+            <td><span class="badge badge-info">{{ r.campo }}</span></td>
+            <td class="small text-muted">{{ r.valor_antes or "—" }}</td>
+            <td class="small" style="color:var(--ok);font-weight:600">{{ r.valor_depois or "—" }}</td>
+            <td class="small text-muted">{{ r.alterado_por or "—" }}</td>
+          </tr>
+          {% else %}
+          <tr><td colspan="7" class="text-muted center" style="padding:2rem">Sem registos com estes filtros.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% if mostrando == q_limit %}
+    <div style="margin-top:.6rem;font-size:.8rem;color:var(--muted)">💡 A mostrar os primeiros {{ q_limit }} resultados. Usa os filtros para refinar.</div>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

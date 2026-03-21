@@ -1,2 +1,33 @@
 {% extends "base.html" %}
-{% block content %}{{ content }}{% endblock %}
+{% block content %}
+    <div class="container">
+      <div class="page-header">{{ back_btn(url_for(".aluno_home"))|safe }}<div class="page-title">🕘 Histórico — 30 dias</div></div>
+      <div class="card">
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Data</th><th>PA</th><th>Lanche</th><th>Almoço</th><th>Jantar</th><th>Sai</th></tr></thead>
+            <tbody>
+              {% for r in rows %}
+              <tr>
+                <td>{{ r.data }}</td>
+                <td>{{ "✅" if r.pequeno_almoco else "❌" }}</td>
+                <td>{{ "✅" if r.lanche else "❌" }}</td>
+                <td>{{ r.almoco or "—" }}</td>
+                <td>{{ r.jantar_tipo or "—" }}</td>
+                <td>{{ "✅" if r.jantar_sai_unidade else "—" }}</td>
+              </tr>
+              {% else %}
+              <tr><td colspan="6" class="text-muted center" style="padding:1.5rem">Sem registos.</td></tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+        {% if rows %}
+        <div class="gap-btn" style="margin-top:.8rem">
+          <a class="btn btn-ghost btn-sm" href="{{ url_for(".exportar_historico_aluno", fmt="csv") }}">📄 Exportar CSV</a>
+          <a class="btn btn-ghost btn-sm" href="{{ url_for(".exportar_historico_aluno", fmt="xlsx") }}">📊 Exportar Excel</a>
+        </div>
+        {% endif %}
+      </div>
+    </div>
+{% endblock %}

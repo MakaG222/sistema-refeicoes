@@ -1,2 +1,190 @@
 {% extends "base.html" %}
-{% block content %}{{ content }}{% endblock %}
+{% block content %}
+    <style>
+      .sw-group{display:flex;flex-direction:column;gap:.45rem}
+      .sw-row{display:flex;align-items:center;gap:.55rem;cursor:pointer;padding:.7rem .85rem;
+        border:2px solid var(--border);border-radius:12px;transition:all .2s;
+        user-select:none;-webkit-tap-highlight-color:transparent;background:#fff}
+      .sw-row:active{transform:scale(.97)}
+      .sw-row.sw-on{background:#eafaf1;border-color:#27ae60}
+      .sw-row input[type=hidden],.sw-row input[type=radio]{display:none}
+      .sw-icon{font-size:1.25rem;flex-shrink:0}
+      .sw-label{flex:1;font-weight:600;font-size:.9rem}
+      .sw-hint{font-size:.75rem;color:var(--muted);font-weight:400}
+      .sw-mark{width:28px;height:28px;border-radius:8px;border:2px solid var(--border);
+        display:flex;align-items:center;justify-content:center;font-size:.85rem;font-weight:800;
+        color:transparent;transition:all .2s;background:#fff;flex-shrink:0}
+      .sw-row.sw-on .sw-mark{background:#27ae60;border-color:#27ae60;color:#fff}
+      .sw-pills{display:flex;gap:.35rem;flex-wrap:wrap}
+      .sw-pill{padding:.5rem .75rem;border:2px solid var(--border);border-radius:10px;cursor:pointer;
+        font-weight:600;font-size:.82rem;transition:all .2s;user-select:none;
+        -webkit-tap-highlight-color:transparent;text-align:center;min-width:60px;background:#fff}
+      .sw-pill:active{transform:scale(.95)}
+      .sw-pill.sw-sel{background:#eafaf1;border-color:#27ae60;color:#1a5c38}
+      .sw-pill-group{display:flex;flex-direction:column;gap:.35rem}
+      .sw-pill-row{display:flex;align-items:center;gap:.55rem;padding:.5rem .85rem;
+        border:2px solid var(--border);border-radius:12px;background:#fff}
+      .sw-pill-row.sw-on{border-color:#27ae60;background:#f0faf4}
+      .sw-pill-label{font-weight:600;font-size:.9rem;min-width:auto;white-space:nowrap}
+      .sw-pill-icon{font-size:1.25rem;flex-shrink:0}
+      .sw-pill-opts{display:flex;gap:.3rem;flex:1;justify-content:flex-end;flex-wrap:wrap}
+    </style>
+    <div class="container">
+      <div class="page-header">
+        {{ back_btn(url_for(".aluno_home"))|safe }}
+        <div class="page-title">🍽️ {{ nome_dia }}, {{ dt.strftime("%d/%m/%Y") }}</div>
+      </div>
+      {% if is_weekend %}
+      <div class="alert alert-info" style="margin-bottom:.8rem">Fim de semana — refeições opcionais.</div>
+      {% endif %}
+      {% if detido %}
+      <div class="alert alert-warn" style="margin-bottom:.8rem">🚫 Estás detido neste dia. Não podes sair da unidade.</div>
+      {% endif %}
+      {% if menu %}
+      <div class="card" style="border-top:3px solid #f39c12">
+        <div class="card-title">📋 Ementa — {{ dt.strftime("%d/%m/%Y") }}</div>
+        <div class="grid grid-4" style="font-size:.85rem">
+          <div><strong>Peq. Almoço</strong><br><span class="text-muted">{{ menu.get("pequeno_almoco") or "—" }}</span></div>
+          <div><strong>Lanche</strong><br><span class="text-muted">{{ menu.get("lanche") or "—" }}</span></div>
+          <div><strong>Almoço</strong><br>N: {{ menu.get("almoco_normal") or "—" }}<br>V: {{ menu.get("almoco_veg") or "—" }}<br>D: {{ menu.get("almoco_dieta") or "—" }}</div>
+          <div><strong>Jantar</strong><br>N: {{ menu.get("jantar_normal") or "—" }}<br>V: {{ menu.get("jantar_veg") or "—" }}<br>D: {{ menu.get("jantar_dieta") or "—" }}</div>
+        </div>
+      </div>
+      {% endif %}
+      <div class="card">
+        <div class="card-title">📊 Ocupação</div>
+        {% for nome in ["Pequeno Almoço", "Lanche", "Almoço", "Jantar"] %}
+        {% set val, cap = occ.get(nome, (0, -1)) %}
+        <div style="margin-bottom:.65rem"><strong style="font-size:.84rem">{{ nome }}</strong>{{ bar_html(val, cap)|safe }}</div>
+        {% endfor %}
+      </div>
+      <div class="card">
+        <div class="card-title">✏️ Marcar refeições</div>
+        <form method="post" id="mealForm">
+          {{ csrf_input() }}
+          <input type="hidden" name="pa" id="h_pa" value="{{ pa_on }}">
+          <input type="hidden" name="lanche" id="h_lanche" value="{{ lan_on }}">
+          <input type="hidden" name="almoco" id="h_almoco" value="{{ alm_val }}">
+          <input type="hidden" name="jantar" id="h_jantar" value="{{ jan_val }}">
+          <div class="sw-group">
+            <!-- PA toggle -->
+            <div class="sw-row{{ "  sw-on" if pa_on else "" }}" data-meal="pa" onclick="toggleMeal(this)">
+              <span class="sw-icon">☕</span>
+              <span class="sw-label">Pequeno Almoço</span>
+              <span class="sw-mark">{{ "✓" if pa_on else "" }}</span>
+            </div>
+            <!-- Lanche toggle -->
+            <div class="sw-row{{ "  sw-on" if lan_on else "" }}" data-meal="lanche" onclick="toggleMeal(this)">
+              <span class="sw-icon">🥐</span>
+              <span class="sw-label">Lanche</span>
+              <span class="sw-mark">{{ "✓" if lan_on else "" }}</span>
+            </div>
+            <!-- Almoço pill selector -->
+            <div class="sw-pill-row{{ "  sw-on" if alm_val else "" }}" id="alm_row">
+              <span class="sw-pill-icon">🍽️</span>
+              <span class="sw-pill-label">Almoço</span>
+              <div class="sw-pill-opts">
+                <div class="sw-pill{{ " sw-sel" if alm_val == "Normal" else "" }}" onclick="setPill('almoco','Normal',this)">Normal</div>
+                <div class="sw-pill{{ " sw-sel" if alm_val == "Vegetariano" else "" }}" onclick="setPill('almoco','Vegetariano',this)">Veg</div>
+                <div class="sw-pill{{ " sw-sel" if alm_val == "Dieta" else "" }}" onclick="setPill('almoco','Dieta',this)">Dieta</div>
+              </div>
+            </div>
+            <!-- Jantar pill selector -->
+            <div class="sw-pill-row{{ "  sw-on" if jan_val and not jan_blocked else "" }}" id="jan_row"{{ "  style=opacity:.4;pointer-events:none"|safe if jan_blocked else "" }}>
+              <span class="sw-pill-icon">🌙</span>
+              <span class="sw-pill-label">Jantar</span>
+              <div class="sw-pill-opts">
+                <div class="sw-pill{{ " sw-sel" if jan_val == "Normal" else "" }}" onclick="setPill('jantar','Normal',this)">Normal</div>
+                <div class="sw-pill{{ " sw-sel" if jan_val == "Vegetariano" else "" }}" onclick="setPill('jantar','Vegetariano',this)">Veg</div>
+                <div class="sw-pill{{ " sw-sel" if jan_val == "Dieta" else "" }}" onclick="setPill('jantar','Dieta',this)">Dieta</div>
+              </div>
+            </div>
+          </div>
+          {% if not detido %}
+          <div class="card" style="border-top:3px solid #2e86c1">
+            <div class="card-title">🚪 Licença de saída</div>
+            {% if not detido %}
+              {% if is_weekday %}
+              <span class="text-muted small">Seg-Qui usadas: <strong>{{ usadas_semana }}/{{ max_uteis }}</strong></span>
+              {% else %}
+              <span class="text-muted small">Fim de semana — sem limite.</span>
+              {% endif %}
+            {% endif %}
+            <div class="sw-group" style="margin-top:.6rem">
+              <label class="sw-row{{ "  sw-on" if not licenca_atual else "" }}" data-lic>
+                <input type="radio" name="licenca" value=""{{ " checked" if not licenca_atual else "" }}{{ " disabled" if not pode_lic else "" }}>
+                <span class="sw-label">Sem licença</span>
+              </label>
+              <label class="sw-row{{ "  sw-on" if licenca_atual == "antes_jantar" else "" }}" data-lic>
+                <input type="radio" name="licenca" value="antes_jantar"{{ " checked" if licenca_atual == "antes_jantar" else "" }}{{ " disabled" if not pode_lic else "" }}>
+                <span class="sw-icon">🌅</span>
+                <span class="sw-label">Antes do jantar</span>
+                <span class="sw-hint">(não janta)</span>
+              </label>
+              <label class="sw-row{{ "  sw-on" if licenca_atual == "apos_jantar" else "" }}" data-lic>
+                <input type="radio" name="licenca" value="apos_jantar"{{ " checked" if licenca_atual == "apos_jantar" else "" }}{{ " disabled" if not pode_lic else "" }}>
+                <span class="sw-icon">🌙</span>
+                <span class="sw-label">Após o jantar</span>
+                <span class="sw-hint">(janta na unidade)</span>
+              </label>
+            </div>
+            {% if not pode_lic and motivo_lic %}
+            <div class="alert alert-warn" style="margin-top:.5rem">{{ motivo_lic }}</div>
+            {% endif %}
+          </div>
+          {% endif %}
+          <hr>
+          <div class="gap-btn">
+            <button class="btn btn-ok" style="flex:1;justify-content:center;padding:.7rem">💾 Guardar</button>
+            <a class="btn btn-ghost" href="{{ url_for(".aluno_home") }}">Cancelar</a>
+          </div>
+        </form>
+      </div>
+    </div>
+    <script>
+    function toggleMeal(el){
+      var key=el.getAttribute('data-meal');
+      var h=document.getElementById('h_'+key);
+      var on=h.value==='1'||h.value==='on';
+      h.value=on?'0':'1';
+      el.classList.toggle('sw-on',!on);
+      el.querySelector('.sw-mark').textContent=on?'':'✓';
+    }
+    function setPill(meal,val,pill){
+      var h=document.getElementById('h_'+meal);
+      var row=pill.closest('.sw-pill-row');
+      var pills=row.querySelectorAll('.sw-pill');
+      if(h.value===val){
+        h.value='';
+        pills.forEach(function(p){p.classList.remove('sw-sel')});
+        row.classList.remove('sw-on');
+      } else {
+        h.value=val;
+        pills.forEach(function(p){p.classList.remove('sw-sel')});
+        pill.classList.add('sw-sel');
+        row.classList.add('sw-on');
+      }
+    }
+    // Licença radio: highlight active + block jantar se antes_jantar
+    document.querySelectorAll('[data-lic] input[type=radio]').forEach(function(r){
+      r.addEventListener('change',function(){
+        document.querySelectorAll('[data-lic]').forEach(function(l){l.classList.remove('sw-on')});
+        r.closest('[data-lic]').classList.add('sw-on');
+        syncJantar();
+      });
+    });
+    function syncJantar(){
+      var antes=document.querySelector('input[name=licenca][value=antes_jantar]');
+      var jr=document.getElementById('jan_row');
+      if(!jr)return;
+      if(antes && antes.checked){
+        jr.style.opacity='.4';jr.style.pointerEvents='none';
+        document.getElementById('h_jantar').value='';
+        jr.querySelectorAll('.sw-pill').forEach(function(p){p.classList.remove('sw-sel')});
+        jr.classList.remove('sw-on');
+      } else {
+        jr.style.opacity='1';jr.style.pointerEvents='auto';
+      }
+    }
+    </script>
+{% endblock %}

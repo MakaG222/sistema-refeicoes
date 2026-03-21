@@ -1,2 +1,51 @@
 {% extends "base.html" %}
-{% block content %}{{ content }}{% endblock %}
+{% block content %}
+    <div class="container">
+      <div class="page-header">
+        {{ back_btn(url_for(".aluno_home"))|safe }}
+        <div class="page-title">👤 O meu perfil</div>
+      </div>
+      <div class="grid grid-2">
+        <div class="card">
+          <div class="card-title">ℹ️ Informação pessoal</div>
+          <div style="display:flex;flex-direction:column;gap:.6rem;font-size:.9rem">
+            <div><span class="text-muted">Nome completo:</span><br><strong>{{ aluno.Nome_completo }}</strong></div>
+            <div><span class="text-muted">NII:</span><br><strong>{{ aluno.NII }}</strong></div>
+            <div><span class="text-muted">NI:</span><br><strong>{{ aluno.NI or "—" }}</strong></div>
+            <div><span class="text-muted">Ano:</span><br><strong>{{ aluno.ano }}º Ano</strong></div>
+          </div>
+          <hr style="margin:1rem 0">
+          <div class="grid grid-2">
+            <div class="stat-box"><div class="stat-num">{{ total_ref }}</div><div class="stat-lbl">Refeições registadas</div></div>
+            <div class="stat-box"><div class="stat-num" style="color:{{ "var(--warn)" if ausencias_ativas else "var(--ok)" }}">{{ ausencias_ativas }}</div><div class="stat-lbl">Ausências ativas</div></div>
+          </div>
+        </div>
+        <div class="card">
+          <div class="card-title">✉️ Contactos</div>
+          <form method="post">
+            {{ csrf_input() }}
+            <div class="form-group">
+              <label>📧 Email</label>
+              <input type="email" name="email" value="{{ aluno.get("email") or "" }}" placeholder="o-teu-email@exemplo.pt">
+            </div>
+            <div class="form-group">
+              <label>📱 Telemóvel</label>
+              <input type="tel" name="telemovel" value="{{ aluno.get("telemovel") or "" }}" placeholder="+351XXXXXXXXX">
+            </div>
+            <div class="gap-btn">
+              <button class="btn btn-ok">💾 Guardar contactos</button>
+              <a class="btn btn-ghost" href="{{ url_for(".aluno_home") }}">Cancelar</a>
+            </div>
+          </form>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-title">⚡ Ações rápidas</div>
+        <div class="gap-btn">
+          <a class="btn btn-ghost" href="{{ url_for(".aluno_ausencias") }}">🚫 Gerir ausências</a>
+          <a class="btn btn-ghost" href="{{ url_for(".aluno_historico") }}">🕘 Histórico de refeições</a>
+          <a class="btn btn-ghost" href="{{ url_for(".aluno_password") }}">🔑 Alterar password</a>
+        </div>
+      </div>
+    </div>
+{% endblock %}

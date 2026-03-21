@@ -1,2 +1,145 @@
 {% extends "base.html" %}
-{% block content %}{{ content }}{% endblock %}
+{% block content %}
+<div class="container">
+  <div class="page-header">
+    {% if perfil == "admin" %}{{ back_btn(back_url) }}{% endif %}
+    <div class="page-title">📋 Painel Operacional{{ label_ano }}</div>
+    {% if perfil in ("oficialdia", "admin") %}
+    <span>
+      <form method="post" style="display:inline">{{ csrf_input() }}<input type="hidden" name="acao" value="backup"><button class="btn btn-ghost">💾 Backup BD</button></form>
+      {% if perfil == "admin" %}
+      <a class="btn btn-ghost" href="{{ url_for('admin.admin_backup_download') }}">📥 Download BD</a>
+      {% endif %}
+    </span>
+    {% endif %}
+  </div>
+
+  <div class="flex-between" style="margin-bottom:1.1rem">
+    <div class="flex">
+      <a class="btn btn-ghost btn-sm" href="{{ url_for('.painel_dia', d=prev_d) }}">← Anterior</a>
+      <strong>{{ dia_semana }}, {{ dt_fmt }}</strong>
+      <a class="btn btn-ghost btn-sm" href="{{ url_for('.painel_dia', d=next_d) }}">Próximo →</a>
+    </div>
+    <form method="get" style="display:flex;gap:.3rem">
+      <input type="date" name="d" value="{{ d_str }}" style="width:auto">
+      <button class="btn btn-primary btn-sm">Ir</button>
+    </form>
+  </div>
+
+  {% if alertas %}
+  <div style="margin-bottom:1rem">
+    {% for a in alertas %}
+    <div class="alert alert-{{ a.cat }}" style="margin-bottom:.4rem">{{ a.icon }} {{ a.msg }}</div>
+    {% endfor %}
+  </div>
+  {% endif %}
+
+  <div class="card">
+    <div class="card-title">Ocupação geral</div>
+    <div class="grid grid-4">
+      {% for nome, icon, val, cap in occ_items %}
+      <div class="stat-box">
+        <div class="stat-num">{{ val }}</div>
+        <div class="stat-lbl">{{ icon }} {{ nome }}</div>
+        {% if cap > 0 %}{{ bar_html(val, cap)|safe }}{% endif %}
+      </div>
+      {% endfor %}
+    </div>
+    <div class="grid grid-3" style="margin-top:.9rem">
+      <div class="stat-box"><div class="stat-num">{{ t.alm_norm }}</div><div class="stat-lbl">Almoço Normal</div></div>
+      <div class="stat-box"><div class="stat-num">{{ t.alm_veg }}</div><div class="stat-lbl">Almoço Vegetariano</div></div>
+      <div class="stat-box"><div class="stat-num">{{ t.alm_dieta }}</div><div class="stat-lbl">Almoço Dieta</div></div>
+      <div class="stat-box"><div class="stat-num">{{ t.jan_norm }}</div><div class="stat-lbl">Jantar Normal</div></div>
+      <div class="stat-box"><div class="stat-num">{{ t.jan_veg }}</div><div class="stat-lbl">Jantar Vegetariano</div></div>
+      <div class="stat-box"><div class="stat-num">{{ t.jan_dieta }}</div><div class="stat-lbl">Jantar Dieta</div></div>
+    </div>
+    {% if perfil != "cozinha" %}
+    <div style="margin-top:.65rem;font-size:.81rem;color:var(--muted)">🚪 Saem após jantar: <strong>{{ t.jan_sai }}</strong></div>
+    {% endif %}
+  </div>
+
+  {% if previsao %}
+  <div class="card" style="border-top:3px solid #2e86c1">
+    <div class="card-title">🔮 Previsão Amanhã — {{ previsao.dia_semana }} {{ previsao.data_fmt }}</div>
+    <div class="grid grid-4">
+      <div class="stat-box"><div class="stat-num">{{ previsao.t_am.pa }}{{ previsao.deltas.pa|safe }}</div><div class="stat-lbl">☕ PA</div></div>
+      <div class="stat-box"><div class="stat-num">{{ previsao.t_am.lan }}{{ previsao.deltas.lan|safe }}</div><div class="stat-lbl">🥐 Lanche</div></div>
+      <div class="stat-box"><div class="stat-num">{{ previsao.alm_a }}{{ previsao.deltas.alm|safe }}</div><div class="stat-lbl">🍽️ Almoços</div></div>
+      <div class="stat-box"><div class="stat-num">{{ previsao.jan_a }}{{ previsao.deltas.jan|safe }}</div><div class="stat-lbl">🌙 Jantares</div></div>
+    </div>
+    <div class="grid grid-3" style="margin-top:.5rem">
+      <div class="stat-box"><div class="stat-num">{{ previsao.t_am.alm_norm }}</div><div class="stat-lbl">Alm Normal</div></div>
+      <div class="stat-box"><div class="stat-num">{{ previsao.t_am.alm_veg }}</div><div class="stat-lbl">Alm Veg</div></div>
+      <div class="stat-box"><div class="stat-num">{{ previsao.t_am.alm_dieta }}</div><div class="stat-lbl">Alm Dieta</div></div>
+    </div>
+  </div>
+  {% endif %}
+
+  {% if detidos %}
+  <div class="card" style="border-top:3px solid #e74c3c">
+    <div class="card-title">⛔ Detidos hoje ({{ detidos|length }})</div>
+    <div class="table-wrap"><table>
+      <thead><tr><th>NI</th><th>Nome</th><th>Ano</th><th>Período</th><th>Motivo</th></tr></thead>
+      <tbody>
+        {% for r in detidos %}
+        <tr>
+          <td>{{ r.NI }}</td>
+          <td>{{ r.Nome_completo }}</td>
+          <td>{{ r.ano }}º</td>
+          <td>{{ r.detido_de }} a {{ r.detido_ate }}</td>
+          <td>{{ r.motivo or "—" }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table></div>
+  </div>
+  {% endif %}
+
+  {% if lics %}
+  <div class="card" style="border-top:3px solid #2e86c1">
+    <div class="card-title">🚪 Licenças hoje ({{ lics|length }})</div>
+    <div class="table-wrap"><table>
+      <thead><tr><th>NI</th><th>Nome</th><th>Ano</th><th>Tipo</th><th>Saída</th><th>Entrada</th></tr></thead>
+      <tbody>
+        {% for r in lics %}
+        <tr>
+          <td>{{ r.NI }}</td>
+          <td>{{ r.Nome_completo }}</td>
+          <td>{{ r.ano }}º</td>
+          <td>
+            {% if r.tipo == "antes_jantar" %}
+            <span class="badge badge-info" style="font-size:.6rem">🌅 Antes</span>
+            {% else %}
+            <span class="badge badge-muted" style="font-size:.6rem">🌙 Após</span>
+            {% endif %}
+          </td>
+          <td>{{ "✅ " ~ r.hora_saida if r.hora_saida else "—" }}</td>
+          <td>{{ "✅ " ~ r.hora_entrada if r.hora_entrada else "—" }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table></div>
+    <a class="btn btn-gold btn-sm" href="{{ url_for('.licencas_entradas_saidas', d=d_str) }}" style="margin-top:.5rem">Gerir entradas/saídas</a>
+  </div>
+  {% endif %}
+
+  <div class="card">
+    <div class="card-title">⬇ Exportar</div>
+    <div class="gap-btn">
+      <a class="btn btn-primary" href="{{ url_for('reporting.exportar_dia', d=dt_iso, fmt='csv') }}">CSV</a>
+      <a class="btn btn-primary" href="{{ url_for('reporting.exportar_dia', d=dt_iso, fmt='xlsx') }}">Excel</a>
+    </div>
+  </div>
+
+  {% if acoes %}
+  <div class="card">
+    <div class="card-title">⚡ Ações rápidas</div>
+    <div class="gap-btn">
+      {% for acao in acoes %}
+      <a class="btn {{ acao.cls }}" href="{{ acao.url }}" {% if acao.target %}target="{{ acao.target }}"{% endif %}>{{ acao.icon }} {{ acao.label }}</a>
+      {% endfor %}
+    </div>
+  </div>
+  {% endif %}
+</div>
+{% endblock %}

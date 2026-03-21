@@ -14,11 +14,8 @@ from flask import (
     url_for,
 )
 
-import config as cfg
 from core.auth_db import (
     block_user,
-    existe_admin,
-    FALLBACK_ADMIN,
     recent_failures,
     recent_failures_by_ip,
     reg_login,
@@ -49,31 +46,10 @@ def login():
             )
             _audit(nii or "unknown", "ip_rate_limited", f"IP={ip} falhas={ip_falhas}")
         # Autenticação via BD (contas de sistema sincronizadas para a BD em desenvolvimento)
-        perfis = {}
         u = None
         db_u = None
         if error:
             pass  # IP bloqueado — não tentar autenticação
-        elif False and nii in perfis:
-            error = "Login legado desativado."
-        elif (
-            not cfg.is_production
-            and not existe_admin()
-            and nii == FALLBACK_ADMIN["nii"]
-            and pw == FALLBACK_ADMIN["pw"]
-        ):
-            u = {
-                "id": 0,
-                "nii": nii,
-                "ni": "",
-                "nome": FALLBACK_ADMIN["nome"],
-                "ano": "",
-                "perfil": "admin",
-            }
-            reg_login(nii, 1, ip=_client_ip())
-            current_app.logger.warning(
-                f"Login via FALLBACK_ADMIN: NII={nii} IP={_client_ip()}"
-            )
         else:
             # Busca directa à BD por NII
             db_u = user_by_nii(nii)

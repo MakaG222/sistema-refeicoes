@@ -1,2 +1,119 @@
 {% extends "base.html" %}
-{% block content %}{{ content }}{% endblock %}
+{% block content %}
+<div class="container">
+  <div class="page-header">
+    {{ back_btn(back_url, "Painel") }}
+    <div class="page-title">👥 {{ ano_label(ano) }} — {{ dia_semana }}, {{ dt_fmt }}</div>
+    <a class="btn btn-ghost" href="{{ url_for('.imprimir_ano', ano=ano, d=d_str) }}" target="_blank">🖨 Imprimir mapa</a>
+  </div>
+
+  {% if tabs_anos %}
+  <div class="year-tabs">
+    {% for a in tabs_anos %}
+    <a class="year-tab {{ 'active' if a == ano else '' }}" href="{{ url_for('.lista_alunos_ano', ano=a, d=d_str) }}">{{ ano_label(a) }}</a>
+    {% endfor %}
+  </div>
+  {% endif %}
+
+  {% if ok_prazo %}
+  <div class="alert alert-ok" style="margin-bottom:.7rem">✅ Os alunos ainda podem editar as próprias refeições (prazo não expirou).</div>
+  {% else %}
+  <div class="alert alert-info" style="margin-bottom:.7rem">🔒 Prazo expirado — os alunos já não podem alterar. Usa o botão <strong>✏️</strong> para fazer exceções.</div>
+  {% endif %}
+
+  <div class="grid grid-4" style="margin-bottom:1.1rem">
+    <div class="stat-box"><div class="stat-num">{{ total_alunos }}</div><div class="stat-lbl">Total alunos</div></div>
+    <div class="stat-box"><div class="stat-num" style="color:var(--ok)">{{ com_ref }}</div><div class="stat-lbl">Com refeições</div></div>
+    <div class="stat-box"><div class="stat-num" style="color:var(--danger)">{{ total_alunos - com_ref }}</div><div class="stat-lbl">Sem refeições</div></div>
+    <div class="stat-box"><div class="stat-num" style="color:var(--warn)">{{ ausentes }}</div><div class="stat-lbl">Ausentes</div></div>
+  </div>
+
+  <div class="card" style="padding:.9rem 1.2rem;margin-bottom:.8rem">
+    <div class="flex-between">
+      <div class="flex">
+        <a class="btn btn-ghost btn-sm" href="{{ url_for('.lista_alunos_ano', ano=ano, d=prev_d) }}">← Anterior</a>
+        <strong>{{ dt_fmt }}</strong>
+        <a class="btn btn-ghost btn-sm" href="{{ url_for('.lista_alunos_ano', ano=ano, d=next_d) }}">Próximo →</a>
+      </div>
+      <form method="get" style="display:flex;gap:.3rem">
+        <input type="date" name="d" value="{{ d_str }}" style="width:auto">
+        <button class="btn btn-primary btn-sm">Ir</button>
+      </form>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-title">Lista de presenças
+      {% if perfil in ("oficialdia", "admin") %}
+      <span class="badge badge-info" style="margin-left:.5rem;font-weight:400;font-size:.7rem">Usa o módulo <a href="{{ url_for('.controlo_presencas', d=d_str) }}">Controlo de Presenças</a> para marcar entradas/saídas</span>
+      {% endif %}
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr><th>NI</th><th>Nome</th><th>PA</th><th>Lanche</th><th>Almoço</th><th>Jantar</th><th>Presença / Exc.</th></tr>
+        </thead>
+        <tbody>
+          {% for a in alunos %}
+          {% set sem = not (a.pequeno_almoco or a.lanche or a.almoco or a.jantar_tipo) %}
+          {% if a.ausente %}
+          {% set row_bg = "background:#fdecea" %}
+          {% elif sem %}
+          {% set row_bg = "background:#fff3cd" %}
+          {% else %}
+          {% set row_bg = "background:#d5f5e3" %}
+          {% endif %}
+          <tr style="{{ row_bg }}">
+            <td class="small text-muted">{{ a.NI }}</td>
+            <td>
+              <strong>{{ a.Nome_completo }}</strong>
+              {% if a.ausente %}<span class="badge badge-warn" style="font-size:.65rem">Ausente</span>{% endif %}
+              {% if a.licenca_tipo == "antes_jantar" %}<span class="badge badge-info" style="font-size:.6rem">🌅 Lic. antes</span>
+              {% elif a.licenca_tipo == "apos_jantar" %}<span class="badge badge-muted" style="font-size:.6rem">🌙 Lic. após</span>{% endif %}
+            </td>
+            <td>{% if a.pequeno_almoco %}<span class="meal-chip chip-ok">PA ✓</span>{% else %}<span class="meal-chip chip-no">PA ✗</span>{% endif %}</td>
+            <td>{% if a.lanche %}<span class="meal-chip chip-ok">Lan ✓</span>{% else %}<span class="meal-chip chip-no">Lan ✗</span>{% endif %}</td>
+            <td>{% if a.almoco %}<span class="meal-chip chip-type">{{ a.almoco[:3] }} ✓</span>{% else %}<span class="meal-chip chip-no">Almoço ✗</span>{% endif %}</td>
+            <td>
+              {% if a.jantar_tipo %}<span class="meal-chip chip-type">{{ a.jantar_tipo[:3] }} ✓</span>{% else %}<span class="meal-chip chip-no">Jantar ✗</span>{% endif %}
+              {% if a.jantar_sai_unidade %}<span class="badge badge-muted" style="font-size:.65rem">🚪</span>{% endif %}
+            </td>
+            <td>
+              <div class="gap-btn">
+                {% if perfil == "oficialdia" %}
+                <a class="btn btn-ghost btn-sm" href="{{ url_for('cmd.ver_perfil_aluno', nii=a.NII, ano=ano, d=d_str) }}" title="Ver perfil do aluno">👁</a>
+                {% elif perfil in ("admin", "cmd") %}
+                <a class="btn btn-ghost btn-sm" href="{{ url_for('cmd.cmd_editar_aluno', nii=a.NII, ano=ano, d=d_str) }}" title="Editar dados do aluno">👤</a>
+                {% endif %}
+              </div>
+            </td>
+          </tr>
+          {% else %}
+          <tr><td colspan="7" class="text-muted center" style="padding:1.5rem">Sem dados.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    <div style="margin-top:.7rem;font-size:.78rem;color:var(--muted);display:flex;gap:.8rem;flex-wrap:wrap">
+      <span style="display:inline-flex;align-items:center;gap:.3rem"><span style="width:.75rem;height:.75rem;background:#d5f5e3;border:1px solid #a9dfbf;border-radius:3px;display:inline-block"></span>Presente com refeições</span>
+      <span style="display:inline-flex;align-items:center;gap:.3rem"><span style="width:.75rem;height:.75rem;background:#fff3cd;border:1px solid #ffc107;border-radius:3px;display:inline-block"></span>Sem refeições marcadas</span>
+      <span style="display:inline-flex;align-items:center;gap:.3rem"><span style="width:.75rem;height:.75rem;background:#fdecea;border:1px solid #f1948a;border-radius:3px;display:inline-block"></span>Ausente</span>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-title">📊 Totais do {{ ano }}º Ano</div>
+    <div class="grid grid-4">
+      <div class="stat-box"><div class="stat-num">{{ t.pa }}</div><div class="stat-lbl">Pequenos Almoços</div></div>
+      <div class="stat-box"><div class="stat-num">{{ t.lan }}</div><div class="stat-lbl">Lanches</div></div>
+      <div class="stat-box"><div class="stat-num">{{ t.alm_norm + t.alm_veg + t.alm_dieta }}</div><div class="stat-lbl">Almoços</div></div>
+      <div class="stat-box"><div class="stat-num">{{ t.jan_norm + t.jan_veg + t.jan_dieta }}</div><div class="stat-lbl">Jantares</div></div>
+    </div>
+    <div class="gap-btn" style="margin-top:.8rem">
+      <a class="btn btn-primary" href="{{ url_for('reporting.exportar_dia', d=d_str, fmt='csv') }}">⬇ CSV</a>
+      <a class="btn btn-primary" href="{{ url_for('reporting.exportar_dia', d=d_str, fmt='xlsx') }}">⬇ Excel</a>
+      <a class="btn btn-ghost" href="{{ url_for('.imprimir_ano', ano=ano, d=d_str) }}" target="_blank">🖨 Imprimir</a>
+    </div>
+  </div>
+</div>
+{% endblock %}

@@ -167,7 +167,7 @@ class TestCMDResetPassword:
             follow_redirects=True,
         )
         html = resp.data.decode()
-        assert "resetada" in html.lower() or "Temporária" in html
+        assert "resetada" in html.lower()
 
     def test_cmd_cannot_reset_other_year(self, app, client):
         """CMD não pode resetar password de aluno de outro ano."""

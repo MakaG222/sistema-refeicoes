@@ -1,2 +1,66 @@
 {% extends "base.html" %}
-{% block content %}{{ content }}{% endblock %}
+{% block content %}
+<div class="container">
+  <div class="page-header">
+    {{ back_btn(back_url) }}
+    <div class="page-title">📊 Relatório Semanal</div>
+  </div>
+  <div class="card" style="padding:.9rem 1.2rem;margin-bottom:.8rem">
+    <div class="flex-between">
+      <div class="flex">
+        <a class="btn btn-ghost btn-sm" href="{{ url_for('.relatorio_semanal', d0=prev_w) }}">← Semana anterior</a>
+        <strong>{{ d0_fmt }} — {{ d1_fmt }}</strong>
+        <a class="btn btn-ghost btn-sm" href="{{ url_for('.relatorio_semanal', d0=next_w) }}">Semana seguinte →</a>
+      </div>
+      <form method="get" style="display:flex;gap:.3rem">
+        <input type="date" name="d0" value="{{ d0_str }}" style="width:auto">
+        <button class="btn btn-primary btn-sm">Ir</button>
+      </form>
+    </div>
+  </div>
+  <div class="card">
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Dia</th><th>PA</th><th>Lanche</th><th>Alm N</th><th>Alm V</th><th>Alm D</th><th>Jan N</th><th>Jan V</th><th>Jan D</th>{% if show_sai %}<th>Sai</th>{% endif %}</tr></thead>
+        <tbody>
+          {% for r in dias %}
+          {% set is_off = r.tipo in ("feriado", "exercicio") %}
+          {% set is_wknd = r.weekday >= 5 %}
+          {% if is_off %}
+          {% set st = "color:var(--muted);background:#f9fafb" %}
+          {% elif is_wknd %}
+          {% set st = "background:#fffdf5" %}
+          {% else %}
+          {% set st = "" %}
+          {% endif %}
+          <tr style="{{ st }}">
+            <td><strong>{{ r.abrev }}</strong> {{ r.data_fmt }} {{ r.icone }}</td>
+            <td class="center">{{ r.t.pa }}</td><td class="center">{{ r.t.lan }}</td>
+            <td class="center">{{ r.t.alm_norm }}</td><td class="center">{{ r.t.alm_veg }}</td><td class="center">{{ r.t.alm_dieta }}</td>
+            <td class="center">{{ r.t.jan_norm }}</td><td class="center">{{ r.t.jan_veg }}</td><td class="center">{{ r.t.jan_dieta }}</td>
+            {% if show_sai %}<td class="center">{{ r.t.jan_sai }}</td>{% endif %}
+          </tr>
+          {% endfor %}
+          <tr style="font-weight:800;background:#f0f4f8;border-top:2px solid var(--border)">
+            <td>TOTAL</td>
+            <td class="center">{{ totais.pa }}</td><td class="center">{{ totais.lan }}</td>
+            <td class="center">{{ totais.alm_norm }}</td><td class="center">{{ totais.alm_veg }}</td><td class="center">{{ totais.alm_dieta }}</td>
+            <td class="center">{{ totais.jan_norm }}</td><td class="center">{{ totais.jan_veg }}</td><td class="center">{{ totais.jan_dieta }}</td>
+            {% if show_sai %}<td class="center">{{ totais.jan_sai }}</td>{% endif %}
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="gap-btn" style="margin-top:.9rem">
+      <a class="btn btn-primary" href="{{ url_for('reporting.exportar_relatorio', d0=d0_str, fmt='csv') }}">⬇ CSV</a>
+      <a class="btn btn-primary" href="{{ url_for('reporting.exportar_relatorio', d0=d0_str, fmt='xlsx') }}">⬇ Excel</a>
+    </div>
+  </div>
+  <div class="grid grid-4">
+    <div class="stat-box"><div class="stat-num">{{ totais.pa }}</div><div class="stat-lbl">Total PA</div></div>
+    <div class="stat-box"><div class="stat-num">{{ totais.lan }}</div><div class="stat-lbl">Total Lanches</div></div>
+    <div class="stat-box"><div class="stat-num">{{ totais.alm_norm + totais.alm_veg + totais.alm_dieta }}</div><div class="stat-lbl">Total Almoços</div></div>
+    <div class="stat-box"><div class="stat-num">{{ totais.jan_norm + totais.jan_veg + totais.jan_dieta }}</div><div class="stat-lbl">Total Jantares</div></div>
+  </div>
+</div>
+{% endblock %}

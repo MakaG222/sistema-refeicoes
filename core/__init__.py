@@ -11,7 +11,6 @@ from core.absences import (
 )
 from core.analytics import period_days, series_consumo_por_dia
 from core.auth_db import (
-    FALLBACK_ADMIN,
     PERFIS_ADMIN,
     PERFIS_TESTE,
     block_user,
@@ -68,7 +67,6 @@ __all__ = [  # noqa: F822
     "user_by_nii",
     "user_by_ni",
     "user_id_by_nii",
-    "FALLBACK_ADMIN",
     "PERFIS_ADMIN",
     "PERFIS_TESTE",
     "refeicao_get",

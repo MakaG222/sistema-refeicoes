@@ -9,7 +9,6 @@ from flask import (
     request,
     url_for,
 )
-from markupsafe import Markup
 
 from core.auth_db import user_by_nii
 from core.database import db
@@ -22,10 +21,7 @@ from utils.business import (
 )
 from utils.helpers import (
     _audit,
-    _back_btn,
     _parse_date,
-    csrf_input,
-    esc,
 )
 from utils.passwords import _reset_pw
 from utils.validators import (
@@ -141,7 +137,7 @@ def cmd_reset_password(nii):
         flash("Só podes resetar passwords de alunos do teu ano.", "error")
         return redirect(url_for("operations.lista_alunos_ano", ano=ano_cmd, d=d_ret))
 
-    ok, result = _reset_pw(nii)
+    ok, msg = _reset_pw(nii)
     if ok:
         _audit(
             u["nii"],
@@ -149,11 +145,11 @@ def cmd_reset_password(nii):
             f"NII={nii} por {u['nome']} ({perfil})",
         )
         flash(
-            f"Password de {aluno['Nome_completo']} resetada. Temporária: {result}",
+            f"Password de {aluno['Nome_completo']} resetada. Deve usar o NII como password temporária.",
             "ok",
         )
     else:
-        flash(f"Erro: {result}", "error")
+        flash(f"Erro: {msg}", "error")
 
     return redirect(url_for(".cmd_editar_aluno", nii=nii, ano=ano_ret, d=d_ret))
 
@@ -334,30 +330,10 @@ def ausencias_cmd():
         )
 
     hoje = date.today().isoformat()
-    rows_html = "".join(
-        f"""
-      <tr>
-        <td><strong>{esc(r["Nome_completo"])}</strong><br><span class="text-muted small">{esc(r["NII"])} · {r["ano"]}º ano</span></td>
-        <td>{r["ausente_de"]}</td><td>{r["ausente_ate"]}</td>
-        <td>{esc(r["motivo"] or "—")}</td>
-        <td>{'<span class="badge badge-warn">Atual</span>' if r["ausente_de"] <= hoje <= r["ausente_ate"] else '<span class="badge badge-muted">Inativa</span>'}</td>
-        <td><form method="post" style="display:inline">{csrf_input()}<input type="hidden" name="acao" value="remover"><input type="hidden" name="id" value="{r["id"]}"><button class="btn btn-danger btn-sm">🗑</button></form></td>
-      </tr>"""
-        for r in rows
-    )
-
-    alunos_options = "".join(
-        f'<option value="{esc(a["NII"])}">{esc(a["NI"])} — {esc(a["Nome_completo"])}</option>'
-        for a in alunos_ano
-    )
-    alunos_datalist = (
-        f'<datalist id="alunos_list">{alunos_options}</datalist>' if alunos_ano else ""
-    )
-
     titulo = (
-        f"🚫 Ausências — {ano_cmd}º Ano"
+        f"Ausências — {ano_cmd}º Ano"
         if perfil == "cmd"
-        else "🚫 Ausências (todos os anos)"
+        else "Ausências (todos os anos)"
     )
     back_url = (
         url_for("operations.painel_dia")
@@ -365,38 +341,14 @@ def ausencias_cmd():
         else url_for("operations.ausencias")
     )
 
-    content = f"""
-    <div class="container">
-      <div class="page-header">{_back_btn(back_url)}<div class="page-title">{titulo}</div></div>
-      <div class="card">
-        <div class="card-title">Registar ausência</div>
-        {alunos_datalist}
-        <form method="post">
-          {csrf_input()}
-          <div class="grid grid-2">
-            <div class="form-group">
-              <label>NII do aluno</label>
-              <input type="text" name="nii" maxlength="32" required placeholder="NII" list="alunos_list">
-              {'<div class="text-muted small" style="margin-top:.25rem">💡 Escreve para ver sugestões de alunos do teu ano</div>' if alunos_ano else ""}
-            </div>
-            <div class="form-group"><label>Motivo (opcional)</label><input type="text" name="motivo" maxlength="500" placeholder="Ex: deslocação, exercício..."></div>
-            <div class="form-group"><label>De</label><input type="date" name="de" required value="{hoje}"></div>
-            <div class="form-group"><label>Até</label><input type="date" name="ate" required value="{hoje}"></div>
-          </div>
-          <button class="btn btn-ok">✅ Registar ausência</button>
-        </form>
-      </div>
-      <div class="card">
-        <div class="card-title">Ausências registadas</div>
-        <div class="table-wrap">
-          <table>
-            <thead><tr><th>Aluno</th><th>De</th><th>Até</th><th>Motivo</th><th>Estado</th><th>Ações</th></tr></thead>
-            <tbody>{rows_html or '<tr><td colspan="6" class="text-muted center" style="padding:1.5rem">Sem ausências.</td></tr>'}</tbody>
-          </table>
-        </div>
-      </div>
-    </div>"""
-    return render_template("cmd/ausencias.html", content=Markup(content))
+    return render_template(
+        "cmd/ausencias.html",
+        rows=rows,
+        alunos_ano=alunos_ano,
+        titulo=titulo,
+        back_url=back_url,
+        hoje=hoje,
+    )
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -535,64 +487,21 @@ def detencoes_cmd():
             alunos_ano = []
 
     hoje = date.today().isoformat()
-    rows_html = "".join(
-        f"""
-      <tr>
-        <td><strong>{esc(r["Nome_completo"])}</strong><br><span class="text-muted small">{esc(r["NII"])} · {r["ano"]}º ano</span></td>
-        <td>{r["detido_de"]}</td><td>{r["detido_ate"]}</td>
-        <td>{esc(r["motivo"] or "—")}</td>
-        <td>{'<span class="badge badge-warn">Atual</span>' if r["detido_de"] <= hoje <= r["detido_ate"] else '<span class="badge badge-muted">Inativa</span>'}</td>
-        <td><form method="post" style="display:inline">{csrf_input()}<input type="hidden" name="acao" value="remover"><input type="hidden" name="id" value="{r["id"]}"><button class="btn btn-danger btn-sm">🗑</button></form></td>
-      </tr>"""
-        for r in rows
-    )
-
-    alunos_options = "".join(
-        f'<option value="{esc(a["NII"])}">{esc(a["NI"])} — {esc(a["Nome_completo"])}</option>'
-        for a in alunos_ano
-    )
-    alunos_datalist = (
-        f'<datalist id="alunos_list">{alunos_options}</datalist>' if alunos_ano else ""
-    )
-
     titulo = (
-        f"⛔ Detenções — {ano_cmd}º Ano"
+        f"Detenções — {ano_cmd}º Ano"
         if perfil == "cmd"
-        else "⛔ Detenções (todos os anos)"
+        else "Detenções (todos os anos)"
     )
     back_url = url_for("operations.painel_dia")
 
-    content = f"""
-    <div class="container">
-      <div class="page-header">{_back_btn(back_url)}<div class="page-title">{titulo}</div></div>
-      <div class="card">
-        <div class="card-title">Registar detenção</div>
-        {alunos_datalist}
-        <form method="post">
-          {csrf_input()}
-          <div class="grid grid-2">
-            <div class="form-group">
-              <label>NII do aluno</label>
-              <input type="text" name="nii" maxlength="32" required placeholder="NII" list="alunos_list">
-            </div>
-            <div class="form-group"><label>Motivo (opcional)</label><input type="text" name="motivo" maxlength="500" placeholder="Ex: detido por..."></div>
-            <div class="form-group"><label>De</label><input type="date" name="de" required value="{hoje}"></div>
-            <div class="form-group"><label>Até</label><input type="date" name="ate" required value="{hoje}"></div>
-          </div>
-          <button class="btn btn-ok">⛔ Registar detenção</button>
-        </form>
-      </div>
-      <div class="card">
-        <div class="card-title">Detenções registadas</div>
-        <div class="table-wrap">
-          <table>
-            <thead><tr><th>Aluno</th><th>De</th><th>Até</th><th>Motivo</th><th>Estado</th><th>Ações</th></tr></thead>
-            <tbody>{rows_html or '<tr><td colspan="6" class="text-muted center" style="padding:1.5rem">Sem detenções.</td></tr>'}</tbody>
-          </table>
-        </div>
-      </div>
-    </div>"""
-    return render_template("cmd/detencoes.html", content=Markup(content))
+    return render_template(
+        "cmd/detencoes.html",
+        rows=rows,
+        alunos_ano=alunos_ano,
+        titulo=titulo,
+        back_url=back_url,
+        hoje=hoje,
+    )
 
 
 # ═══════════════════════════════════════════════════════════════════════════
