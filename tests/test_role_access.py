@@ -38,11 +38,11 @@ class TestRoleRequired:
 
     def test_must_change_password_redirects(self, app, client):
         """Utilizador com must_change_password deve ir para /aluno/password."""
-        import sistema_refeicoes_v8_4 as sr
+        from core.database import db
 
         create_system_user("rolemc1", "admin", pw="Rolemc1234")
         # Forçar must_change_password
-        with sr.db() as conn:
+        with db() as conn:
             conn.execute(
                 "UPDATE utilizadores SET must_change_password=1 WHERE NII='rolemc1'"
             )

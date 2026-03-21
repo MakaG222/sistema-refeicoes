@@ -88,9 +88,9 @@ class TestListaAlunos:
     def test_lista_alunos_post_marcar(self, app, client):
         """Testa marcação de refeições."""
         csrf = _login_ofd(client)
-        import sistema_refeicoes_v8_4 as sr
+        from core.database import db
 
-        with sr.db() as conn:
+        with db() as conn:
             uid = conn.execute(
                 "SELECT id FROM utilizadores WHERE NII='al_ops1'"
             ).fetchone()["id"]
@@ -127,10 +127,10 @@ class TestExcecoes:
         assert resp.status_code == 200
 
     def test_excecoes_post(self, app, client):
-        import sistema_refeicoes_v8_4 as sr
+        from core.database import db
 
         csrf = _login_ofd(client)
-        with sr.db() as conn:
+        with db() as conn:
             uid = conn.execute(
                 "SELECT id FROM utilizadores WHERE NII='al_ops1'"
             ).fetchone()["id"]

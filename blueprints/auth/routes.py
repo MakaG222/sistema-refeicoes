@@ -15,7 +15,15 @@ from flask import (
 )
 
 import config as cfg
-import sistema_refeicoes_v8_4 as sr
+from core.auth_db import (
+    block_user,
+    existe_admin,
+    FALLBACK_ADMIN,
+    recent_failures,
+    recent_failures_by_ip,
+    reg_login,
+    user_by_nii,
+)
 from blueprints.auth import auth_bp
 from utils.auth import current_user, login_required
 from utils.helpers import _audit, _client_ip
@@ -33,7 +41,7 @@ def login():
         pw = request.form.get("pw", request.form.get("password", "")).strip()[:256]
         # Rate limiting por IP (proteção contra ataques distribuídos)
         ip = _client_ip()
-        ip_falhas = sr.recent_failures_by_ip(ip, 15)
+        ip_falhas = recent_failures_by_ip(ip, 15)
         if ip_falhas >= 20:
             error = "Demasiadas tentativas falhadas deste endereço. Aguarda 15 minutos."
             current_app.logger.warning(
@@ -50,25 +58,25 @@ def login():
             error = "Login legado desativado."
         elif (
             not cfg.is_production
-            and not sr.existe_admin()
-            and nii == sr.FALLBACK_ADMIN["nii"]
-            and pw == sr.FALLBACK_ADMIN["pw"]
+            and not existe_admin()
+            and nii == FALLBACK_ADMIN["nii"]
+            and pw == FALLBACK_ADMIN["pw"]
         ):
             u = {
                 "id": 0,
                 "nii": nii,
                 "ni": "",
-                "nome": sr.FALLBACK_ADMIN["nome"],
+                "nome": FALLBACK_ADMIN["nome"],
                 "ano": "",
                 "perfil": "admin",
             }
-            sr.reg_login(nii, 1, ip=_client_ip())
+            reg_login(nii, 1, ip=_client_ip())
             current_app.logger.warning(
                 f"Login via FALLBACK_ADMIN: NII={nii} IP={_client_ip()}"
             )
         else:
             # Busca directa à BD por NII
-            db_u = sr.user_by_nii(nii)
+            db_u = user_by_nii(nii)
             if db_u:
                 locked = db_u.get("locked_until")
                 if locked:
@@ -103,7 +111,7 @@ def login():
                             "ano": str(db_u["ano"] or ""),
                             "perfil": _perfil,
                         }
-                        sr.reg_login(nii, 1, ip=_client_ip())
+                        reg_login(nii, 1, ip=_client_ip())
                         current_app.logger.info(
                             f"Login OK: NII={nii} perfil={u['perfil']} IP={_client_ip()}"
                         )
@@ -111,10 +119,10 @@ def login():
                         if not ph.startswith(("pbkdf2:", "scrypt:", "argon2:")):
                             _migrate_password_hash(db_u["id"], pw)
                     else:
-                        sr.reg_login(nii, 0, ip=_client_ip())
-                        falhas = sr.recent_failures(nii, 10)
+                        reg_login(nii, 0, ip=_client_ip())
+                        falhas = recent_failures(nii, 10)
                         if falhas >= 5:
-                            sr.block_user(nii, 15)
+                            block_user(nii, 15)
                             error = "Conta bloqueada por 15 minutos após 5 tentativas falhadas."
                             current_app.logger.warning(
                                 f"Conta bloqueada: NII={nii} IP={_client_ip()}"
@@ -123,7 +131,7 @@ def login():
                             restam = max(0, 5 - falhas)
                             error = f"Password incorreta. ({restam} tentativa(s) restante(s) antes de bloqueio)"
             else:
-                sr.reg_login(nii, 0, ip=_client_ip())
+                reg_login(nii, 0, ip=_client_ip())
                 error = "NII não encontrado."
         if u:
             session["_csrf_token"] = secrets.token_urlsafe(32)  # Rodar CSRF token

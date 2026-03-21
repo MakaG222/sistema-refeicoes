@@ -213,9 +213,9 @@ class TestLoginAuditAndIP:
         )
         assert resp.status_code in (200, 302)
 
-        import sistema_refeicoes_v8_4 as sr
+        from core.database import db
 
-        with sr.db() as conn:
+        with db() as conn:
             row = conn.execute(
                 "SELECT ip, sucesso FROM login_eventos WHERE nii=? ORDER BY id DESC LIMIT 1",
                 ("admin",),
@@ -235,9 +235,9 @@ class TestLoginAuditAndIP:
         )
         assert resp.status_code in (200, 302)
 
-        import sistema_refeicoes_v8_4 as sr
+        from core.database import db
 
-        with sr.db() as conn:
+        with db() as conn:
             row = conn.execute(
                 "SELECT actor, action, detail FROM admin_audit_log WHERE actor=? AND action='login' ORDER BY id DESC LIMIT 1",
                 ("cozinha",),
@@ -275,11 +275,11 @@ class TestExportRelatorioValidation:
 class TestIPRateLimiting:
     def test_ip_blocked_after_20_failures(self, app, client):
         """20+ falhas do mesmo IP devem bloquear tentativas seguintes."""
-        import sistema_refeicoes_v8_4 as sr
+        from core.auth_db import reg_login
 
         with app.app_context():
             for i in range(20):
-                sr.reg_login(f"fake_{i}", 0, ip="10.0.0.99")
+                reg_login(f"fake_{i}", 0, ip="10.0.0.99")
 
         client.get("/login")
         with client.session_transaction() as sess:
@@ -296,11 +296,11 @@ class TestIPRateLimiting:
 
     def test_different_ip_not_blocked(self, app, client):
         """Bloquear um IP não deve afetar outros IPs."""
-        import sistema_refeicoes_v8_4 as sr
+        from core.auth_db import reg_login
 
         with app.app_context():
             for i in range(25):
-                sr.reg_login(f"fake_{i}", 0, ip="10.0.0.88")
+                reg_login(f"fake_{i}", 0, ip="10.0.0.88")
 
         client.get("/login")
         with client.session_transaction() as sess:
@@ -317,12 +317,12 @@ class TestIPRateLimiting:
 
     def test_recent_failures_by_ip_counts_correctly(self, app):
         """Função recent_failures_by_ip conta apenas falhas (não sucessos)."""
-        import sistema_refeicoes_v8_4 as sr
+        from core.auth_db import recent_failures_by_ip, reg_login
 
         with app.app_context():
-            sr.reg_login("u1", 0, ip="172.16.0.5")
-            sr.reg_login("u2", 0, ip="172.16.0.5")
-            sr.reg_login("u3", 1, ip="172.16.0.5")  # sucesso — não conta
-            sr.reg_login("u4", 0, ip="172.16.0.6")  # IP diferente — não conta
-            count = sr.recent_failures_by_ip("172.16.0.5", 10)
+            reg_login("u1", 0, ip="172.16.0.5")
+            reg_login("u2", 0, ip="172.16.0.5")
+            reg_login("u3", 1, ip="172.16.0.5")  # sucesso — não conta
+            reg_login("u4", 0, ip="172.16.0.6")  # IP diferente — não conta
+            count = recent_failures_by_ip("172.16.0.5", 10)
             assert count == 2

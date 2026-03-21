@@ -6,7 +6,9 @@ from datetime import datetime
 from flask import abort, current_app, request
 
 import config as cfg
-import sistema_refeicoes_v8_4 as sr
+from core.database import db
+from core.backup import ensure_daily_backup, limpar_backups_antigos
+from core.autofill import autopreencher_refeicoes_semanais
 
 from blueprints.api import api_bp
 
@@ -35,7 +37,7 @@ def health():
 
     t0 = _time.monotonic()
     try:
-        with sr.db() as conn:
+        with db() as conn:
             conn.execute("SELECT 1 FROM utilizadores LIMIT 1").fetchone()
         latency_ms = round((_time.monotonic() - t0) * 1000, 1)
         resp = {
@@ -62,8 +64,8 @@ def api_backup_cron():
     if not _verify_cron_token():
         abort(403)
     try:
-        sr.ensure_daily_backup()
-        sr.limpar_backups_antigos()
+        ensure_daily_backup()
+        limpar_backups_antigos()
         return {"status": "ok", "ts": datetime.now().isoformat()}
     except Exception as exc:
         current_app.logger.error(f"api_backup_cron: {exc}")
@@ -78,7 +80,7 @@ def api_autopreencher_cron():
     if not _verify_cron_token():
         abort(403)
     try:
-        sr.autopreencher_refeicoes_semanais(cfg.DIAS_ANTECEDENCIA)
+        autopreencher_refeicoes_semanais(cfg.DIAS_ANTECEDENCIA)
         return {"status": "ok", "ts": datetime.now().isoformat()}
     except Exception as exc:
         current_app.logger.error(f"api_autopreencher_cron: {exc}")

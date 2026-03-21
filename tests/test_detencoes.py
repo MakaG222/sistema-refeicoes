@@ -5,7 +5,8 @@ tests/test_detencoes.py — Testes de detenções
 
 from datetime import date, timedelta
 
-import sistema_refeicoes_v8_4 as sr
+from core.database import db
+from core.meals import refeicao_get, refeicao_save
 
 from tests.conftest import create_aluno, create_system_user, login_as
 
@@ -25,7 +26,7 @@ class TestDetencaoFunctions:
         uid = create_aluno("T_DET_01", "701", "Detencao A", "1")
         d = _future_date(30)
 
-        with sr.db() as conn:
+        with db() as conn:
             conn.execute(
                 "INSERT INTO detencoes (utilizador_id, detido_de, detido_ate, motivo, criado_por) VALUES (?,?,?,?,?)",
                 (uid, d.isoformat(), d.isoformat(), "Teste", "cmd1"),
@@ -50,13 +51,13 @@ class TestDetencaoFunctions:
         d = _future_date(32)
 
         # Confirmar que não tem refeições
-        got = sr.refeicao_get(uid, d)
+        got = refeicao_get(uid, d)
         assert got["almoco"] is None
 
         # Auto-marcar
         app_module._auto_marcar_refeicoes_detido(uid, d, d)
 
-        got = sr.refeicao_get(uid, d)
+        got = refeicao_get(uid, d)
         assert got["pequeno_almoco"] == 1
         assert got["lanche"] == 1
         assert got["almoco"] == "Normal"
@@ -76,7 +77,7 @@ class TestDetencaoFunctions:
         # Verificar 3 dias (d1, d1+1, d2)
         for i in range(3):
             d = d1 + timedelta(days=i)
-            got = sr.refeicao_get(uid, d)
+            got = refeicao_get(uid, d)
             assert got["almoco"] == "Normal", f"Dia {d}: almoco deveria ser Normal"
 
     def test_auto_marcar_skips_existing(self, app):
@@ -87,7 +88,7 @@ class TestDetencaoFunctions:
         d = _future_date(36)
 
         # Marcar refeição personalizada
-        sr.refeicao_save(
+        refeicao_save(
             uid,
             d,
             {
@@ -102,7 +103,7 @@ class TestDetencaoFunctions:
         # Auto-marcar — não deve sobrescrever porque já existe almoco
         app_module._auto_marcar_refeicoes_detido(uid, d, d)
 
-        got = sr.refeicao_get(uid, d)
+        got = refeicao_get(uid, d)
         assert got["almoco"] == "Vegetariano"  # Mantém o existente
 
 

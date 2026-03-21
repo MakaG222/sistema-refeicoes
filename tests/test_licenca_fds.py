@@ -8,7 +8,8 @@ from datetime import date, timedelta
 
 from conftest import create_aluno, get_csrf, login_as
 
-import sistema_refeicoes_v8_4 as sr
+from core.database import db
+from core.meals import refeicao_get
 
 
 def _next_friday():
@@ -43,7 +44,7 @@ class TestMarcarLicencaFDS:
         assert ok is True
 
         # Verificar que a licença foi criada na sexta
-        with sr.db() as conn:
+        with db() as conn:
             lic = conn.execute(
                 "SELECT tipo FROM licencas WHERE utilizador_id=? AND data=?",
                 (uid, sexta.isoformat()),
@@ -52,14 +53,14 @@ class TestMarcarLicencaFDS:
         assert lic["tipo"] == "antes_jantar"
 
         # Verificar que o jantar de sexta foi removido
-        r_sexta = sr.refeicao_get(uid, sexta)
+        r_sexta = refeicao_get(uid, sexta)
         assert r_sexta.get("jantar_tipo") is None or r_sexta.get("jantar_tipo") == ""
 
         # Verificar que sábado e domingo têm refeições zeradas
         sabado = sexta + timedelta(days=1)
         domingo = sexta + timedelta(days=2)
-        r_sab = sr.refeicao_get(uid, sabado)
-        r_dom = sr.refeicao_get(uid, domingo)
+        r_sab = refeicao_get(uid, sabado)
+        r_dom = refeicao_get(uid, domingo)
         assert r_sab.get("pequeno_almoco", 0) == 0
         assert r_dom.get("pequeno_almoco", 0) == 0
 
@@ -77,7 +78,7 @@ class TestMarcarLicencaFDS:
         assert ok is True
 
         # Verificar que a licença foi removida
-        with sr.db() as conn:
+        with db() as conn:
             lic = conn.execute(
                 "SELECT tipo FROM licencas WHERE utilizador_id=? AND data=?",
                 (uid, sexta.isoformat()),
@@ -85,7 +86,7 @@ class TestMarcarLicencaFDS:
         assert lic is None
 
         # Verificar que o jantar voltou a Normal
-        r_sexta = sr.refeicao_get(uid, sexta)
+        r_sexta = refeicao_get(uid, sexta)
         assert r_sexta.get("jantar_tipo") == "Normal"
 
 
@@ -135,7 +136,7 @@ class TestRotaLicencaFDS:
         assert "marcada" in html.lower() or resp.status_code == 200
 
         # Verificar na BD
-        with sr.db() as conn:
+        with db() as conn:
             lic = conn.execute(
                 "SELECT tipo FROM licencas WHERE utilizador_id=? AND data=?",
                 (uid, sexta.isoformat()),
@@ -171,7 +172,7 @@ class TestRotaLicencaFDS:
         sexta = _distant_friday()
 
         # Criar detenção para a sexta
-        with sr.db() as conn:
+        with db() as conn:
             conn.execute(
                 "INSERT INTO detencoes(utilizador_id, detido_de, detido_ate, motivo, criado_por) VALUES (?,?,?,?,?)",
                 (

@@ -12,7 +12,8 @@ from flask import (
     request,
     url_for,
 )
-import sistema_refeicoes_v8_4 as sr
+from core.database import db
+from core.meals import dias_operacionais_batch, get_totais_dia, get_totais_periodo
 from blueprints.reporting import report_bp
 from utils.auth import (
     current_user,
@@ -83,8 +84,8 @@ def exportar_mensal():
             "jan_sai",
         ]
     }
-    _men_map, _men_empty = sr.get_totais_periodo(d0.isoformat(), d1.isoformat())
-    _men_cal = sr.dias_operacionais_batch(d0, d1)
+    _men_map, _men_empty = get_totais_periodo(d0.isoformat(), d1.isoformat())
+    _men_cal = dias_operacionais_batch(d0, d1)
     di = d0
     while di <= d1:
         t = _men_map.get(di.isoformat(), _men_empty)
@@ -305,7 +306,7 @@ def calendario_publico():
     ultimo_dia = _cal.monthrange(ano_m, mes_m)[1]
     d_inicio = date(ano_m, mes_m, 1)
     d_fim = date(ano_m, mes_m, ultimo_dia)
-    with sr.db() as conn:
+    with db() as conn:
         entradas = {
             r["data"]: dict(r)
             for r in conn.execute(
@@ -410,8 +411,8 @@ def dashboard_semanal():
     next_w = (d0 + timedelta(days=7)).isoformat()
 
     # Batch: carregar totais e calendário para toda a semana numa query
-    totais_map, _t_empty = sr.get_totais_periodo(d0.isoformat(), d1.isoformat())
-    cal_map_wk = sr.dias_operacionais_batch(d0, d1)
+    totais_map, _t_empty = get_totais_periodo(d0.isoformat(), d1.isoformat())
+    cal_map_wk = dias_operacionais_batch(d0, d1)
     dias = []
     for i in range(7):
         di = d0 + timedelta(days=i)
@@ -488,7 +489,7 @@ def dashboard_semanal():
     # Totais da semana anterior para comparação
     prev_d0 = d0 - timedelta(days=7)
     prev_d1 = d0 - timedelta(days=1)
-    prev_map, _ = sr.get_totais_periodo(prev_d0.isoformat(), prev_d1.isoformat())
+    prev_map, _ = get_totais_periodo(prev_d0.isoformat(), prev_d1.isoformat())
     totais_prev = {k: 0 for k in _keys}
     for t_p in prev_map.values():
         for k in _keys:
@@ -531,7 +532,7 @@ def exportar_dia():
     dt = _parse_date_strict(d_str)
     if dt is None:
         abort(400)
-    t = sr.get_totais_dia(dt.isoformat())
+    t = get_totais_dia(dt.isoformat())
 
     # Tentar xlsx via openpyxl; cair para CSV se não disponível
     if fmt == "xlsx":
@@ -698,8 +699,8 @@ def exportar_relatorio():
             "jan_sai",
         ]
     }
-    _exp_map, _exp_empty = sr.get_totais_periodo(d0.isoformat(), d1.isoformat())
-    _exp_cal = sr.dias_operacionais_batch(d0, d1)
+    _exp_map, _exp_empty = get_totais_periodo(d0.isoformat(), d1.isoformat())
+    _exp_cal = dias_operacionais_batch(d0, d1)
     for i in range(7):
         di = d0 + timedelta(days=i)
         t = _exp_map.get(di.isoformat(), _exp_empty)

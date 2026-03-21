@@ -6,7 +6,9 @@ from datetime import date, datetime, timedelta
 from flask import Response, current_app, render_template, request, session
 from markupsafe import Markup, escape
 
-import sistema_refeicoes_v8_4 as sr
+from core.constants import PRAZO_LIMITE_HORAS
+from core.database import db
+from core.meals import refeicao_editavel, refeicao_save
 
 from utils.constants import ANOS_LABELS
 
@@ -66,7 +68,7 @@ def _ano_label(ano):
 
 def _get_anos_disponiveis():
     """Anos com alunos na BD."""
-    with sr.db() as conn:
+    with db() as conn:
         rows = conn.execute(
             "SELECT DISTINCT CAST(ano AS INTEGER) AS ano FROM utilizadores"
             " WHERE ano IS NOT NULL AND ano != '' AND CAST(ano AS INTEGER) > 0"
@@ -84,7 +86,7 @@ def _refeicao_set(uid, dt, pa, lanche, alm, jan, sai, alterado_por="sistema"):
         "jantar_tipo": jan or None,
         "jantar_sai_unidade": sai,
     }
-    return sr.refeicao_save(uid, dt, r, alterado_por=alterado_por)
+    return refeicao_save(uid, dt, r, alterado_por=alterado_por)
 
 
 def _back_btn(href, label="Voltar"):
@@ -106,12 +108,12 @@ def _bar_html(val, cap):
 
 def _prazo_label(d):
     """Label de prazo de edição para uma data."""
-    ok, _ = sr.refeicao_editavel(d)
+    ok, _ = refeicao_editavel(d)
     if ok:
         return Markup("")
-    if sr.PRAZO_LIMITE_HORAS is not None:
+    if PRAZO_LIMITE_HORAS is not None:
         prazo_dt = datetime(d.year, d.month, d.day) - timedelta(
-            hours=sr.PRAZO_LIMITE_HORAS
+            hours=PRAZO_LIMITE_HORAS
         )
         h = (prazo_dt - datetime.now()).total_seconds() / 3600
         if h <= 0:
@@ -131,7 +133,7 @@ def _prazo_label(d):
 def _audit(actor: str, action: str, detail: str = "") -> None:
     """Regista uma entrada de auditoria na tabela admin_audit_log."""
     try:
-        with sr.db() as conn:
+        with db() as conn:
             conn.execute(
                 "INSERT INTO admin_audit_log(actor,action,detail) VALUES(?,?,?)",
                 (actor, action, detail),

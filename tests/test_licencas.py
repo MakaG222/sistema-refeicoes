@@ -5,7 +5,7 @@ tests/test_licencas.py — Testes de licenças de saída
 
 from datetime import date, timedelta
 
-import sistema_refeicoes_v8_4 as sr
+from core.database import db
 
 from tests.conftest import create_aluno, create_system_user, get_csrf, login_as
 
@@ -41,7 +41,7 @@ class TestLicencaDB:
         uid = create_aluno("T_LIC_01", "801", "Licenca Teste A", "3")
         d = _next_weekday(20)
 
-        with sr.db() as conn:
+        with db() as conn:
             conn.execute(
                 "INSERT INTO licencas (utilizador_id, data, tipo) VALUES (?,?,?)",
                 (uid, d.isoformat(), "antes_jantar"),
@@ -59,7 +59,7 @@ class TestLicencaDB:
         uid = create_aluno("T_LIC_02", "802", "Licenca Teste B", "3")
         d = _next_weekday(21)
 
-        with sr.db() as conn:
+        with db() as conn:
             conn.execute(
                 "INSERT INTO licencas (utilizador_id, data, tipo) VALUES (?,?,?)",
                 (uid, d.isoformat(), "apos_jantar"),
@@ -79,7 +79,7 @@ class TestLicencaDB:
         uid = create_aluno("T_LIC_03", "803", "Licenca Teste C", "3")
         d = _next_weekday(22)
 
-        with sr.db() as conn:
+        with db() as conn:
             conn.execute(
                 "INSERT INTO licencas (utilizador_id, data, tipo) VALUES (?,?,?)",
                 (uid, d.isoformat(), "antes_jantar"),
@@ -99,7 +99,7 @@ class TestLicencaDB:
         uid = create_aluno("T_LIC_04", "804", "Licenca Teste D", "3")
         d = _next_weekday(23)
 
-        with sr.db() as conn:
+        with db() as conn:
             with pytest.raises(sqlite3.IntegrityError):
                 conn.execute(
                     "INSERT INTO licencas (utilizador_id, data, tipo) VALUES (?,?,?)",
@@ -157,7 +157,7 @@ class TestRegraLicenca:
         d = _next_weekday(24)
 
         # Criar detenção
-        with sr.db() as conn:
+        with db() as conn:
             conn.execute(
                 "INSERT INTO detencoes (utilizador_id, detido_de, detido_ate, motivo, criado_por) VALUES (?,?,?,?,?)",
                 (uid, d.isoformat(), d.isoformat(), "Teste", "teste"),
@@ -180,7 +180,7 @@ class TestLicencasEntradaSaida:
         create_system_user("od_lic_test", "oficialdia")
 
         # Criar licença para hoje
-        with sr.db() as conn:
+        with db() as conn:
             conn.execute(
                 "INSERT OR IGNORE INTO licencas (utilizador_id, data, tipo) VALUES (?,?,?)",
                 (uid, d.isoformat(), "antes_jantar"),
@@ -205,7 +205,7 @@ class TestLicencasEntradaSaida:
         )
         assert resp.status_code == 302
 
-        with sr.db() as conn:
+        with db() as conn:
             row = conn.execute(
                 "SELECT hora_saida FROM licencas WHERE id=?", (lic["id"],)
             ).fetchone()
@@ -218,7 +218,7 @@ class TestLicencasEntradaSaida:
         create_system_user("od_lic_test2", "oficialdia")
 
         # Criar licença com saída já registada
-        with sr.db() as conn:
+        with db() as conn:
             conn.execute(
                 "INSERT OR IGNORE INTO licencas (utilizador_id, data, tipo, hora_saida) VALUES (?,?,?,?)",
                 (uid, d.isoformat(), "apos_jantar", "14:00"),
@@ -243,7 +243,7 @@ class TestLicencasEntradaSaida:
         )
         assert resp.status_code == 302
 
-        with sr.db() as conn:
+        with db() as conn:
             row = conn.execute(
                 "SELECT hora_entrada FROM licencas WHERE id=?", (lic["id"],)
             ).fetchone()
@@ -261,7 +261,7 @@ class TestLicencaSync:
         create_system_user("od_sync1", "oficialdia")
 
         # Criar licença sem hora_saida
-        with sr.db() as conn:
+        with db() as conn:
             conn.execute(
                 "INSERT OR IGNORE INTO licencas (utilizador_id, data, tipo) VALUES (?,?,?)",
                 (uid, d.isoformat(), "antes_jantar"),
@@ -283,7 +283,7 @@ class TestLicencaSync:
         assert resp.status_code == 302
 
         # Verificar que hora_saida foi atualizada na licença
-        with sr.db() as conn:
+        with db() as conn:
             row = conn.execute(
                 "SELECT hora_saida FROM licencas WHERE utilizador_id=? AND data=?",
                 (uid, d.isoformat()),
@@ -298,7 +298,7 @@ class TestLicencaSync:
         create_system_user("od_sync2", "oficialdia")
 
         # Criar licença com saída registada
-        with sr.db() as conn:
+        with db() as conn:
             conn.execute(
                 "INSERT OR IGNORE INTO licencas (utilizador_id, data, tipo, hora_saida) VALUES (?,?,?,?)",
                 (uid, d.isoformat(), "apos_jantar", "14:30"),
@@ -327,7 +327,7 @@ class TestLicencaSync:
         assert resp.status_code == 302
 
         # Verificar hora_entrada sincronizada
-        with sr.db() as conn:
+        with db() as conn:
             row = conn.execute(
                 "SELECT hora_entrada FROM licencas WHERE utilizador_id=? AND data=?",
                 (uid, d.isoformat()),

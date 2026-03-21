@@ -11,7 +11,8 @@ from flask import (
 )
 from markupsafe import Markup
 
-import sistema_refeicoes_v8_4 as sr
+from core.auth_db import user_by_nii
+from core.database import db
 from blueprints.cmd import cmd_bp
 from utils.auth import current_user, role_required
 from utils.business import (
@@ -47,7 +48,7 @@ def cmd_editar_aluno(nii):
     d_ret = request.args.get("d", date.today().isoformat())
 
     # Buscar o aluno
-    with sr.db() as conn:
+    with db() as conn:
         aluno = dict(
             conn.execute(
                 "SELECT id,NII,NI,Nome_completo,ano,email,telemovel FROM utilizadores WHERE NII=?",
@@ -81,7 +82,7 @@ def cmd_editar_aluno(nii):
             flash("Telemóvel inválido.", "error")
         else:
             try:
-                with sr.db() as conn:
+                with db() as conn:
                     conn.execute(
                         "UPDATE utilizadores SET Nome_completo=?,NI=?,email=?,telemovel=? WHERE NII=?",
                         (nome_n, ni_n or None, email_n, telef_n, nii),
@@ -116,7 +117,7 @@ def cmd_reset_password(nii):
     ano_ret = request.form.get("ano", str(ano_cmd) if ano_cmd else "1")
     d_ret = request.form.get("d", date.today().isoformat())
 
-    with sr.db() as conn:
+    with db() as conn:
         aluno = conn.execute(
             "SELECT NII, Nome_completo, ano, perfil FROM utilizadores WHERE NII=?",
             (nii,),
@@ -170,7 +171,7 @@ def ver_perfil_aluno(nii):
     ano_ret = request.args.get("ano", "")
     d_ret = request.args.get("d", date.today().isoformat())
 
-    with sr.db() as conn:
+    with db() as conn:
         aluno = conn.execute(
             "SELECT id,NII,NI,Nome_completo,ano,email,telemovel FROM utilizadores WHERE NII=?",
             (nii,),
@@ -194,7 +195,7 @@ def ver_perfil_aluno(nii):
 
     hoje = date.today()
     uid = aluno["id"]
-    with sr.db() as conn:
+    with db() as conn:
         total_ref = conn.execute(
             "SELECT COUNT(*) c FROM refeicoes WHERE utilizador_id=?", (uid,)
         ).fetchone()["c"]
@@ -256,7 +257,7 @@ def ausencias_cmd():
                 flash("ID inválido.", "error")
                 return redirect(url_for(".ausencias_cmd"))
             # Validar que a ausência pertence ao ano do cmd
-            with sr.db() as conn:
+            with db() as conn:
                 aus = conn.execute(
                     """SELECT a.id FROM ausencias a
                     JOIN utilizadores u ON u.id=a.utilizador_id
@@ -270,7 +271,7 @@ def ausencias_cmd():
                 flash("Não autorizado.", "error")
             return redirect(url_for(".ausencias_cmd"))
         nii = request.form.get("nii", "").strip()
-        db_u = sr.user_by_nii(nii)
+        db_u = user_by_nii(nii)
         if not db_u:
             flash("Utilizador não encontrado.", "error")
         elif perfil == "cmd" and int(db_u.get("ano", 0)) != ano_cmd:
@@ -293,7 +294,7 @@ def ausencias_cmd():
             )
         return redirect(url_for(".ausencias_cmd"))
 
-    with sr.db() as conn:
+    with db() as conn:
         if perfil == "cmd":
             rows = [
                 dict(r)
@@ -319,7 +320,7 @@ def ausencias_cmd():
             ]
 
     # Alunos do ano para pesquisa rápida
-    with sr.db() as conn:
+    with db() as conn:
         alunos_ano = (
             [
                 dict(r)
@@ -418,7 +419,7 @@ def detencoes_cmd():
             if did is None:
                 flash("ID inválido.", "error")
                 return redirect(url_for(".detencoes_cmd"))
-            with sr.db() as conn:
+            with db() as conn:
                 ok = conn.execute(
                     """SELECT d.id FROM detencoes d
                     JOIN utilizadores uu ON uu.id=d.utilizador_id
@@ -439,7 +440,7 @@ def detencoes_cmd():
         ate = request.form.get("ate", "").strip()
         motivo = _val_text(request.form.get("motivo", ""))[:500]
 
-        db_u = sr.user_by_nii(nii)
+        db_u = user_by_nii(nii)
         if not db_u:
             flash("Utilizador não encontrado.", "error")
             return redirect(url_for(".detencoes_cmd"))
@@ -462,7 +463,7 @@ def detencoes_cmd():
             flash("Datas inválidas.", "error")
             return redirect(url_for(".detencoes_cmd"))
 
-        with sr.db() as conn:
+        with db() as conn:
             conn.execute(
                 """INSERT INTO detencoes(utilizador_id, detido_de, detido_ate, motivo, criado_por)
                             VALUES(?,?,?,?,?)""",
@@ -474,7 +475,7 @@ def detencoes_cmd():
         _auto_marcar_refeicoes_detido(db_u["id"], d1, d2, u["nii"])
 
         # Cancelar licenças existentes durante o período de detenção
-        with sr.db() as conn:
+        with db() as conn:
             conn.execute(
                 "DELETE FROM licencas WHERE utilizador_id=? AND data>=? AND data<=?",
                 (db_u["id"], d1.isoformat(), d2.isoformat()),
@@ -487,7 +488,7 @@ def detencoes_cmd():
         )
         return redirect(url_for(".detencoes_cmd"))
 
-    with sr.db() as conn:
+    with db() as conn:
         if perfil == "cmd":
             rows = [
                 dict(r)
@@ -514,7 +515,7 @@ def detencoes_cmd():
                 ).fetchall()
             ]
 
-    with sr.db() as conn:
+    with db() as conn:
         if perfil == "cmd":
             alunos_ano = [
                 dict(r)

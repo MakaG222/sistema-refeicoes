@@ -5,7 +5,8 @@ tests/test_refeicoes.py — Testes do core de refeições
 
 from datetime import date, timedelta
 
-import sistema_refeicoes_v8_4 as sr
+from core.database import db
+from core.meals import get_totais_dia, refeicao_get, refeicao_save
 
 from tests.conftest import create_aluno, get_csrf, login_as
 
@@ -40,10 +41,10 @@ class TestRefeicaoSave:
             "jantar_tipo": None,
             "jantar_sai_unidade": 0,
         }
-        ok = sr.refeicao_save(uid, d, r, alterado_por="teste")
+        ok = refeicao_save(uid, d, r, alterado_por="teste")
         assert ok is True
 
-        got = sr.refeicao_get(uid, d)
+        got = refeicao_get(uid, d)
         assert got["pequeno_almoco"] == 1
         assert got["lanche"] == 0
         assert got["almoco"] == "Normal"
@@ -60,10 +61,10 @@ class TestRefeicaoSave:
             "jantar_tipo": "Vegetariano",
             "jantar_sai_unidade": 0,
         }
-        ok = sr.refeicao_save(uid, d, r)
+        ok = refeicao_save(uid, d, r)
         assert ok is True
 
-        got = sr.refeicao_get(uid, d)
+        got = refeicao_get(uid, d)
         assert got["almoco"] == "Vegetariano"
         assert got["jantar_tipo"] == "Vegetariano"
 
@@ -78,10 +79,10 @@ class TestRefeicaoSave:
             "jantar_tipo": "Dieta",
             "jantar_sai_unidade": 0,
         }
-        ok = sr.refeicao_save(uid, d, r)
+        ok = refeicao_save(uid, d, r)
         assert ok is True
 
-        got = sr.refeicao_get(uid, d)
+        got = refeicao_get(uid, d)
         assert got["almoco"] == "Dieta"
         assert got["jantar_tipo"] == "Dieta"
 
@@ -89,7 +90,7 @@ class TestRefeicaoSave:
         """Atualizar refeição substitui valores anteriores."""
         uid, _ = _setup_aluno(app)
         d = _future_date(13)
-        sr.refeicao_save(
+        refeicao_save(
             uid,
             d,
             {
@@ -101,7 +102,7 @@ class TestRefeicaoSave:
             },
         )
         # Actualizar: remover almoco, mudar jantar
-        sr.refeicao_save(
+        refeicao_save(
             uid,
             d,
             {
@@ -112,7 +113,7 @@ class TestRefeicaoSave:
                 "jantar_sai_unidade": 1,
             },
         )
-        got = sr.refeicao_get(uid, d)
+        got = refeicao_get(uid, d)
         assert got["pequeno_almoco"] == 0
         assert got["lanche"] == 0
         assert got["almoco"] is None
@@ -122,7 +123,7 @@ class TestRefeicaoSave:
     def test_get_nonexistent_returns_defaults(self, app):
         """Refeição inexistente retorna zeros/None."""
         uid, _ = _setup_aluno(app)
-        got = sr.refeicao_get(uid, date(2099, 12, 31))
+        got = refeicao_get(uid, date(2099, 12, 31))
         assert got["pequeno_almoco"] == 0
         assert got["lanche"] == 0
         assert got["almoco"] is None
@@ -133,7 +134,7 @@ class TestRefeicaoSave:
         uid, _ = _setup_aluno(app)
         d = _future_date(14)
         # Criar detenção para esse dia
-        with sr.db() as conn:
+        with db() as conn:
             conn.execute(
                 "INSERT INTO detencoes (utilizador_id, detido_de, detido_ate, motivo, criado_por) VALUES (?,?,?,?,?)",
                 (uid, d.isoformat(), d.isoformat(), "Teste", "teste"),
@@ -148,8 +149,8 @@ class TestRefeicaoSave:
             "jantar_tipo": "Normal",
             "jantar_sai_unidade": 1,
         }
-        sr.refeicao_save(uid, d, r)
-        got = sr.refeicao_get(uid, d)
+        refeicao_save(uid, d, r)
+        got = refeicao_get(uid, d)
         # Deve estar forçado a 0 por causa da detenção
         assert got["jantar_sai_unidade"] == 0
 
@@ -160,7 +161,7 @@ class TestRefeicaoAuditLog:
         uid, _ = _setup_aluno(app)
         d = _future_date(15)
 
-        sr.refeicao_save(
+        refeicao_save(
             uid,
             d,
             {
@@ -172,7 +173,7 @@ class TestRefeicaoAuditLog:
             },
             alterado_por="test_user",
         )
-        sr.refeicao_save(
+        refeicao_save(
             uid,
             d,
             {
@@ -185,7 +186,7 @@ class TestRefeicaoAuditLog:
             alterado_por="test_user",
         )
 
-        with sr.db() as conn:
+        with db() as conn:
             logs = conn.execute(
                 "SELECT campo, valor_antes, valor_depois, alterado_por FROM refeicoes_log WHERE utilizador_id=? AND data_refeicao=?",
                 (uid, d.isoformat()),
@@ -203,7 +204,7 @@ class TestTotaisDia:
         uid1 = create_aluno("T_TOT_01", "951", "Totais A", "1")
         uid2 = create_aluno("T_TOT_02", "952", "Totais B", "1")
 
-        sr.refeicao_save(
+        refeicao_save(
             uid1,
             d,
             {
@@ -214,7 +215,7 @@ class TestTotaisDia:
                 "jantar_sai_unidade": 0,
             },
         )
-        sr.refeicao_save(
+        refeicao_save(
             uid2,
             d,
             {
@@ -226,7 +227,7 @@ class TestTotaisDia:
             },
         )
 
-        t = sr.get_totais_dia(d.isoformat())
+        t = get_totais_dia(d.isoformat())
         assert t["pa"] >= 2
         assert t["alm_norm"] >= 1
         assert t["alm_veg"] >= 1
@@ -258,7 +259,7 @@ class TestAlunoEditarEndpoint:
         )
         assert resp.status_code == 200
 
-        got = sr.refeicao_get(uid, d)
+        got = refeicao_get(uid, d)
         assert got["pequeno_almoco"] == 1
         assert got["lanche"] == 1
         assert got["almoco"] == "Normal"
@@ -270,7 +271,7 @@ class TestAlunoEditarEndpoint:
         d = _future_date(6)
 
         # Primeiro marcar directamente na BD
-        sr.refeicao_save(
+        refeicao_save(
             uid,
             d,
             {
@@ -299,7 +300,7 @@ class TestAlunoEditarEndpoint:
         )
         assert resp.status_code == 200
 
-        got = sr.refeicao_get(uid, d)
+        got = refeicao_get(uid, d)
         assert got["pequeno_almoco"] == 0
         assert got["lanche"] == 0
         assert got["almoco"] is None

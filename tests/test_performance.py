@@ -9,7 +9,9 @@ tests/test_performance.py — Testes para otimizações de performance
 
 from datetime import date, timedelta
 
-import sistema_refeicoes_v8_4 as sr
+from core.absences import ausencias_batch, detencoes_batch, licencas_batch
+from core.database import _new_conn, close_request_db, db, wal_checkpoint
+from core.meals import dias_operacionais_batch, refeicoes_batch
 from conftest import create_aluno, login_as
 
 
@@ -20,14 +22,14 @@ class TestRequestScopedConnection:
     def test_same_connection_within_request(self, app):
         """Dentro de um request, db() deve devolver a mesma conexão."""
         with app.test_request_context("/"):
-            conn1 = sr.db()
-            conn2 = sr.db()
+            conn1 = db()
+            conn2 = db()
             assert conn1 is conn2
 
     def test_new_conn_creates_independent_connections(self, app):
         """_new_conn() deve criar conexões independentes sempre."""
-        conn1 = sr._new_conn()
-        conn2 = sr._new_conn()
+        conn1 = _new_conn()
+        conn2 = _new_conn()
         assert conn1 is not conn2
         conn1.close()
         conn2.close()
@@ -35,12 +37,12 @@ class TestRequestScopedConnection:
     def test_teardown_closes_connection(self, app):
         """O teardown deve fechar a conexão do request."""
         with app.test_request_context("/"):
-            conn = sr.db()
+            conn = db()
             # Verificar que funciona
             conn.execute("SELECT 1").fetchone()
-            sr.close_request_db()
+            close_request_db()
             # Após close, nova chamada cria nova conexão
-            conn2 = sr.db()
+            conn2 = db()
             assert conn2 is not conn
 
 
@@ -53,7 +55,7 @@ class TestBatchLoading:
         nii = "995"
         uid = create_aluno(nii, "T95", "Teste Batch", ano="1")
         hoje = date.today()
-        with sr.db() as conn:
+        with db() as conn:
             for i in range(3):
                 d = hoje + timedelta(days=i)
                 conn.execute(
@@ -63,7 +65,7 @@ class TestBatchLoading:
                     (uid, d.isoformat()),
                 )
             conn.commit()
-        ref_map, defaults = sr.refeicoes_batch(uid, hoje, hoje + timedelta(days=2))
+        ref_map, defaults = refeicoes_batch(uid, hoje, hoje + timedelta(days=2))
         assert len(ref_map) == 3
         assert ref_map[hoje.isoformat()]["almoco"] == "Normal"
         assert defaults["pequeno_almoco"] == 0
@@ -71,7 +73,7 @@ class TestBatchLoading:
     def test_dias_operacionais_batch(self, app):
         """Batch de dias operacionais carrega calendário."""
         hoje = date.today()
-        result = sr.dias_operacionais_batch(hoje, hoje + timedelta(days=7))
+        result = dias_operacionais_batch(hoje, hoje + timedelta(days=7))
         assert isinstance(result, dict)
 
     def test_ausencias_batch(self, app):
@@ -80,13 +82,13 @@ class TestBatchLoading:
         uid = create_aluno(nii, "T95", "Teste Batch", ano="1")
         hoje = date.today()
         amanha = hoje + timedelta(days=1)
-        with sr.db() as conn:
+        with db() as conn:
             conn.execute(
                 "INSERT OR REPLACE INTO ausencias (utilizador_id, ausente_de, ausente_ate) VALUES (?,?,?)",
                 (uid, hoje.isoformat(), amanha.isoformat()),
             )
             conn.commit()
-        result = sr.ausencias_batch(uid, hoje, hoje + timedelta(days=5))
+        result = ausencias_batch(uid, hoje, hoje + timedelta(days=5))
         assert hoje.isoformat() in result
         assert amanha.isoformat() in result
 
@@ -95,13 +97,13 @@ class TestBatchLoading:
         nii = "996"
         uid = create_aluno(nii, "T96", "Teste Det Batch", ano="1")
         hoje = date.today()
-        with sr.db() as conn:
+        with db() as conn:
             conn.execute(
                 "INSERT OR REPLACE INTO detencoes (utilizador_id, detido_de, detido_ate, motivo) VALUES (?,?,?,?)",
                 (uid, hoje.isoformat(), hoje.isoformat(), "teste"),
             )
             conn.commit()
-        result = sr.detencoes_batch(uid, hoje, hoje + timedelta(days=3))
+        result = detencoes_batch(uid, hoje, hoje + timedelta(days=3))
         assert hoje.isoformat() in result
 
     def test_licencas_batch(self, app):
@@ -109,13 +111,13 @@ class TestBatchLoading:
         nii = "995"
         uid = create_aluno(nii, "T95", "Teste Batch", ano="1")
         hoje = date.today()
-        with sr.db() as conn:
+        with db() as conn:
             conn.execute(
                 "INSERT OR REPLACE INTO licencas (utilizador_id, data, tipo) VALUES (?,?,?)",
                 (uid, hoje.isoformat(), "antes_jantar"),
             )
             conn.commit()
-        result = sr.licencas_batch(uid, hoje, hoje + timedelta(days=5))
+        result = licencas_batch(uid, hoje, hoje + timedelta(days=5))
         assert result.get(hoje.isoformat()) == "antes_jantar"
 
 
@@ -125,7 +127,7 @@ class TestBatchLoading:
 class TestWALCheckpoint:
     def test_wal_checkpoint_runs(self, app):
         """WAL checkpoint não dá erro."""
-        sr.wal_checkpoint()  # Não deve lançar exceção
+        wal_checkpoint()  # Não deve lançar exceção
 
 
 # ─── Session timeout ─────────────────────────────────────────────────────

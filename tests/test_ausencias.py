@@ -5,7 +5,7 @@ tests/test_ausencias.py — Testes de ausências
 
 from datetime import date, timedelta
 
-import sistema_refeicoes_v8_4 as sr
+from core.database import db
 
 from tests.conftest import create_aluno
 
@@ -74,7 +74,7 @@ class TestTemAusenciaAtiva:
         uid = create_aluno("T_AUS_05", "605", "Ausencia E", "1")
         d = _future_date(45)
 
-        with sr.db() as conn:
+        with db() as conn:
             conn.execute(
                 "INSERT INTO ausencias (utilizador_id, ausente_de, ausente_ate, motivo, criado_por) VALUES (?,?,?,?,?)",
                 (uid, d.isoformat(), d.isoformat(), "Teste", "teste"),
@@ -99,7 +99,7 @@ class TestTemAusenciaAtiva:
         d1 = _future_date(47)
         d2 = d1 + timedelta(days=3)
 
-        with sr.db() as conn:
+        with db() as conn:
             conn.execute(
                 "INSERT INTO ausencias (utilizador_id, ausente_de, ausente_ate, motivo, criado_por) VALUES (?,?,?,?,?)",
                 (uid, d1.isoformat(), d2.isoformat(), "Período longo", "teste"),
@@ -123,7 +123,7 @@ class TestTemAusenciaAtiva:
         uid = create_aluno("T_AUS_08", "608", "Ausencia H", "1")
         d = _future_date(51)
 
-        with sr.db() as conn:
+        with db() as conn:
             conn.execute(
                 "INSERT INTO ausencias (utilizador_id, ausente_de, ausente_ate, motivo, criado_por) VALUES (?,?,?,?,?)",
                 (uid, d.isoformat(), d.isoformat(), "Teste", "teste"),
@@ -133,7 +133,7 @@ class TestTemAusenciaAtiva:
         assert app_module._tem_ausencia_ativa(uid, d) is True
 
         # Remover
-        with sr.db() as conn:
+        with db() as conn:
             conn.execute(
                 "DELETE FROM ausencias WHERE utilizador_id=? AND ausente_de=? AND ausente_ate=?",
                 (uid, d.isoformat(), d.isoformat()),

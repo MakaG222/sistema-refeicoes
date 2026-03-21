@@ -5,7 +5,13 @@ from datetime import datetime
 
 from flask import current_app
 
-import sistema_refeicoes_v8_4 as sr
+from core.database import db
+from core.meals import (
+    get_ocupacao_capacidade,
+    refeicao_editavel,
+    refeicao_get,
+    refeicao_save,
+)
 import config as cfg
 from utils.helpers import _refeicao_set
 
@@ -21,7 +27,7 @@ def _registar_ausencia(uid, de, ate, motivo, criado_por):
         return False, "Data inválida."
     if de > ate:
         return False, "A data de início não pode ser posterior à data de fim."
-    with sr.db() as conn:
+    with db() as conn:
         conn.execute(
             """INSERT INTO ausencias (utilizador_id,ausente_de,ausente_ate,motivo,criado_por)
                         VALUES (?,?,?,?,?)""",
@@ -32,7 +38,7 @@ def _registar_ausencia(uid, de, ate, motivo, criado_por):
 
 
 def _remover_ausencia(aid):
-    with sr.db() as conn:
+    with db() as conn:
         conn.execute("DELETE FROM ausencias WHERE id=?", (aid,))
         conn.commit()
 
@@ -45,7 +51,7 @@ def _editar_ausencia(aid, uid, de, ate, motivo):
         return False, "Data inválida."
     if de > ate:
         return False, "A data de início não pode ser posterior à data de fim."
-    with sr.db() as conn:
+    with db() as conn:
         conn.execute(
             """UPDATE ausencias SET ausente_de=?,ausente_ate=?,motivo=?
                         WHERE id=? AND utilizador_id=?""",
@@ -58,7 +64,7 @@ def _editar_ausencia(aid, uid, de, ate, motivo):
 def _tem_ausencia_ativa(uid, d=None):
     """Verifica se utilizador tem ausência ativa na data (ou hoje)."""
     d_str = (d or date.today()).isoformat()
-    with sr.db() as conn:
+    with db() as conn:
         row = conn.execute(
             """SELECT 1 FROM ausencias WHERE utilizador_id=?
                               AND ausente_de<=? AND ausente_ate>=?""",
@@ -74,7 +80,7 @@ def _tem_detencao_ativa(uid, d=None):
     """Verifica se utilizador tem detenção ativa na data (ou hoje)."""
     try:
         d_str = (d or date.today()).isoformat()
-        with sr.db() as conn:
+        with db() as conn:
             row = conn.execute(
                 """SELECT 1 FROM detencoes WHERE utilizador_id=?
                               AND detido_de<=? AND detido_ate>=? LIMIT 1""",
@@ -90,7 +96,7 @@ def _auto_marcar_refeicoes_detido(uid, d_de, d_ate, alterado_por="sistema"):
     try:
         d = d_de
         while d <= d_ate:
-            with sr.db() as conn:
+            with db() as conn:
                 existe = conn.execute(
                     "SELECT almoco FROM refeicoes WHERE utilizador_id=? AND data=?",
                     (uid, d.isoformat()),
@@ -156,7 +162,7 @@ def _licencas_semana_usadas(uid: int, d: date) -> int:
     """Conta licenças de dias úteis (seg-qui) já usadas na semana ISO de 'd'."""
     seg = d - timedelta(days=d.weekday())  # segunda
     qui = seg + timedelta(days=3)  # quinta
-    with sr.db() as conn:
+    with db() as conn:
         row = conn.execute(
             """SELECT COUNT(*) c FROM licencas
             WHERE utilizador_id=? AND data>=? AND data<=?""",
@@ -190,7 +196,7 @@ def _pode_marcar_licenca(uid: int, d: date, ano: int, ni: str) -> tuple:
     # Verificar limite semanal de dias úteis
     usadas = _licencas_semana_usadas(uid, d)
     # Verificar se este dia já está contado (para não contar duas vezes ao editar)
-    with sr.db() as conn:
+    with db() as conn:
         ja_tem = conn.execute(
             "SELECT 1 FROM licencas WHERE utilizador_id=? AND data=?",
             (uid, d.isoformat()),
@@ -218,7 +224,7 @@ def _dia_editavel_aluno(d):
             False,
             f"Só é possível marcar com {cfg.DIAS_ANTECEDENCIA} dias de antecedência.",
         )
-    return sr.refeicao_editavel(d)
+    return refeicao_editavel(d)
 
 
 # ── Licença FDS ──────────────────────────────────────────────────────────
@@ -233,7 +239,7 @@ def _marcar_licenca_fds(uid: int, sexta: date, alterado_por: str) -> tuple:
     """
     try:
         # ── Sexta-feira: licença antes_jantar ──────────────────────────
-        with sr.db() as conn:
+        with db() as conn:
             conn.execute(
                 """INSERT INTO licencas(utilizador_id, data, tipo)
                    VALUES(?,?,?)
@@ -243,10 +249,10 @@ def _marcar_licenca_fds(uid: int, sexta: date, alterado_por: str) -> tuple:
             conn.commit()
 
         # Refeições da sexta: guardar sem jantar, com sai_unidade
-        r_sexta = sr.refeicao_get(uid, sexta)
+        r_sexta = refeicao_get(uid, sexta)
         r_sexta["jantar_tipo"] = None
         r_sexta["jantar_sai_unidade"] = 1
-        sr.refeicao_save(uid, sexta, r_sexta, alterado_por=alterado_por)
+        refeicao_save(uid, sexta, r_sexta, alterado_por=alterado_por)
 
         # ── Sábado e Domingo: apagar todas as refeições ────────────────
         for delta in (1, 2):  # sábado=+1, domingo=+2
@@ -258,7 +264,7 @@ def _marcar_licenca_fds(uid: int, sexta: date, alterado_por: str) -> tuple:
                 "jantar_tipo": None,
                 "jantar_sai_unidade": 0,
             }
-            sr.refeicao_save(uid, d, r_vazio, alterado_por=alterado_por)
+            refeicao_save(uid, d, r_vazio, alterado_por=alterado_por)
 
         return True, ""
     except Exception as exc:
@@ -274,7 +280,7 @@ def _cancelar_licenca_fds(uid: int, sexta: date, alterado_por: str) -> tuple:
     """
     try:
         # Remover licença da sexta
-        with sr.db() as conn:
+        with db() as conn:
             conn.execute(
                 "DELETE FROM licencas WHERE utilizador_id=? AND data=?",
                 (uid, sexta.isoformat()),
@@ -282,11 +288,11 @@ def _cancelar_licenca_fds(uid: int, sexta: date, alterado_por: str) -> tuple:
             conn.commit()
 
         # Repor sexta: jantar Normal, sem sai_unidade
-        r_sexta = sr.refeicao_get(uid, sexta)
+        r_sexta = refeicao_get(uid, sexta)
         r_sexta["jantar_sai_unidade"] = 0
         if not r_sexta.get("jantar_tipo"):
             r_sexta["jantar_tipo"] = "Normal"
-        sr.refeicao_save(uid, sexta, r_sexta, alterado_por=alterado_por)
+        refeicao_save(uid, sexta, r_sexta, alterado_por=alterado_por)
 
         return True, ""
     except Exception as exc:
@@ -298,7 +304,7 @@ def _cancelar_licenca_fds(uid: int, sexta: date, alterado_por: str) -> tuple:
 
 
 def _get_ocupacao_dia(dt):
-    return sr.get_ocupacao_capacidade(dt)
+    return get_ocupacao_capacidade(dt)
 
 
 # ── Alertas painel ───────────────────────────────────────────────────────
@@ -313,7 +319,7 @@ def _alertas_painel(d_str: str, perfil: str) -> list:
     hoje = date.today().isoformat()
     amanha = (date.today() + timedelta(days=1)).isoformat()
 
-    with sr.db() as conn:
+    with db() as conn:
         # 1. Detenções que expiram hoje
         det_exp = conn.execute(
             """SELECT COUNT(*) c FROM detencoes d

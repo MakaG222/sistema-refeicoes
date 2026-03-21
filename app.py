@@ -22,8 +22,11 @@ from flask import (
 )
 
 sys.path.insert(0, os.path.dirname(__file__))
-import sistema_refeicoes_v8_4 as sr  # noqa: E402
 import config as cfg  # noqa: E402
+from core.auth_db import PERFIS_ADMIN, PERFIS_TESTE  # noqa: E402
+from core.backup import ensure_daily_backup  # noqa: E402
+from core.constants import BASE_DADOS  # noqa: E402
+from core.database import close_request_db, db, ensure_schema, wal_checkpoint  # noqa: E402
 
 # ── Re-exports de utils/ (backward-compat para testes que fazem `from app import X`) ──
 from utils.constants import (  # noqa: E402, F401
@@ -105,7 +108,7 @@ from utils.business import (  # noqa: E402, F401
 def _ensure_extra_schema():
     """Garante colunas extra e FTS5 nos utilizadores."""
     try:
-        with sr.db() as conn:
+        with db() as conn:
             cols = [
                 r["name"]
                 for r in conn.execute("PRAGMA table_info(utilizadores)").fetchall()
@@ -259,7 +262,7 @@ app.config.from_object(cfg.Config)
 cfg.configure_logging(app)
 
 # ── Teardown: fechar conexão SQLite no fim de cada request ────────────────
-app.teardown_appcontext(sr.close_request_db)
+app.teardown_appcontext(close_request_db)
 
 
 # ── Context processor: disponibiliza csrf_input() nos templates ──────────
@@ -306,10 +309,10 @@ def _init_app_once() -> None:
     global _APP_BOOTSTRAPPED
     if _APP_BOOTSTRAPPED:
         return
-    sr.ensure_schema()
+    ensure_schema()
     _ensure_extra_schema()
     try:
-        sr.ensure_daily_backup()
+        ensure_daily_backup()
     except Exception as exc:
         app.logger.warning("Backup no bootstrap falhou: %s", exc)
     _APP_BOOTSTRAPPED = True
@@ -332,13 +335,13 @@ def _bootstrap_dev_system_accounts(conn=None) -> None:
     """Sincroniza PERFIS_ADMIN/PERFIS_TESTE para a BD em desenvolvimento (passwords hashed)."""
     if _is_production:
         return
-    perfis = {**getattr(sr, "PERFIS_ADMIN", {}), **getattr(sr, "PERFIS_TESTE", {})}
+    perfis = {**PERFIS_ADMIN, **PERFIS_TESTE}
     if not perfis:
         return
     owns_conn = conn is None
     try:
         if owns_conn:
-            conn = sr.db()
+            conn = db()
         cols = {
             r["name"]
             for r in conn.execute("PRAGMA table_info(utilizadores)").fetchall()
@@ -397,15 +400,15 @@ def before():
     global _last_wal_checkpoint
     g._t0 = time.perf_counter()
 
-    # Refrescar sessão permanente em cada request (reset timeout inatividade)
-    if "user" in session:
-        session.modified = True
+    # Refrescar sessão permanente — SESSION_REFRESH_EACH_REQUEST (default True)
+    # faz isto automaticamente; session.modified só é necessário quando mudamos dados
+    session.permanent = True
 
     # WAL checkpoint periódico
     now = time.time()
     if now - _last_wal_checkpoint > _WAL_CHECKPOINT_INTERVAL:
         _last_wal_checkpoint = now
-        sr.wal_checkpoint()
+        wal_checkpoint()
 
     if request.method == "POST":
         # Blueprint "api" usa Bearer token — sem CSRF
@@ -470,5 +473,5 @@ def err500(e):
 # ── Arranque directo ─────────────────────────────────────────────────────
 if __name__ == "__main__":
     _init_app_once()
-    cfg.print_startup_banner(sr.BASE_DADOS)
+    cfg.print_startup_banner(BASE_DADOS)
     app.run(debug=cfg.DEBUG, host="0.0.0.0", port=cfg.PORT)
