@@ -33,6 +33,20 @@ def ensure_extra_schema() -> None:
                     "ALTER TABLE utilizadores ADD COLUMN turma_id INTEGER REFERENCES turmas(id)"
                 )
 
+            # Colunas estufa na tabela refeicoes
+            ref_cols = [
+                r["name"]
+                for r in conn.execute("PRAGMA table_info(refeicoes)").fetchall()
+            ]
+            if "almoco_estufa" not in ref_cols:
+                conn.execute(
+                    "ALTER TABLE refeicoes ADD COLUMN almoco_estufa BOOLEAN DEFAULT 0"
+                )
+            if "jantar_estufa" not in ref_cols:
+                conn.execute(
+                    "ALTER TABLE refeicoes ADD COLUMN jantar_estufa BOOLEAN DEFAULT 0"
+                )
+
             # Colunas extra na tabela licencas (entradas/saídas)
             lic_cols = [
                 r["name"]

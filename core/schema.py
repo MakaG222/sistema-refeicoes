@@ -44,6 +44,8 @@ CREATE TABLE IF NOT EXISTS refeicoes (
   almoco             TEXT CHECK(almoco IN ('Normal','Vegetariano','Dieta')),
   jantar_tipo        TEXT CHECK(jantar_tipo IN ('Normal','Vegetariano','Dieta')),
   jantar_sai_unidade BOOLEAN DEFAULT 0,
+  almoco_estufa      BOOLEAN DEFAULT 0,
+  jantar_estufa      BOOLEAN DEFAULT 0,
   UNIQUE(utilizador_id, data)
 );
 
@@ -201,6 +203,8 @@ BEGIN
       WHEN NEW.pequeno_almoco NOT IN (0,1) THEN RAISE(ABORT,'pequeno_almoco inválido')
       WHEN NEW.lanche NOT IN (0,1) THEN RAISE(ABORT,'lanche inválido')
       WHEN NEW.jantar_sai_unidade NOT IN (0,1) THEN RAISE(ABORT,'jantar_sai_unidade inválido')
+      WHEN NEW.almoco_estufa NOT IN (0,1) THEN RAISE(ABORT,'almoco_estufa inválido')
+      WHEN NEW.jantar_estufa NOT IN (0,1) THEN RAISE(ABORT,'jantar_estufa inválido')
       WHEN NEW.almoco IS NOT NULL AND NEW.almoco NOT IN ('Normal','Vegetariano','Dieta') THEN RAISE(ABORT,'almoco inválido')
       WHEN NEW.jantar_tipo IS NOT NULL AND NEW.jantar_tipo NOT IN ('Normal','Vegetariano','Dieta') THEN RAISE(ABORT,'jantar_tipo inválido')
     END;
@@ -213,6 +217,8 @@ BEGIN
       WHEN NEW.pequeno_almoco NOT IN (0,1) THEN RAISE(ABORT,'pequeno_almoco inválido')
       WHEN NEW.lanche NOT IN (0,1) THEN RAISE(ABORT,'lanche inválido')
       WHEN NEW.jantar_sai_unidade NOT IN (0,1) THEN RAISE(ABORT,'jantar_sai_unidade inválido')
+      WHEN NEW.almoco_estufa NOT IN (0,1) THEN RAISE(ABORT,'almoco_estufa inválido')
+      WHEN NEW.jantar_estufa NOT IN (0,1) THEN RAISE(ABORT,'jantar_estufa inválido')
       WHEN NEW.almoco IS NOT NULL AND NEW.almoco NOT IN ('Normal','Vegetariano','Dieta') THEN RAISE(ABORT,'almoco inválido')
       WHEN NEW.jantar_tipo IS NOT NULL AND NEW.jantar_tipo NOT IN ('Normal','Vegetariano','Dieta') THEN RAISE(ABORT,'jantar_tipo inválido')
     END;

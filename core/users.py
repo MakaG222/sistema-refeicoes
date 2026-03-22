@@ -168,7 +168,8 @@ def get_aluno_historico(uid: int, d0_iso: str) -> list:
     """Retorna histórico de refeições desde d0_iso."""
     with db() as conn:
         return conn.execute(
-            """SELECT data,pequeno_almoco,lanche,almoco,jantar_tipo,jantar_sai_unidade
+            """SELECT data,pequeno_almoco,lanche,almoco,almoco_estufa,
+            jantar_tipo,jantar_sai_unidade,jantar_estufa
             FROM refeicoes WHERE utilizador_id=? AND data>=? ORDER BY data DESC""",
             (uid, d0_iso),
         ).fetchall()

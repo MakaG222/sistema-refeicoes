@@ -393,10 +393,12 @@ def relatorio_semanal():
             "alm_norm",
             "alm_veg",
             "alm_dieta",
+            "alm_estufa",
             "jan_norm",
             "jan_veg",
             "jan_dieta",
             "jan_sai",
+            "jan_estufa",
         ]
     }
     dias = []

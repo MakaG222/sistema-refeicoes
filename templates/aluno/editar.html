@@ -89,6 +89,12 @@
                 <div class="sw-pill{{ " sw-sel" if alm_val == "Dieta" else "" }}" onclick="setPill('almoco','Dieta',this)">Dieta</div>
               </div>
             </div>
+            <div id="alm_estufa_row" style="display:{{ 'flex' if alm_val else 'none' }};align-items:center;gap:.55rem;padding:.5rem .85rem .5rem 2.6rem;border:2px solid #f39c12;border-radius:12px;background:#fffbf0;margin-top:-.3rem">
+              <input type="hidden" name="almoco_estufa" id="h_almoco_estufa" value="{{ '1' if alm_estufa else '0' }}">
+              <span style="font-size:1.1rem">♨️</span>
+              <span style="font-weight:600;font-size:.88rem;flex:1">Guardar na estufa</span>
+              <div class="sw-mark" id="alm_estufa_mark" onclick="toggleEstufa('almoco')" style="cursor:pointer;{{ 'background:#f39c12;border-color:#f39c12;color:#fff' if alm_estufa else '' }}">{{ "✓" if alm_estufa else "" }}</div>
+            </div>
             <!-- Jantar pill selector -->
             <div class="sw-pill-row{{ "  sw-on" if jan_val and not jan_blocked else "" }}" id="jan_row"{{ "  style=opacity:.4;pointer-events:none"|safe if jan_blocked else "" }}>
               <span class="sw-pill-icon">🌙</span>
@@ -98,6 +104,12 @@
                 <div class="sw-pill{{ " sw-sel" if jan_val == "Vegetariano" else "" }}" onclick="setPill('jantar','Vegetariano',this)">Veg</div>
                 <div class="sw-pill{{ " sw-sel" if jan_val == "Dieta" else "" }}" onclick="setPill('jantar','Dieta',this)">Dieta</div>
               </div>
+            </div>
+            <div id="jan_estufa_row" style="display:{{ 'flex' if (jan_val and not jan_blocked) else 'none' }};align-items:center;gap:.55rem;padding:.5rem .85rem .5rem 2.6rem;border:2px solid #f39c12;border-radius:12px;background:#fffbf0;margin-top:-.3rem">
+              <input type="hidden" name="jantar_estufa" id="h_jantar_estufa" value="{{ '1' if jan_estufa else '0' }}">
+              <span style="font-size:1.1rem">♨️</span>
+              <span style="font-weight:600;font-size:.88rem;flex:1">Guardar na estufa</span>
+              <div class="sw-mark" id="jan_estufa_mark" onclick="toggleEstufa('jantar')" style="cursor:pointer;{{ 'background:#f39c12;border-color:#f39c12;color:#fff' if jan_estufa else '' }}">{{ "✓" if jan_estufa else "" }}</div>
             </div>
           </div>
           {% if not detido %}
@@ -164,6 +176,32 @@
         pill.classList.add('sw-sel');
         row.classList.add('sw-on');
       }
+      updateEstufaVisibility(meal);
+    }
+    function updateEstufaVisibility(meal){
+      var h=document.getElementById('h_'+meal);
+      var estufa=document.getElementById(meal==='almoco'?'alm_estufa_row':'jan_estufa_row');
+      if(!estufa) return;
+      if(h.value){
+        estufa.style.display='flex';
+      } else {
+        estufa.style.display='none';
+        var he=document.getElementById('h_'+meal+'_estufa');
+        var mark=document.getElementById(meal==='almoco'?'alm_estufa_mark':'jan_estufa_mark');
+        if(he) he.value='0';
+        if(mark){mark.textContent='';mark.style.background='';mark.style.borderColor='';mark.style.color='';}
+      }
+    }
+    function toggleEstufa(meal){
+      var he=document.getElementById('h_'+meal+'_estufa');
+      var mark=document.getElementById(meal==='almoco'?'alm_estufa_mark':'jan_estufa_mark');
+      var on=he.value==='1';
+      he.value=on?'0':'1';
+      if(!on){
+        mark.textContent='✓';mark.style.background='#f39c12';mark.style.borderColor='#f39c12';mark.style.color='#fff';
+      } else {
+        mark.textContent='';mark.style.background='';mark.style.borderColor='';mark.style.color='';
+      }
     }
     // Licença radio: highlight active + block jantar se antes_jantar
     document.querySelectorAll('[data-lic] input[type=radio]').forEach(function(r){
@@ -176,14 +214,17 @@
     function syncJantar(){
       var antes=document.querySelector('input[name=licenca][value=antes_jantar]');
       var jr=document.getElementById('jan_row');
+      var jer=document.getElementById('jan_estufa_row');
       if(!jr)return;
       if(antes && antes.checked){
         jr.style.opacity='.4';jr.style.pointerEvents='none';
         document.getElementById('h_jantar').value='';
         jr.querySelectorAll('.sw-pill').forEach(function(p){p.classList.remove('sw-sel')});
         jr.classList.remove('sw-on');
+        if(jer) jer.style.display='none';
       } else {
         jr.style.opacity='1';jr.style.pointerEvents='auto';
+        updateEstufaVisibility('jantar');
       }
     }
     </script>
