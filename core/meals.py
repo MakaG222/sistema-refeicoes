@@ -52,7 +52,7 @@ def get_totais_dia(di: str, ano: int | None = None) -> dict[str, int]:
 
         pa = (
             conn.execute(
-                f"SELECT COUNT(*) c FROM refeicoes r {_active}"
+                f"SELECT COUNT(*) c FROM refeicoes r {_active}"  # nosec B608
                 f" WHERE r.data=? {_ano_cond} AND r.pequeno_almoco=1",
                 params_base,
             ).fetchone()["c"]
@@ -60,37 +60,34 @@ def get_totais_dia(di: str, ano: int | None = None) -> dict[str, int]:
         )
         ln = (
             conn.execute(
-                f"SELECT COUNT(*) c FROM refeicoes r {_active}"
+                f"SELECT COUNT(*) c FROM refeicoes r {_active}"  # nosec B608
                 f" WHERE r.data=? {_ano_cond} AND r.lanche=1",
                 params_base,
             ).fetchone()["c"]
             or 0
         )
-        alm = conn.execute(
-            f"""
-            SELECT
-              SUM(CASE WHEN r.almoco='Normal'      THEN 1 ELSE 0 END) norm,
-              SUM(CASE WHEN r.almoco='Vegetariano' THEN 1 ELSE 0 END) veg,
-              SUM(CASE WHEN r.almoco='Dieta'       THEN 1 ELSE 0 END) dieta,
-              SUM(COALESCE(r.almoco_estufa, 0))                        estufa
-            FROM refeicoes r {_active}
-            WHERE r.data=? {_ano_cond}
-        """,
-            params_base,
-        ).fetchone()
-        jan = conn.execute(
-            f"""
-            SELECT
-              SUM(CASE WHEN r.jantar_tipo='Normal'      THEN 1 ELSE 0 END) norm,
-              SUM(CASE WHEN r.jantar_tipo='Vegetariano' THEN 1 ELSE 0 END) veg,
-              SUM(CASE WHEN r.jantar_tipo='Dieta'       THEN 1 ELSE 0 END) dieta,
-              SUM(COALESCE(r.jantar_sai_unidade, 0))                        sai,
-              SUM(COALESCE(r.jantar_estufa, 0))                             estufa
-            FROM refeicoes r {_active}
-            WHERE r.data=? {_ano_cond}
-        """,
-            params_base,
-        ).fetchone()
+        # _active and _ano_cond are hardcoded constants — safe to interpolate
+        _sql_alm = (
+            f"SELECT"  # nosec B608
+            f" SUM(CASE WHEN r.almoco='Normal' THEN 1 ELSE 0 END) norm,"
+            f" SUM(CASE WHEN r.almoco='Vegetariano' THEN 1 ELSE 0 END) veg,"
+            f" SUM(CASE WHEN r.almoco='Dieta' THEN 1 ELSE 0 END) dieta,"
+            f" SUM(COALESCE(r.almoco_estufa,0)) estufa"
+            f" FROM refeicoes r {_active}"
+            f" WHERE r.data=? {_ano_cond}"
+        )
+        alm = conn.execute(_sql_alm, params_base).fetchone()
+        _sql_jan = (
+            f"SELECT"  # nosec B608
+            f" SUM(CASE WHEN r.jantar_tipo='Normal' THEN 1 ELSE 0 END) norm,"
+            f" SUM(CASE WHEN r.jantar_tipo='Vegetariano' THEN 1 ELSE 0 END) veg,"
+            f" SUM(CASE WHEN r.jantar_tipo='Dieta' THEN 1 ELSE 0 END) dieta,"
+            f" SUM(COALESCE(r.jantar_sai_unidade,0)) sai,"
+            f" SUM(COALESCE(r.jantar_estufa,0)) estufa"
+            f" FROM refeicoes r {_active}"
+            f" WHERE r.data=? {_ano_cond}"
+        )
+        jan = conn.execute(_sql_jan, params_base).fetchone()
 
     return {
         "pa": pa,
@@ -122,26 +119,24 @@ def get_totais_periodo(
     params = (d_de, d_ate, ano) if ano is not None else (d_de, d_ate)
 
     with db() as conn:
-        rows = conn.execute(
-            f"""
-            SELECT r.data,
-              SUM(CASE WHEN r.pequeno_almoco=1 THEN 1 ELSE 0 END) pa,
-              SUM(CASE WHEN r.lanche=1 THEN 1 ELSE 0 END) lan,
-              SUM(CASE WHEN r.almoco='Normal'      THEN 1 ELSE 0 END) alm_norm,
-              SUM(CASE WHEN r.almoco='Vegetariano' THEN 1 ELSE 0 END) alm_veg,
-              SUM(CASE WHEN r.almoco='Dieta'       THEN 1 ELSE 0 END) alm_dieta,
-              SUM(COALESCE(r.almoco_estufa, 0))                        alm_estufa,
-              SUM(CASE WHEN r.jantar_tipo='Normal'      THEN 1 ELSE 0 END) jan_norm,
-              SUM(CASE WHEN r.jantar_tipo='Vegetariano' THEN 1 ELSE 0 END) jan_veg,
-              SUM(CASE WHEN r.jantar_tipo='Dieta'       THEN 1 ELSE 0 END) jan_dieta,
-              SUM(COALESCE(r.jantar_sai_unidade, 0)) jan_sai,
-              SUM(COALESCE(r.jantar_estufa, 0))      jan_estufa
-            FROM refeicoes r {_active}
-            WHERE r.data>=? AND r.data<=? {_ano_cond}
-            GROUP BY r.data
-        """,
-            params,
-        ).fetchall()
+        _sql_periodo = (
+            f"SELECT r.data,"  # nosec B608
+            f" SUM(CASE WHEN r.pequeno_almoco=1 THEN 1 ELSE 0 END) pa,"
+            f" SUM(CASE WHEN r.lanche=1 THEN 1 ELSE 0 END) lan,"
+            f" SUM(CASE WHEN r.almoco='Normal' THEN 1 ELSE 0 END) alm_norm,"
+            f" SUM(CASE WHEN r.almoco='Vegetariano' THEN 1 ELSE 0 END) alm_veg,"
+            f" SUM(CASE WHEN r.almoco='Dieta' THEN 1 ELSE 0 END) alm_dieta,"
+            f" SUM(COALESCE(r.almoco_estufa,0)) alm_estufa,"
+            f" SUM(CASE WHEN r.jantar_tipo='Normal' THEN 1 ELSE 0 END) jan_norm,"
+            f" SUM(CASE WHEN r.jantar_tipo='Vegetariano' THEN 1 ELSE 0 END) jan_veg,"
+            f" SUM(CASE WHEN r.jantar_tipo='Dieta' THEN 1 ELSE 0 END) jan_dieta,"
+            f" SUM(COALESCE(r.jantar_sai_unidade,0)) jan_sai,"
+            f" SUM(COALESCE(r.jantar_estufa,0)) jan_estufa"
+            f" FROM refeicoes r {_active}"
+            f" WHERE r.data>=? AND r.data<=? {_ano_cond}"
+            f" GROUP BY r.data"
+        )
+        rows = conn.execute(_sql_periodo, params).fetchall()
 
     _empty = {
         "pa": 0,

@@ -72,13 +72,46 @@ def csv_check_duplicates() -> set[str]:
         }
 
 
+_ALLOWED_USER_COLS = frozenset(
+    {
+        "id",
+        "NII",
+        "NI",
+        "Nome_completo",
+        "Palavra_chave",
+        "ano",
+        "perfil",
+        "locked_until",
+        "must_change_password",
+        "password_updated_at",
+        "is_active",
+        "email",
+        "telemovel",
+        "data_criacao",
+        "turma_id",
+    }
+)
+
+_DEFAULT_USER_COLS = ("id", "NII", "NI", "Nome_completo", "ano", "email", "telemovel")
+
+
 def get_user_by_nii_fields(
-    nii: str, fields: str = "id,NII,NI,Nome_completo,ano,email,telemovel"
+    nii: str, fields: str | tuple[str, ...] | None = None
 ) -> dict | None:
-    """Busca um utilizador por NII com campos específicos."""
+    """Busca um utilizador por NII com campos específicos (validados via allowlist)."""
+    if fields is None:
+        cols = _DEFAULT_USER_COLS
+    elif isinstance(fields, str):
+        cols = tuple(c.strip() for c in fields.split(","))
+    else:
+        cols = fields
+    bad = set(cols) - _ALLOWED_USER_COLS
+    if bad:
+        raise ValueError(f"Colunas não permitidas: {bad}")
+    col_sql = ",".join(cols)
     with db() as conn:
         row = conn.execute(
-            f"SELECT {fields} FROM utilizadores WHERE NII=?",
+            f"SELECT {col_sql} FROM utilizadores WHERE NII=?",  # nosec B608
             (nii,),
         ).fetchone()
     return dict(row) if row else None
