@@ -129,7 +129,7 @@ Cookies são `HttpOnly`, `SameSite=Lax`, e `Secure` em produção.
 
 ## Segurança
 
-- **CSP**: `script-src 'self'` — zero inline JavaScript
+- **CSP**: `script-src 'self'; style-src 'self'` — zero inline JavaScript e zero inline CSS
 - **CSRF**: Token por sessão, validado em todos os POST (excepto API)
 - **Brute-force**: Bloqueio após tentativas falhadas (por NII e por IP)
 - **SQL**: Queries parametrizadas; colunas dinâmicas validadas via allowlist

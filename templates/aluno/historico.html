@@ -17,13 +17,13 @@
                 <td>{{ "✅" if r.jantar_sai_unidade else "—" }}</td>
               </tr>
               {% else %}
-              <tr><td colspan="6" class="text-muted center" style="padding:1.5rem">Sem registos.</td></tr>
+              <tr><td colspan="6" class="text-muted center empty-cell">Sem registos.</td></tr>
               {% endfor %}
             </tbody>
           </table>
         </div>
         {% if rows %}
-        <div class="gap-btn" style="margin-top:.8rem">
+        <div class="gap-btn mt-lg">
           <a class="btn btn-ghost btn-sm" href="{{ url_for(".exportar_historico_aluno", fmt="csv") }}">📄 Exportar CSV</a>
           <a class="btn btn-ghost btn-sm" href="{{ url_for(".exportar_historico_aluno", fmt="xlsx") }}">📊 Exportar Excel</a>
         </div>

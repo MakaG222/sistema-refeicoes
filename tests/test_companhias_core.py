@@ -258,7 +258,7 @@ def test_get_companhias_data_promocao_data_structure(app):
         assert "ano" in item
         assert "alunos" in item
         assert "destino" in item
-        assert "cor" in item
+        assert "cor_cls" in item
 
 
 def test_get_companhias_data_promocao_destino_concluido(app):

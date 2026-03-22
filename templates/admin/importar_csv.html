@@ -6,34 +6,34 @@
     <div class="page-title">📥 Importar Alunos via CSV</div>
   </div>
 
-  <div class="card" style="max-width:680px">
+  <div class="card max-w-xl">
     <div class="card-title">📋 Instruções</div>
-    <p style="font-size:.85rem;color:var(--muted);line-height:1.6">
+    <p class="text-base text-muted">
       Carrega um ficheiro <strong>.csv</strong> com uma linha por aluno. Colunas aceites:<br>
-      <code style="background:#f0f4f8;padding:.1rem .4rem;border-radius:4px;font-size:.83rem">NII, NI, Nome_completo, Ano [, Perfil] [, Password]</code><br><br>
+      <code class="csv-format">NII, NI, Nome_completo, Ano [, Perfil] [, Password]</code><br><br>
       • <strong>Perfil</strong> omitido → <code>aluno</code><br>
       • <strong>Password</strong> omitida → igual ao NII (deve alterar no 1.º login)<br>
       • <strong>Ano</strong>: 1–6 para anos curriculares, 7 para CFBO, 8 para CFCO<br>
       • Linhas com NII já existente são ignoradas (sem sobrescrever)<br>
       • A 1.ª linha é ignorada se começar por <code>NII</code>, <code>#</code>, <code>ID</code> ou <code>NUM</code>
     </p>
-    <div class="alert alert-info" style="margin-top:.8rem;font-size:.82rem">
+    <div class="alert alert-info mt-lg text-sm">
       💡 <strong>Exemplo de CSV:</strong><br>
-      <pre style="margin:.4rem 0 0;font-size:.78rem;background:#f0f4f8;padding:.5rem;border-radius:6px;overflow-x:auto">NII,NI,Nome_completo,Ano,Perfil,Password
+      <pre class="csv-preview">NII,NI,Nome_completo,Ano,Perfil,Password
 20240001,A001,João Silva,1,aluno,senha123
 20240002,A002,Maria Costa,1
 20240003,A003,Pedro Santos,2</pre>
     </div>
   </div>
 
-  <div class="card" style="max-width:680px">
+  <div class="card max-w-xl">
     <div class="card-title">📤 Carregar ficheiro</div>
     <form method="post" enctype="multipart/form-data">
       {{ csrf_input() }}
       <input type="hidden" name="acao" value="preview">
       <div class="form-group">
         <label>Ficheiro CSV</label>
-        <input type="file" name="csvfile" accept=".csv,.txt" required style="padding:.42rem .6rem">
+        <input type="file" name="csvfile" accept=".csv,.txt" required>
       </div>
       <button class="btn btn-primary">🔍 Pré-visualizar</button>
     </form>
@@ -42,14 +42,14 @@
   {% if resultado %}
   <div class="card">
     <div class="card-title">👁️ Pré-visualização ({{ resultado.preview|length }} linha(s))</div>
-    <div class="alert alert-info" style="margin-bottom:.5rem">
+    <div class="alert alert-info mb-sm">
       📊 <strong>{{ novos|length }} a criar</strong>
       {% if dupls %}, {{ dupls|length }} ignorados (já existem){% endif %},
       {{ resultado.erros|length }} avisos de formato.
     </div>
     {% if resultado.erros %}
     <div class="alert alert-warn">⚠️ <strong>Avisos de parsing:</strong>
-      <ul style="margin:.4rem 0 0 1.2rem">
+      <ul class="mt-sm">
         {% for e in resultado.erros %}
         <li>{{ e }}</li>
         {% endfor %}
@@ -61,7 +61,7 @@
         <thead><tr><th>#</th><th>NII</th><th>NI</th><th>Nome</th><th>Ano</th><th>Perfil</th><th>Password inicial</th><th>Estado</th></tr></thead>
         <tbody>
           {% for r in resultado.preview %}
-          <tr style="{{ 'background:#fff9e6;opacity:.7' if r.duplicado else 'background:#f0fff4' }}">
+          <tr class="{{ 'row-dup' if r.duplicado else 'row-new' }}">
             <td class="small text-muted">{{ r.linha }}</td>
             <td><strong>{{ r.nii }}</strong></td>
             <td>{{ r.ni }}</td>
@@ -82,14 +82,14 @@
       </table>
     </div>
     {% if novos %}
-    <form method="post" style="margin-top:.9rem">
+    <form method="post" class="mt-lg">
       {{ csrf_input() }}
       <input type="hidden" name="acao" value="confirmar">
       <input type="hidden" name="raw_csv" value="{{ resultado.raw }}">
       <button class="btn btn-ok">
         ✅ Confirmar e importar {{ novos|length }} aluno(s)
       </button>
-      <a class="btn btn-ghost" href="{{ url_for('.admin_importar_csv') }}" style="margin-left:.5rem">↩️ Cancelar</a>
+      <a class="btn btn-ghost ml-md" href="{{ url_for('.admin_importar_csv') }}">↩️ Cancelar</a>
     </form>
     {% else %}
     <div class="alert alert-warn">Nenhum aluno novo para importar.</div>

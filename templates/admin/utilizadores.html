@@ -6,7 +6,7 @@
   </div>
 
   {% if edit_user_row %}
-  <div class="card" style="border:1.5px solid var(--primary);max-width:640px">
+  <div class="card card-border-primary max-w-lg">
     <div class="card-title">✏️ Editar Utilizador — {{ edit_user_row.Nome_completo }}</div>
     <form method="post">
       {{ csrf_input() }}
@@ -43,7 +43,7 @@
   {% endif %}
 
   {% if edit_row %}
-  <div class="card" style="border:1.5px solid var(--gold);max-width:520px">
+  <div class="card card-border-gold max-w-sm">
     <div class="card-title">✉️ Contactos — {{ edit_row.Nome_completo }}</div>
     <form method="post">
       {{ csrf_input() }}
@@ -66,9 +66,9 @@
   {% endif %}
 
   <div class="card">
-    <form method="get" style="display:flex;gap:.5rem;flex-wrap:wrap">
-      <input type="text" name="q" placeholder="Pesquisar por nome..." value="{{ q }}" style="flex:1;min-width:200px">
-      <select name="ano" style="width:auto">
+    <form method="get" class="d-flex gap-md flex-wrap">
+      <input type="text" name="q" placeholder="Pesquisar por nome..." value="{{ q }}" class="flex-1 min-w-lg">
+      <select name="ano" class="w-auto">
         <option value="all" {{ "selected" if ano_f == "all" }}>Todos os anos</option>
         {% for a, _ in ANOS_OPCOES %}
         <option value="{{ a }}" {{ "selected" if ano_f == a|string }}>{{ ano_label(a) }}</option>
@@ -109,14 +109,14 @@
 
   <div class="card">
     <div class="card-title">Lista
-      <span style="font-size:.74rem;font-weight:400;color:var(--muted);margin-left:.5rem">Clica em ✉️ para editar email/telemóvel</span>
+      <span class="text-xs fw-normal text-muted ml-md">Clica em ✉️ para editar email/telemóvel</span>
     </div>
     <div class="table-wrap">
       <table>
         <thead><tr><th>NII</th><th>NI</th><th>Nome</th><th>Ano</th><th>Perfil</th><th>Email</th><th>Telemóvel</th><th>Estado</th><th>Ações</th></tr></thead>
         <tbody>
           {% for r in rows %}
-          <tr{{ ' style="background:#f0f7ff"'|safe if r.NII == edit_user_nii or r.NII == edit_nii }}>
+          <tr{{ ' class="bg-highlight"' if r.NII == edit_user_nii or r.NII == edit_nii else '' }}>
             <td class="small text-muted">{{ r.NII }}</td>
             <td>{{ r.NI }}</td>
             <td><strong>{{ r.Nome_completo }}</strong></td>
@@ -135,13 +135,13 @@
               <a class="btn btn-gold btn-sm" href="?edit_user={{ r.NII }}" title="Editar utilizador">✏️ Editar</a>
               <a class="btn btn-ghost btn-sm" href="?edit_contactos={{ r.NII }}" title="Editar email/telemóvel">✉️</a>
               {% if r.locked_until %}
-              <form method="post" style="display:inline">{{ csrf_input() }}<input type="hidden" name="acao" value="desbloquear"><input type="hidden" name="nii" maxlength="32" value="{{ r.NII }}"><button class="btn btn-ghost btn-sm">🔓</button></form>
+              <form method="post" class="form-inline">{{ csrf_input() }}<input type="hidden" name="acao" value="desbloquear"><input type="hidden" name="nii" maxlength="32" value="{{ r.NII }}"><button class="btn btn-ghost btn-sm">🔓</button></form>
               {% endif %}
-              <form method="post" style="display:inline" data-confirm="Eliminar {{ r.NII }}?">{{ csrf_input() }}<input type="hidden" name="acao" value="eliminar"><input type="hidden" name="nii" maxlength="32" value="{{ r.NII }}"><button class="btn btn-danger btn-sm">🗑</button></form>
+              <form method="post" class="form-inline" data-confirm="Eliminar {{ r.NII }}?">{{ csrf_input() }}<input type="hidden" name="acao" value="eliminar"><input type="hidden" name="nii" maxlength="32" value="{{ r.NII }}"><button class="btn btn-danger btn-sm">🗑</button></form>
             </td>
           </tr>
           {% else %}
-          <tr><td colspan="9" class="text-muted center" style="padding:1.5rem">Sem utilizadores.</td></tr>
+          <tr><td colspan="9" class="text-muted center empty-cell">Sem utilizadores.</td></tr>
           {% endfor %}
         </tbody>
       </table>

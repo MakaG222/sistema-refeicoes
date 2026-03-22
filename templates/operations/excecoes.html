@@ -7,9 +7,9 @@
   </div>
   <div class="card">
     <div class="card-title">Pesquisar utilizador</div>
-    <form method="get" style="display:flex;gap:.5rem">
+    <form method="get" class="search-form">
       <input type="hidden" name="d" value="{{ d }}">
-      <input type="text" name="nii" maxlength="32" placeholder="NII do utilizador" value="{{ nii_q }}" style="flex:1">
+      <input type="text" name="nii" maxlength="32" placeholder="NII do utilizador" value="{{ nii_q }}" class="flex-1">
       <button class="btn btn-primary">Pesquisar</button>
     </form>
   </div>
@@ -21,20 +21,20 @@
     <div class="alert alert-warn">⚠️ <strong>Utilizador com ausência activa hoje</strong> — esta exceção pode não ter efeito prático.</div>
     {% endif %}
     {% if ok_prazo %}
-    <div class="alert alert-ok" style="margin-bottom:.6rem">✅ O aluno ainda pode alterar refeições por si próprio (prazo não expirou). Esta exceção só é necessária se o aluno não conseguir aceder ao sistema.</div>
+    <div class="alert alert-ok mb-sm">✅ O aluno ainda pode alterar refeições por si próprio (prazo não expirou). Esta exceção só é necessária se o aluno não conseguir aceder ao sistema.</div>
     {% else %}
-    <div class="alert alert-info" style="margin-bottom:.6rem">🔒 Prazo expirado — o aluno já não pode alterar. Esta exceção é necessária para efetuar qualquer alteração.</div>
+    <div class="alert alert-info mb-sm">🔒 Prazo expirado — o aluno já não pode alterar. Esta exceção é necessária para efetuar qualquer alteração.</div>
     {% endif %}
     <form method="post">
       {{ csrf_input() }}
       <input type="hidden" name="nii" maxlength="32" value="{{ nii_q }}">
       <div class="grid grid-2">
         {% for name, checked, icon, label in chk_items %}
-        <label style="display:flex;align-items:center;gap:.6rem;cursor:pointer;padding:.6rem;border:1.5px solid var(--border);border-radius:9px;{{ 'background:#eafaf1;border-color:#a9dfbf' if checked else '' }}">
+        <label class="lic-label{{ ' lic-label-checked' if checked else '' }}">
           <input type="checkbox" name="{{ name }}" {{ "checked" if checked else "" }}> {{ icon }} {{ label }}
         </label>
         {% endfor %}
-        <div class="form-group" style="margin:0">
+        <div class="form-group filter-group">
           <label>🍽️ Almoço</label>
           <select name="almoco">
             <option value="">— Sem almoço —</option>
@@ -43,7 +43,7 @@
             {% endfor %}
           </select>
         </div>
-        <div class="form-group" style="margin:0">
+        <div class="form-group filter-group">
           <label>🌙 Jantar</label>
           <select name="jantar">
             <option value="">— Sem jantar —</option>
@@ -53,8 +53,8 @@
           </select>
         </div>
       </div>
-      <div style="margin-top:.8rem">
-        <label style="display:flex;align-items:center;gap:.6rem;cursor:pointer;padding:.6rem;border:1.5px solid var(--border);border-radius:9px;{{ 'background:#eafaf1;border-color:#a9dfbf' if ref_sai else '' }}">
+      <div class="mt-lg">
+        <label class="lic-label{{ ' lic-label-checked' if ref_sai else '' }}">
           <input type="checkbox" name="sai" {{ "checked" if ref_sai else "" }}> 🚪 Sai da unidade após jantar
         </label>
       </div>
@@ -62,10 +62,10 @@
       <button class="btn btn-ok">💾 Guardar exceção</button>
     </form>
     {% if aus_hist %}
-    <div style="margin-top:.75rem">
-      <div class="card-title" style="font-size:.8rem;margin-bottom:.4rem">📋 Ausências recentes</div>
+    <div class="mt-lg">
+      <div class="card-title hint mb-xs">📋 Ausências recentes</div>
       {% for ah in aus_hist %}
-      <div style="font-size:.78rem;padding:.22rem 0;border-bottom:1px solid var(--border);color:var(--text)">{{ ah.ausente_de }} → {{ ah.ausente_ate }} <span class="text-muted">{{ ah.motivo or "—" }}</span></div>
+      <div class="absence-line hint-sm">{{ ah.ausente_de }} → {{ ah.ausente_ate }} <span class="text-muted">{{ ah.motivo or "—" }}</span></div>
       {% endfor %}
     </div>
     {% endif %}

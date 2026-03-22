@@ -9,7 +9,7 @@
       <div class="grid grid-2">
         <div class="card">
           <div class="card-title">ℹ️ Informação pessoal</div>
-          <div style="display:flex;flex-direction:column;gap:.7rem;font-size:.9rem">
+          <div class="profile-info">
             <div><span class="text-muted">Nome completo:</span><br><strong>{{ aluno["Nome_completo"] }}</strong></div>
             <div><span class="text-muted">NII:</span><br><strong>{{ aluno["NII"] }}</strong></div>
             <div><span class="text-muted">NI:</span><br><strong>{{ aluno.get("NI") or "—" }}</strong></div>
@@ -17,46 +17,46 @@
             <div><span class="text-muted">📧 Email:</span><br><strong>{{ aluno.get("email") or "—" }}</strong></div>
             <div><span class="text-muted">📱 Telemóvel:</span><br><strong>{{ aluno.get("telemovel") or "—" }}</strong></div>
           </div>
-          <hr style="margin:1rem 0">
+          <hr class="mt-xl mb-xl">
           <div class="grid grid-2">
             <div class="stat-box"><div class="stat-num">{{ total_ref }}</div><div class="stat-lbl">Refeições registadas</div></div>
-            <div class="stat-box"><div class="stat-num" style="color:{{ "var(--warn)" if ausencias_ativas else "var(--ok)" }}">{{ ausencias_ativas }}</div><div class="stat-lbl">Ausências ativas</div></div>
+            <div class="stat-box"><div class="stat-num {{ "text-warn" if ausencias_ativas else "text-ok" }}">{{ ausencias_ativas }}</div><div class="stat-lbl">Ausências ativas</div></div>
           </div>
         </div>
         <div class="card">
           <div class="card-title">🍽️ Refeições de hoje — {{ hoje.strftime("%d/%m/%Y") }}</div>
-          <div style="display:grid;grid-template-columns:1fr 1fr;gap:.6rem;margin-bottom:.8rem">
-            <div style="padding:.6rem;background:#f8f9fa;border-radius:8px;text-align:center">
+          <div class="profile-grid">
+            <div class="profile-meal-box">
               <div class="text-muted small">☕ Pequeno Almoço</div>
-              <div style="margin-top:.3rem">{% if ref_hoje.get("pequeno_almoco") %}<span class="badge badge-ok">✅</span>{% else %}<span class="badge badge-muted">—</span>{% endif %}</div>
+              <div class="profile-meal-val">{% if ref_hoje.get("pequeno_almoco") %}<span class="badge badge-ok">✅</span>{% else %}<span class="badge badge-muted">—</span>{% endif %}</div>
             </div>
-            <div style="padding:.6rem;background:#f8f9fa;border-radius:8px;text-align:center">
+            <div class="profile-meal-box">
               <div class="text-muted small">🥐 Lanche</div>
-              <div style="margin-top:.3rem">{% if ref_hoje.get("lanche") %}<span class="badge badge-ok">✅</span>{% else %}<span class="badge badge-muted">—</span>{% endif %}</div>
+              <div class="profile-meal-val">{% if ref_hoje.get("lanche") %}<span class="badge badge-ok">✅</span>{% else %}<span class="badge badge-muted">—</span>{% endif %}</div>
             </div>
-            <div style="padding:.6rem;background:#f8f9fa;border-radius:8px;text-align:center">
+            <div class="profile-meal-box">
               <div class="text-muted small">🍽️ Almoço</div>
-              <div style="margin-top:.3rem"><strong>{{ ref_hoje.get("almoco") or "—" }}</strong></div>
+              <div class="profile-meal-val"><strong>{{ ref_hoje.get("almoco") or "—" }}</strong></div>
             </div>
-            <div style="padding:.6rem;background:#f8f9fa;border-radius:8px;text-align:center">
+            <div class="profile-meal-box">
               <div class="text-muted small">🌙 Jantar</div>
-              <div style="margin-top:.3rem"><strong>{{ ref_hoje.get("jantar_tipo") or "—" }}</strong></div>
+              <div class="profile-meal-val"><strong>{{ ref_hoje.get("jantar_tipo") or "—" }}</strong></div>
             </div>
           </div>
           {% if ausencias_ativas %}
-          <div class="alert alert-warn" style="font-size:.82rem">⚠️ Aluno com ausência ativa hoje</div>
+          <div class="alert alert-warn text-sm">⚠️ Aluno com ausência ativa hoje</div>
           {% endif %}
-          <div class="card-title" style="margin-top:.8rem">📋 Ausências recentes</div>
+          <div class="card-title mt-lg">📋 Ausências recentes</div>
           {% if aus_recentes %}
             {% for a in aus_recentes %}
-            <div style="font-size:.82rem;padding:.25rem 0;border-bottom:1px solid var(--border)">{{ a["ausente_de"] }} → {{ a["ausente_ate"] }} <span class="text-muted small">{{ a["motivo"] or "—" }}</span></div>
+            <div class="absence-line">{{ a["ausente_de"] }} → {{ a["ausente_ate"] }} <span class="text-muted small">{{ a["motivo"] or "—" }}</span></div>
             {% endfor %}
           {% else %}
             <div class="text-muted small">Sem ausências registadas.</div>
           {% endif %}
         </div>
       </div>
-      <div class="alert alert-info" style="font-size:.82rem">
+      <div class="alert alert-info text-sm">
         🔒 Estás no modo de visualização. Para editar dados do aluno, contacta o Comandante de Companhia ou o Administrador.
       </div>
     </div>
