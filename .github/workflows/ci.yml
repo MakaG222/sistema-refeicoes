@@ -32,7 +32,7 @@ jobs:
         run: pip-audit
 
       - name: Security scan (code)
-        run: pip install bandit && bandit -r core/ blueprints/ utils/ app.py -ll --skip B101,B104,B608,B704
+        run: pip install bandit && bandit -r core/ blueprints/ utils/ app.py -ll --skip B101,B104,B704
 
   test:
     name: Tests
