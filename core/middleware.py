@@ -156,6 +156,21 @@ def register_middleware(app: Flask) -> None:
 
     @app.errorhandler(500)
     def err500(e):
+        import sqlite3
+
+        # BD bloqueada → 503 com mensagem clara
+        orig = getattr(e, "original_exception", e)
+        if isinstance(orig, sqlite3.OperationalError) and "locked" in str(orig).lower():
+            app.logger.warning(
+                "DB locked: %s | path=%s user=%s",
+                orig,
+                request.path if request else "unknown",
+                session.get("user", {}).get("nii", "anonymous")
+                if session
+                else "no-session",
+            )
+            return render_template("errors/503.html", content=""), 503
+
         app.logger.critical(
             "CRITICAL ERROR: %s | path=%s method=%s user=%s",
             e,

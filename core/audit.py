@@ -11,39 +11,51 @@ def query_meal_log(
     q_campo: str = "",
     q_d0: str = "",
     q_d1: str = "",
-    limit: int = 500,
-) -> tuple[list[dict], int, list[str]]:
+    page: int = 1,
+    per_page: int = 50,
+) -> tuple[list[dict], int, int, list[str]]:
     """Consulta o log de alterações de refeições.
 
-    Retorna (rows, total_logs, campos_disponiveis).
+    Retorna (rows, filtered_total, total_logs, campos_disponiveis).
     """
-    sql = """SELECT l.id, l.alterado_em, u.NII, u.Nome_completo, u.ano,
-                    l.data_refeicao, l.campo, l.valor_antes, l.valor_depois, l.alterado_por
-             FROM refeicoes_log l LEFT JOIN utilizadores u ON u.id=l.utilizador_id
-             WHERE 1=1"""
+    where = "WHERE 1=1"
     args: list = []
 
     if q_nome:
-        sql += " AND u.Nome_completo LIKE ?"
+        where += " AND u.Nome_completo LIKE ?"
         args.append(f"%{q_nome}%")
     if q_por:
-        sql += " AND l.alterado_por LIKE ?"
+        where += " AND l.alterado_por LIKE ?"
         args.append(f"%{q_por}%")
     if q_campo:
-        sql += " AND l.campo=?"
+        where += " AND l.campo=?"
         args.append(q_campo)
     if q_d0:
-        sql += " AND l.data_refeicao >= ?"
+        where += " AND l.data_refeicao >= ?"
         args.append(q_d0)
     if q_d1:
-        sql += " AND l.data_refeicao <= ?"
+        where += " AND l.data_refeicao <= ?"
         args.append(q_d1)
 
-    sql += " ORDER BY l.alterado_em DESC LIMIT ?"
-    args.append(limit)
+    base_sql = (
+        "FROM refeicoes_log l LEFT JOIN utilizadores u ON u.id=l.utilizador_id " + where
+    )
+
+    offset = (page - 1) * per_page
 
     with db() as conn:
-        rows = conn.execute(sql, args).fetchall()
+        filtered_total = conn.execute(
+            f"SELECT COUNT(*) c {base_sql}",  # nosec B608
+            args,
+        ).fetchone()["c"]
+
+        rows = conn.execute(
+            f"SELECT l.id, l.alterado_em, u.NII, u.Nome_completo, u.ano,"  # nosec B608
+            f" l.data_refeicao, l.campo, l.valor_antes, l.valor_depois, l.alterado_por"
+            f" {base_sql} ORDER BY l.alterado_em DESC LIMIT ? OFFSET ?",
+            [*args, per_page, offset],
+        ).fetchall()
+
         total_logs = conn.execute("SELECT COUNT(*) c FROM refeicoes_log").fetchone()[
             "c"
         ]
@@ -54,7 +66,7 @@ def query_meal_log(
             ).fetchall()
         ]
 
-    return rows, total_logs, campos_disponiveis
+    return rows, filtered_total, total_logs, campos_disponiveis
 
 
 def query_admin_audit(

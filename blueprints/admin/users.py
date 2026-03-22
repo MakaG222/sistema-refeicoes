@@ -245,8 +245,11 @@ def admin_utilizadores():
     q = request.args.get("q", "").strip()
     ano_f = request.args.get("ano", "all")
     edit_nii = request.args.get("edit_contactos", "")
+    page = max(1, int(request.args.get("page", "1") or "1"))
+    per_page = 50
 
-    rows = list_users(q if q else None, ano_f)
+    rows, total = list_users(q if q else None, ano_f, page=page, per_page=per_page)
+    total_pages = max(1, (total + per_page - 1) // per_page)
 
     edit_user_nii = request.args.get("edit_user", "")
     edit_user_row = next((r for r in rows if r["NII"] == edit_user_nii), None)
@@ -255,6 +258,9 @@ def admin_utilizadores():
     return render_template(
         "admin/utilizadores.html",
         rows=rows,
+        total=total,
+        page=page,
+        total_pages=total_pages,
         q=q,
         ano_f=ano_f,
         edit_user_nii=edit_user_nii,
@@ -317,6 +323,32 @@ def admin_importar_csv():
                 if not nii or not ni or not nome:
                     erros.append(f"Linha {i}: NII, NI e Nome são obrigatórios.")
                     continue
+
+                # Validação rigorosa com os mesmos validators do formulário
+                nii_v = _val_nii(nii)
+                ni_v = _val_ni(ni)
+                nome_v = _val_nome(nome)
+                if not nii_v:
+                    erros.append(
+                        f"Linha {i}: NII '{nii}' inválido (só alfanuméricos, máx 32 chars)."
+                    )
+                    continue
+                if ni_v is None:
+                    erros.append(f"Linha {i} ({nii}): NI '{ni}' inválido.")
+                    continue
+                if not nome_v:
+                    erros.append(
+                        f"Linha {i} ({nii}): Nome inválido ou demasiado longo."
+                    )
+                    continue
+                nii, ni, nome = nii_v, ni_v, nome_v
+
+                perfil_v = _val_perfil(perfil)
+                if not perfil_v:
+                    erros.append(f"Linha {i} ({nii}): perfil '{perfil}' inválido.")
+                    continue
+                perfil = perfil_v
+
                 try:
                     ano = int(ano_raw)
                     if ano not in [a for a, _ in ANOS_OPCOES]:

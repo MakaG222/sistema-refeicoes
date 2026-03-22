@@ -6,7 +6,7 @@
     <div class="card-title">🔍 Filtros
       <span class="badge badge-muted ml-md text-xs">{{ total_logs }} registos totais</span>
       {% if filtros_ativos %}
-      <span class="badge badge-warn ml-sm text-xs">A mostrar {{ mostrando }}</span>
+      <span class="badge badge-warn ml-sm text-xs">{{ filtered_total }} filtrados</span>
       {% endif %}
     </div>
     <form method="get" class="filter-form">
@@ -35,14 +35,6 @@
         <label class="filter-label">📅 até</label>
         <input type="date" name="d1" value="{{ q_d1 }}" class="filter-input w-auto">
       </div>
-      <div class="form-group filter-group">
-        <label class="filter-label">📊 Máx. linhas</label>
-        <select name="limite" class="filter-input w-auto">
-          {% for n in [100, 200, 500, 1000, 2000, 5000] %}
-          <option value="{{ n }}" {{ "selected" if q_limit|string == n|string }}>{{ n }} linhas</option>
-          {% endfor %}
-        </select>
-      </div>
       <button class="btn btn-primary btn-sm items-end">🔍 Filtrar</button>
       {% if filtros_ativos %}
       <a class="btn btn-ghost btn-sm" href="{{ url_for('.admin_log') }}">✕ Limpar filtros</a>
@@ -52,7 +44,7 @@
   <div class="card">
     <div class="card-title">Resultados
       <span class="badge badge-info ml-md text-xs fw-normal">
-        {{ mostrando }} {{ "(filtrado)" if filtros_ativos else "mais recentes" }}
+        P&aacute;gina {{ page }}/{{ total_pages }} ({{ filtered_total }} {{ "filtrados" if filtros_ativos else "registos" }})
       </span>
     </div>
     <div class="table-wrap">
@@ -90,8 +82,16 @@
         </tbody>
       </table>
     </div>
-    {% if mostrando == q_limit %}
-    <div class="hint mt-md">💡 A mostrar os primeiros {{ q_limit }} resultados. Usa os filtros para refinar.</div>
+    {% if total_pages > 1 %}
+    <div class="d-flex gap-sm flex-wrap mt-md" role="navigation" aria-label="Paginação">
+      {% if page > 1 %}
+      <a class="btn btn-ghost btn-sm" href="?q_nome={{ q_nome }}&q_por={{ q_por }}&q_campo={{ q_campo }}&d0={{ q_d0 }}&d1={{ q_d1 }}&page={{ page - 1 }}">← Anterior</a>
+      {% endif %}
+      <span class="text-muted text-sm">Página {{ page }} de {{ total_pages }}</span>
+      {% if page < total_pages %}
+      <a class="btn btn-ghost btn-sm" href="?q_nome={{ q_nome }}&q_por={{ q_por }}&q_campo={{ q_campo }}&d0={{ q_d0 }}&d1={{ q_d1 }}&page={{ page + 1 }}">Seguinte →</a>
+      {% endif %}
+    </div>
     {% endif %}
   </div>
 </div>
