@@ -12,7 +12,12 @@ from __future__ import annotations
 import click
 
 from core.auth_db import PERFIS_ADMIN, PERFIS_TESTE
-from core.backup import ensure_daily_backup
+from core.backup import (
+    ensure_daily_backup,
+    list_backups,
+    restore_backup,
+    validate_backup,
+)
 from core.database import db, ensure_schema
 from core.migrations import run_migrations
 from utils.passwords import generate_password_hash
@@ -126,3 +131,68 @@ def migrate_command() -> None:
         click.echo(f"{len(applied)} migração(ões) aplicada(s).")
     else:
         click.echo("Base de dados já está atualizada.")
+
+
+@click.command("backup")
+def backup_command() -> None:
+    """Cria um backup manual da base de dados."""
+    from core.backup import do_backup
+
+    if do_backup():
+        click.echo("Backup criado com sucesso.")
+    else:
+        click.echo("Falha ao criar backup.", err=True)
+
+
+@click.command("backup-list")
+def backup_list_command() -> None:
+    """Lista backups disponíveis."""
+    backups = list_backups()
+    if not backups:
+        click.echo("Nenhum backup encontrado.")
+        return
+    click.echo(f"{'Ficheiro':<45} {'Tamanho':>10} {'Data':>20}")
+    click.echo("-" * 78)
+    for b in backups:
+        click.echo(f"{b['name']:<45} {b['size_mb']:>8.2f} MB {b['modified']:>20}")
+    click.echo(f"\n{len(backups)} backup(s) disponíveis.")
+
+
+@click.command("restore")
+@click.argument("backup_file")
+@click.option("--yes", "-y", is_flag=True, help="Confirmar restauro sem prompt.")
+def restore_command(backup_file: str, yes: bool) -> None:
+    """Restaura a BD a partir de BACKUP_FILE.
+
+    Cria automaticamente um backup de segurança antes do restauro.
+    A app deve ser reiniciada após o restauro.
+    """
+    import os
+
+    if not os.path.exists(backup_file):
+        # Tentar na pasta de backups
+        from core.constants import BACKUP_DIR
+
+        candidate = os.path.join(BACKUP_DIR, backup_file)
+        if os.path.exists(candidate):
+            backup_file = candidate
+        else:
+            click.echo(f"Ficheiro não encontrado: {backup_file}", err=True)
+            raise SystemExit(1)
+
+    valid, reason = validate_backup(backup_file)
+    if not valid:
+        click.echo(f"Backup inválido: {reason}", err=True)
+        raise SystemExit(1)
+
+    click.echo(f"Ficheiro: {backup_file}")
+    if not yes:
+        click.confirm("Restaurar? A BD actual será substituída", abort=True)
+
+    ok, msg = restore_backup(backup_file)
+    if ok:
+        click.echo(f"✓ {msg}")
+        click.echo("⚠  Reinicia a aplicação para usar a BD restaurada.")
+    else:
+        click.echo(f"✗ {msg}", err=True)
+        raise SystemExit(1)

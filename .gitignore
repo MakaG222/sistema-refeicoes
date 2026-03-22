@@ -38,6 +38,7 @@ Thumbs.db
 # Secrets
 .env
 .env.*
+!.env.example
 credentials.json
 
 # Coverage
