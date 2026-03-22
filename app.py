@@ -13,7 +13,14 @@ from werkzeug.middleware.proxy_fix import ProxyFix
 
 sys.path.insert(0, os.path.dirname(__file__))
 import config as cfg  # noqa: E402
-from core.bootstrap import init_app_once, migrate_command, seed_dev_command  # noqa: E402
+from core.bootstrap import (  # noqa: E402
+    backup_command,
+    backup_list_command,
+    init_app_once,
+    migrate_command,
+    restore_command,
+    seed_dev_command,
+)
 from core.constants import BASE_DADOS  # noqa: E402
 from core.database import close_request_db  # noqa: E402
 from core.middleware import register_middleware  # noqa: E402
@@ -138,6 +145,9 @@ register_middleware(app)
 # ── CLI commands ─────────────────────────────────────────────────────────
 app.cli.add_command(seed_dev_command)
 app.cli.add_command(migrate_command)
+app.cli.add_command(backup_command)
+app.cli.add_command(backup_list_command)
+app.cli.add_command(restore_command)
 
 # Expor constantes de config usadas localmente
 CRON_API_TOKEN = cfg.CRON_API_TOKEN

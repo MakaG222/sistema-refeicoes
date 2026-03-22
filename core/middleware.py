@@ -137,6 +137,10 @@ def register_middleware(app: Flask) -> None:
     def err400(e):
         return render_template("errors/400.html", content=""), 400
 
+    @app.errorhandler(403)
+    def err403(e):
+        return render_template("errors/403.html", content=""), 403
+
     @app.errorhandler(404)
     def err404(e):
         return render_template("errors/404.html", content=""), 404

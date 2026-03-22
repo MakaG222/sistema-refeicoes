@@ -25,7 +25,7 @@ core/                   Camada de serviço (zero dependência de Flask request)
   calendar.py           Calendário operacional
   menus.py              Ementas diárias
   companhias.py         Gestão de turmas/companhias e promoções
-  backup.py             Backup diário automático
+  backup.py             Backup diário, restauro, validação, limpeza automática
   middleware.py         Before/after request, CSP, métricas, error handlers
   constants.py          Constantes globais (paths, limites, perfis dev)
 
@@ -90,7 +90,21 @@ flask seed-dev
 
 # Aplicar migrações pendentes
 flask migrate
+
+# Backup manual
+flask backup
+
+# Listar backups disponíveis
+flask backup-list
+
+# Restaurar BD a partir de backup
+flask restore backups/sistema_20260322.db
 ```
+
+### Documentação operacional
+
+Ver [OPERATIONS.md](OPERATIONS.md) para procedimentos detalhados de:
+instalação, backup/restauro, atualização, configuração de admins e troubleshooting.
 
 ## Testes e qualidade
 
