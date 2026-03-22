@@ -68,6 +68,15 @@ def register_middleware(app: Flask) -> None:
 
         session.permanent = True
 
+        # HTTPS redirect em produção (via X-Forwarded-Proto do proxy)
+        if (
+            app.config.get("SESSION_COOKIE_SECURE")
+            and request.headers.get("X-Forwarded-Proto", "https") == "http"
+            and request.endpoint != "api.health"
+        ):
+            url = request.url.replace("http://", "https://", 1)
+            return redirect(url, code=301)
+
         # WAL checkpoint periódico
         now = time.time()
         if now - _last_wal_checkpoint > _WAL_CHECKPOINT_INTERVAL:

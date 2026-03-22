@@ -78,6 +78,10 @@ def aluno_licenca_fds():
         flash("Conta de sistema — funcionalidade não disponível.", "error")
         return redirect(url_for(".aluno_home"))
 
+    if not _check_rate_limit("_meal_ops"):
+        flash("Demasiadas alterações. Aguarda um minuto.", "warn")
+        return redirect(url_for(".aluno_home"))
+
     sexta_str = request.form.get("sexta", "")
     acao = request.form.get("acao_fds", "marcar")  # "marcar" ou "cancelar"
     sexta = _parse_date_strict(sexta_str)
@@ -221,6 +225,20 @@ def aluno_home():
     )
 
 
+def _check_rate_limit(key: str, max_ops: int = 30, window: int = 60) -> bool:
+    """Rate limiter por sessão. Retorna True se dentro do limite."""
+    import time as _t
+
+    now = _t.time()
+    ops = session.get(key, [])
+    ops = [t for t in ops if now - t < window]
+    if len(ops) >= max_ops:
+        return False
+    ops.append(now)
+    session[key] = ops
+    return True
+
+
 @aluno_bp.route("/aluno/editar/<d>", methods=["GET", "POST"])
 @login_required
 def aluno_editar(d):
@@ -259,6 +277,9 @@ def aluno_editar(d):
     pode_lic, motivo_lic = _pode_marcar_licenca(uid, dt, ano_aluno, ni_aluno)
 
     if request.method == "POST":
+        if not _check_rate_limit("_meal_ops"):
+            flash("Demasiadas alterações. Aguarda um minuto.", "warn")
+            return redirect(url_for(".aluno_home"))
         pa = 1 if request.form.get("pa") in ("1", "on") else 0
         lanche = 1 if request.form.get("lanche") in ("1", "on") else 0
         alm = _val_refeicao(request.form.get("almoco"))
@@ -358,6 +379,9 @@ def aluno_ausencias():
         return redirect(url_for(".aluno_home"))
 
     if request.method == "POST":
+        if not _check_rate_limit("_meal_ops"):
+            flash("Demasiadas alterações. Aguarda um minuto.", "warn")
+            return redirect(url_for(".aluno_ausencias"))
         acao = request.form.get("acao", "")
         if acao == "criar":
             de = request.form.get("de", "")

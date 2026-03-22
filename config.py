@@ -43,7 +43,7 @@ class Config:
     SESSION_COOKIE_SAMESITE = "Lax"
     SESSION_COOKIE_SECURE = is_production  # HTTPS obrigatório em produção
     SESSION_PERMANENT = True  # controlada via PERMANENT_SESSION_LIFETIME
-    PERMANENT_SESSION_LIFETIME = 180  # 3 min de inatividade → sessão expira
+    PERMANENT_SESSION_LIFETIME = 600  # 10 min de inatividade → sessão expira
     PREFERRED_URL_SCHEME = "https" if is_production else "http"
 
     # JSON

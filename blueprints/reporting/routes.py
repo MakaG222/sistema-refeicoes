@@ -226,36 +226,48 @@ def exportar_mensal():
         except ImportError:
             fmt = "csv"
 
-    buf = io.StringIO()
-    writer = _csv.writer(buf, delimiter=";")
-    writer.writerow(HEADERS)
-    for di, tipo, t, alm, jan in dias_data:
-        writer.writerow(make_row(di, tipo, t, alm, jan))
+    # Streaming CSV — evita carregar tudo em memória de uma vez
     total_alm = totais["alm_norm"] + totais["alm_veg"] + totais["alm_dieta"]
     total_jan = totais["jan_norm"] + totais["jan_veg"] + totais["jan_dieta"]
-    writer.writerow(
-        [
-            "TOTAL",
-            "",
-            "",
-            totais["pa"],
-            totais["lan"],
-            totais["alm_norm"],
-            totais["alm_veg"],
-            totais["alm_dieta"],
-            totais.get("alm_estufa", 0),
-            total_alm,
-            totais["jan_norm"],
-            totais["jan_veg"],
-            totais["jan_dieta"],
-            total_jan,
-            totais["jan_sai"],
-            totais.get("jan_estufa", 0),
-        ]
-    )
-    csv_bytes = ("\ufeff" + buf.getvalue()).encode("utf-8")
+
+    def generate_csv():
+        buf = io.StringIO()
+        writer = _csv.writer(buf, delimiter=";")
+        # BOM para Excel
+        yield "\ufeff"
+        writer.writerow(HEADERS)
+        yield buf.getvalue()
+        for di, tipo, t, alm, jan in dias_data:
+            buf.seek(0)
+            buf.truncate(0)
+            writer.writerow(make_row(di, tipo, t, alm, jan))
+            yield buf.getvalue()
+        buf.seek(0)
+        buf.truncate(0)
+        writer.writerow(
+            [
+                "TOTAL",
+                "",
+                "",
+                totais["pa"],
+                totais["lan"],
+                totais["alm_norm"],
+                totais["alm_veg"],
+                totais["alm_dieta"],
+                totais.get("alm_estufa", 0),
+                total_alm,
+                totais["jan_norm"],
+                totais["jan_veg"],
+                totais["jan_dieta"],
+                total_jan,
+                totais["jan_sai"],
+                totais.get("jan_estufa", 0),
+            ]
+        )
+        yield buf.getvalue()
+
     return Response(
-        csv_bytes,
+        generate_csv(),
         headers={
             "Content-Disposition": f"attachment; filename={nome_ficheiro}.csv",
             "Content-Type": "text/csv; charset=utf-8-sig",
