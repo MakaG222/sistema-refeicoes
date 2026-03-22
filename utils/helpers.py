@@ -88,6 +88,8 @@ def _refeicao_set(
     jan: str | None,
     sai: int,
     alterado_por: str = "sistema",
+    alm_estufa: int = 0,
+    jan_estufa: int = 0,
 ) -> bool:
     """Guarda uma refeição completa."""
     r = {
@@ -96,6 +98,8 @@ def _refeicao_set(
         "almoco": alm or None,
         "jantar_tipo": jan or None,
         "jantar_sai_unidade": sai,
+        "almoco_estufa": alm_estufa,
+        "jantar_estufa": jan_estufa,
     }
     return refeicao_save(uid, dt, r, alterado_por=alterado_por)
 

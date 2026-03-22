@@ -78,10 +78,12 @@ def exportar_mensal():
             "alm_norm",
             "alm_veg",
             "alm_dieta",
+            "alm_estufa",
             "jan_norm",
             "jan_veg",
             "jan_dieta",
             "jan_sai",
+            "jan_estufa",
         ]
     }
     _men_map, _men_empty = get_totais_periodo(d0.isoformat(), d1.isoformat())
@@ -108,12 +110,14 @@ def exportar_mensal():
         "Alm. Normal",
         "Alm. Veg.",
         "Alm. Dieta",
+        "Alm. Estufa",
         "Total Almoços",
         "Jan. Normal",
         "Jan. Veg.",
         "Jan. Dieta",
         "Total Jantares",
         "Sai Unidade",
+        "Jan. Estufa",
     ]
 
     def make_row(di, tipo, t, alm, jan):
@@ -126,12 +130,14 @@ def exportar_mensal():
             t["alm_norm"],
             t["alm_veg"],
             t["alm_dieta"],
+            t.get("alm_estufa", 0),
             alm,
             t["jan_norm"],
             t["jan_veg"],
             t["jan_dieta"],
             jan,
             t["jan_sai"],
+            t.get("jan_estufa", 0),
         ]
 
     nome_ficheiro = f"relatorio_mensal_{d0.strftime('%Y-%m')}"
@@ -185,12 +191,14 @@ def exportar_mensal():
                 totais["alm_norm"],
                 totais["alm_veg"],
                 totais["alm_dieta"],
+                totais.get("alm_estufa", 0),
                 total_alm,
                 totais["jan_norm"],
                 totais["jan_veg"],
                 totais["jan_dieta"],
                 total_jan,
                 totais["jan_sai"],
+                totais.get("jan_estufa", 0),
             ]
             total_fill = PatternFill("solid", fgColor="D5F5E3")
             total_font = Font(bold=True)
@@ -235,12 +243,14 @@ def exportar_mensal():
             totais["alm_norm"],
             totais["alm_veg"],
             totais["alm_dieta"],
+            totais.get("alm_estufa", 0),
             total_alm,
             totais["jan_norm"],
             totais["jan_veg"],
             totais["jan_dieta"],
             total_jan,
             totais["jan_sai"],
+            totais.get("jan_estufa", 0),
         ]
     )
     csv_bytes = ("\ufeff" + buf.getvalue()).encode("utf-8")
@@ -469,10 +479,12 @@ def dashboard_semanal():
         "alm_norm",
         "alm_veg",
         "alm_dieta",
+        "alm_estufa",
         "jan_norm",
         "jan_veg",
         "jan_dieta",
         "jan_sai",
+        "jan_estufa",
     ]
     totais_semana = {k: sum(d["t"][k] for d in dias) for k in _keys}
     totais_semana["alm_total"] = (
@@ -693,10 +705,12 @@ def exportar_relatorio():
             "alm_norm",
             "alm_veg",
             "alm_dieta",
+            "alm_estufa",
             "jan_norm",
             "jan_veg",
             "jan_dieta",
             "jan_sai",
+            "jan_estufa",
         ]
     }
     _exp_map, _exp_empty = get_totais_periodo(d0.isoformat(), d1.isoformat())
@@ -722,12 +736,14 @@ def exportar_relatorio():
         "Alm. Normal",
         "Alm. Veg.",
         "Alm. Dieta",
+        "Alm. Estufa",
         "Total Almoços",
         "Jan. Normal",
         "Jan. Veg.",
         "Jan. Dieta",
         "Total Jantares",
         "Sai Unidade",
+        "Jan. Estufa",
     ]
 
     def make_row(di, tipo, t, alm, jan):
@@ -740,12 +756,14 @@ def exportar_relatorio():
             t["alm_norm"],
             t["alm_veg"],
             t["alm_dieta"],
+            t.get("alm_estufa", 0),
             alm,
             t["jan_norm"],
             t["jan_veg"],
             t["jan_dieta"],
             jan,
             t["jan_sai"],
+            t.get("jan_estufa", 0),
         ]
 
     nome = f"relatorio_{d0_str}_a_{d1.isoformat()}"
@@ -798,12 +816,14 @@ def exportar_relatorio():
                 totais["alm_norm"],
                 totais["alm_veg"],
                 totais["alm_dieta"],
+                totais.get("alm_estufa", 0),
                 total_alm,
                 totais["jan_norm"],
                 totais["jan_veg"],
                 totais["jan_dieta"],
                 total_jan,
                 totais["jan_sai"],
+                totais.get("jan_estufa", 0),
             ]
             total_fill = PatternFill("solid", fgColor="D5E8F0")
             total_font = Font(bold=True)
@@ -851,12 +871,14 @@ def exportar_relatorio():
             totais["alm_norm"],
             totais["alm_veg"],
             totais["alm_dieta"],
+            totais.get("alm_estufa", 0),
             total_alm,
             totais["jan_norm"],
             totais["jan_veg"],
             totais["jan_dieta"],
             total_jan,
             totais["jan_sai"],
+            totais.get("jan_estufa", 0),
         ]
     )
     csv_bytes = ("\ufeff" + buf.getvalue()).encode("utf-8")

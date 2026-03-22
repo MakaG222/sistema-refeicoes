@@ -73,9 +73,9 @@
             </td>
             <td>{% if a.pequeno_almoco %}<span class="meal-chip chip-ok">PA ✓</span>{% else %}<span class="meal-chip chip-no">PA ✗</span>{% endif %}</td>
             <td>{% if a.lanche %}<span class="meal-chip chip-ok">Lan ✓</span>{% else %}<span class="meal-chip chip-no">Lan ✗</span>{% endif %}</td>
-            <td>{% if a.almoco %}<span class="meal-chip chip-type">{{ a.almoco[:3] }} ✓</span>{% else %}<span class="meal-chip chip-no">Almoço ✗</span>{% endif %}</td>
+            <td>{% if a.almoco %}<span class="meal-chip chip-type">{{ a.almoco[:3] }} ✓</span>{% if a.almoco_estufa %}<span class="badge" style="font-size:.65rem;color:#f39c12">♨️</span>{% endif %}{% else %}<span class="meal-chip chip-no">Almoço ✗</span>{% endif %}</td>
             <td>
-              {% if a.jantar_tipo %}<span class="meal-chip chip-type">{{ a.jantar_tipo[:3] }} ✓</span>{% else %}<span class="meal-chip chip-no">Jantar ✗</span>{% endif %}
+              {% if a.jantar_tipo %}<span class="meal-chip chip-type">{{ a.jantar_tipo[:3] }} ✓</span>{% if a.jantar_estufa %}<span class="badge" style="font-size:.65rem;color:#f39c12">♨️</span>{% endif %}{% else %}<span class="meal-chip chip-no">Jantar ✗</span>{% endif %}
               {% if a.jantar_sai_unidade %}<span class="badge badge-muted" style="font-size:.65rem">🚪</span>{% endif %}
             </td>
             <td>

@@ -264,6 +264,8 @@ def aluno_editar(d):
         alm = _val_refeicao(request.form.get("almoco"))
         jan = _val_refeicao(request.form.get("jantar"))
         sai = 0 if detido else (1 if request.form.get("sai") else 0)
+        alm_estufa = 1 if (alm and request.form.get("almoco_estufa") == "1") else 0
+        jan_estufa = 1 if (jan and request.form.get("jantar_estufa") == "1") else 0
 
         # Processar licença (antes_jantar / apos_jantar / vazio)
         licenca_tipo = request.form.get("licenca", "")
@@ -281,7 +283,18 @@ def aluno_editar(d):
         else:
             delete_licenca(uid, dt.isoformat())
 
-        if _refeicao_set(uid, dt, pa, lanche, alm, jan, sai, alterado_por=u["nii"]):
+        if _refeicao_set(
+            uid,
+            dt,
+            pa,
+            lanche,
+            alm,
+            jan,
+            sai,
+            alterado_por=u["nii"],
+            alm_estufa=alm_estufa,
+            jan_estufa=jan_estufa,
+        ):
             flash("Refeições atualizadas!", "ok")
         else:
             flash("Erro ao guardar.", "error")
@@ -293,6 +306,8 @@ def aluno_editar(d):
     alm_val = r.get("almoco") or ""
     jan_val = r.get("jantar_tipo") or ""
     jan_blocked = licenca_atual == "antes_jantar"
+    alm_estufa = r.get("almoco_estufa", 0)
+    jan_estufa = r.get("jantar_estufa", 0)
 
     # Ementa do dia
     menu = get_menu_do_dia(dt)
@@ -319,6 +334,8 @@ def aluno_editar(d):
         alm_val=alm_val,
         jan_val=jan_val,
         jan_blocked=jan_blocked,
+        alm_estufa=alm_estufa,
+        jan_estufa=jan_estufa,
         licenca_atual=licenca_atual,
         pode_lic=pode_lic,
         motivo_lic=motivo_lic,
@@ -428,7 +445,16 @@ def exportar_historico_aluno():
     if uid:
         rows = get_aluno_historico(uid, (hoje - timedelta(days=30)).isoformat())
 
-    headers = ["Data", "PA", "Lanche", "Almoço", "Jantar", "Sai Unidade"]
+    headers = [
+        "Data",
+        "PA",
+        "Lanche",
+        "Almoço",
+        "♨️ Alm",
+        "Jantar",
+        "Sai Unidade",
+        "♨️ Jan",
+    ]
 
     def make_row(r):
         return [
@@ -436,8 +462,10 @@ def exportar_historico_aluno():
             "Sim" if r["pequeno_almoco"] else "Não",
             "Sim" if r["lanche"] else "Não",
             r["almoco"] or "—",
+            "Sim" if r["almoco_estufa"] else "Não",
             r["jantar_tipo"] or "—",
             "Sim" if r["jantar_sai_unidade"] else "Não",
+            "Sim" if r["jantar_estufa"] else "Não",
         ]
 
     nome_ficheiro = f"historico_{u['nii']}_{hoje.isoformat()}"

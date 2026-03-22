@@ -99,32 +99,32 @@
     <div class="card-title">📋 Tabela detalhada</div>
     <div class="table-wrap">
       <table>
-        <thead><tr><th>Dia</th><th>PA</th><th>Lan</th><th>Alm N</th><th>Alm V</th><th>Alm D</th><th>Jan N</th><th>Jan V</th><th>Jan D</th>{% if perfil != 'cozinha' %}<th class="center">Sai</th>{% endif %}</tr></thead>
+        <thead><tr><th>Dia</th><th>PA</th><th>Lan</th><th>Alm N</th><th>Alm V</th><th>Alm D</th><th>♨️ Alm</th><th>Jan N</th><th>Jan V</th><th>Jan D</th>{% if perfil != 'cozinha' %}<th class="center">Sai</th>{% endif %}<th>♨️ Jan</th></tr></thead>
         <tbody>
           {% for d in dias %}
           <tr style="background:{{ d.col_bg }}">
             <td><strong style="color:{{ d.dow_col }}">{{ d.dow }}</strong> {{ d.data_fmt }}</td>
             <td class="center">{{ d.t.pa }}</td><td class="center">{{ d.t.lan }}</td>
-            <td class="center">{{ d.t.alm_norm }}</td><td class="center">{{ d.t.alm_veg }}</td><td class="center">{{ d.t.alm_dieta }}</td>
+            <td class="center">{{ d.t.alm_norm }}</td><td class="center">{{ d.t.alm_veg }}</td><td class="center">{{ d.t.alm_dieta }}</td><td class="center" style="color:#f39c12">{{ d.t.alm_estufa }}</td>
             <td class="center">{{ d.t.jan_norm }}</td><td class="center">{{ d.t.jan_veg }}</td><td class="center">{{ d.t.jan_dieta }}</td>
-            {% if perfil != 'cozinha' %}<td class="center">{{ d.t.jan_sai }}</td>{% endif %}
+            {% if perfil != 'cozinha' %}<td class="center">{{ d.t.jan_sai }}</td>{% endif %}<td class="center" style="color:#f39c12">{{ d.t.jan_estufa }}</td>
           </tr>
           {% endfor %}
           {# Totais semana #}
           <tr style="background:#f0f4f8;font-weight:700;border-top:2px solid #0a2d4e">
             <td>Total semana</td>
             <td class="center">{{ totais_semana.pa }}</td><td class="center">{{ totais_semana.lan }}</td>
-            <td class="center">{{ totais_semana.alm_norm }}</td><td class="center">{{ totais_semana.alm_veg }}</td><td class="center">{{ totais_semana.alm_dieta }}</td>
+            <td class="center">{{ totais_semana.alm_norm }}</td><td class="center">{{ totais_semana.alm_veg }}</td><td class="center">{{ totais_semana.alm_dieta }}</td><td class="center" style="color:#f39c12">{{ totais_semana.alm_estufa }}</td>
             <td class="center">{{ totais_semana.jan_norm }}</td><td class="center">{{ totais_semana.jan_veg }}</td><td class="center">{{ totais_semana.jan_dieta }}</td>
-            {% if perfil != 'cozinha' %}<td class="center"><strong>{{ totais_semana.jan_sai }}</strong></td>{% endif %}
+            {% if perfil != 'cozinha' %}<td class="center"><strong>{{ totais_semana.jan_sai }}</strong></td>{% endif %}<td class="center" style="color:#f39c12">{{ totais_semana.jan_estufa }}</td>
           </tr>
           {# Semana anterior #}
           <tr style="background:#fef9e7;font-size:.82rem">
             <td>Semana anterior</td>
             <td class="center">{{ totais_prev.pa }}</td><td class="center">{{ totais_prev.lan }}</td>
-            <td class="center">{{ totais_prev.alm_norm }}</td><td class="center">{{ totais_prev.alm_veg }}</td><td class="center">{{ totais_prev.alm_dieta }}</td>
+            <td class="center">{{ totais_prev.alm_norm }}</td><td class="center">{{ totais_prev.alm_veg }}</td><td class="center">{{ totais_prev.alm_dieta }}</td><td class="center" style="color:#f39c12">{{ totais_prev.alm_estufa }}</td>
             <td class="center">{{ totais_prev.jan_norm }}</td><td class="center">{{ totais_prev.jan_veg }}</td><td class="center">{{ totais_prev.jan_dieta }}</td>
-            {% if perfil != 'cozinha' %}<td class="center">{{ totais_prev.jan_sai }}</td>{% endif %}
+            {% if perfil != 'cozinha' %}<td class="center">{{ totais_prev.jan_sai }}</td>{% endif %}<td class="center" style="color:#f39c12">{{ totais_prev.jan_estufa }}</td>
           </tr>
           {# Variação #}
           <tr style="background:#fff;font-size:.82rem">
@@ -134,10 +134,12 @@
             <td class="center">{{ delta(totais_semana.alm_norm, totais_prev.alm_norm) }}</td>
             <td class="center">{{ delta(totais_semana.alm_veg, totais_prev.alm_veg) }}</td>
             <td class="center">{{ delta(totais_semana.alm_dieta, totais_prev.alm_dieta) }}</td>
+            <td class="center" style="color:#f39c12">{{ delta(totais_semana.alm_estufa, totais_prev.alm_estufa) }}</td>
             <td class="center">{{ delta(totais_semana.jan_norm, totais_prev.jan_norm) }}</td>
             <td class="center">{{ delta(totais_semana.jan_veg, totais_prev.jan_veg) }}</td>
             <td class="center">{{ delta(totais_semana.jan_dieta, totais_prev.jan_dieta) }}</td>
             {% if perfil != 'cozinha' %}<td class="center">{{ delta(totais_semana.jan_sai, totais_prev.jan_sai) }}</td>{% endif %}
+            <td class="center" style="color:#f39c12">{{ delta(totais_semana.jan_estufa, totais_prev.jan_estufa) }}</td>
           </tr>
         </tbody>
       </table>

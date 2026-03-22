@@ -21,7 +21,7 @@
   <div class="card">
     <div class="table-wrap">
       <table>
-        <thead><tr><th>Dia</th><th>PA</th><th>Lanche</th><th>Alm N</th><th>Alm V</th><th>Alm D</th><th>Jan N</th><th>Jan V</th><th>Jan D</th>{% if show_sai %}<th>Sai</th>{% endif %}</tr></thead>
+        <thead><tr><th>Dia</th><th>PA</th><th>Lanche</th><th>Alm N</th><th>Alm V</th><th>Alm D</th><th>♨️ Alm</th><th>Jan N</th><th>Jan V</th><th>Jan D</th>{% if show_sai %}<th>Sai</th>{% endif %}<th>♨️ Jan</th></tr></thead>
         <tbody>
           {% for r in dias %}
           {% set is_off = r.tipo in ("feriado", "exercicio") %}
@@ -36,17 +36,17 @@
           <tr style="{{ st }}">
             <td><strong>{{ r.abrev }}</strong> {{ r.data_fmt }} {{ r.icone }}</td>
             <td class="center">{{ r.t.pa }}</td><td class="center">{{ r.t.lan }}</td>
-            <td class="center">{{ r.t.alm_norm }}</td><td class="center">{{ r.t.alm_veg }}</td><td class="center">{{ r.t.alm_dieta }}</td>
+            <td class="center">{{ r.t.alm_norm }}</td><td class="center">{{ r.t.alm_veg }}</td><td class="center">{{ r.t.alm_dieta }}</td><td class="center" style="color:#f39c12">{{ r.t.alm_estufa }}</td>
             <td class="center">{{ r.t.jan_norm }}</td><td class="center">{{ r.t.jan_veg }}</td><td class="center">{{ r.t.jan_dieta }}</td>
-            {% if show_sai %}<td class="center">{{ r.t.jan_sai }}</td>{% endif %}
+            {% if show_sai %}<td class="center">{{ r.t.jan_sai }}</td>{% endif %}<td class="center" style="color:#f39c12">{{ r.t.jan_estufa }}</td>
           </tr>
           {% endfor %}
           <tr style="font-weight:800;background:#f0f4f8;border-top:2px solid var(--border)">
             <td>TOTAL</td>
             <td class="center">{{ totais.pa }}</td><td class="center">{{ totais.lan }}</td>
-            <td class="center">{{ totais.alm_norm }}</td><td class="center">{{ totais.alm_veg }}</td><td class="center">{{ totais.alm_dieta }}</td>
+            <td class="center">{{ totais.alm_norm }}</td><td class="center">{{ totais.alm_veg }}</td><td class="center">{{ totais.alm_dieta }}</td><td class="center" style="color:#f39c12">{{ totais.alm_estufa }}</td>
             <td class="center">{{ totais.jan_norm }}</td><td class="center">{{ totais.jan_veg }}</td><td class="center">{{ totais.jan_dieta }}</td>
-            {% if show_sai %}<td class="center">{{ totais.jan_sai }}</td>{% endif %}
+            {% if show_sai %}<td class="center">{{ totais.jan_sai }}</td>{% endif %}<td class="center" style="color:#f39c12">{{ totais.jan_estufa }}</td>
           </tr>
         </tbody>
       </table>
@@ -60,7 +60,9 @@
     <div class="stat-box"><div class="stat-num">{{ totais.pa }}</div><div class="stat-lbl">Total PA</div></div>
     <div class="stat-box"><div class="stat-num">{{ totais.lan }}</div><div class="stat-lbl">Total Lanches</div></div>
     <div class="stat-box"><div class="stat-num">{{ totais.alm_norm + totais.alm_veg + totais.alm_dieta }}</div><div class="stat-lbl">Total Almoços</div></div>
+    <div class="stat-box" style="border-color:#f39c12"><div class="stat-num" style="color:#f39c12">{{ totais.alm_estufa }}</div><div class="stat-lbl">♨️ Estufa Alm</div></div>
     <div class="stat-box"><div class="stat-num">{{ totais.jan_norm + totais.jan_veg + totais.jan_dieta }}</div><div class="stat-lbl">Total Jantares</div></div>
+    <div class="stat-box" style="border-color:#f39c12"><div class="stat-num" style="color:#f39c12">{{ totais.jan_estufa }}</div><div class="stat-lbl">♨️ Estufa Jan</div></div>
   </div>
 </div>
 {% endblock %}
