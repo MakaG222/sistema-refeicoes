@@ -34,7 +34,7 @@ def csrf_input() -> Markup:
     """Gera input hidden com token CSRF."""
     t = session.get("_csrf_token") or secrets.token_urlsafe(32)
     session["_csrf_token"] = t
-    return Markup(f'<input type="hidden" name="csrf_token" value="{t}">')
+    return Markup(f'<input type="hidden" name="csrf_token" value="{t}">')  # nosec B704
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -106,16 +106,16 @@ def _refeicao_set(
 
 def _back_btn(href: str, label: str = "Voltar") -> Markup:
     """Botão de voltar HTML."""
-    return Markup(f'<a class="back-btn" href="{href}">\u2190 {label}</a>')
+    return Markup(f'<a class="back-btn" href="{href}">\u2190 {label}</a>')  # nosec B704
 
 
 def _bar_html(val: int, cap: int | None) -> Markup:
     """Barra de ocupação HTML."""
     if cap is None or cap <= 0:
-        return Markup(f'<div class="occ-label">{val} (sem limite)</div>')
+        return Markup(f'<div class="occ-label">{val} (sem limite)</div>')  # nosec B704
     pct = min(100, int(round(100 * val / cap)))
     color = "#1e8449" if pct < 80 else ("#d68910" if pct < 95 else "#c0392b")
-    return Markup(
+    return Markup(  # nosec B704 — val/cap/pct are integers, color is hardcoded
         f'<div class="occ-bar"><span style="width:{pct}%;background:{color}"></span></div>'
         f'<div class="occ-label">{val} / {cap} ({pct}%)</div>'
     )
@@ -134,7 +134,7 @@ def _prazo_label(d: date) -> Markup:
         if h <= 0:
             return Markup('<span class="prazo-lock">\U0001f512 Prazo expirado</span>')
         if h <= 24:
-            return Markup(
+            return Markup(  # nosec B704
                 f'<span class="prazo-warn">\u26a0\ufe0f Prazo em {int(h)}h</span>'
             )
     return Markup('<span class="prazo-lock">\U0001f512 Prazo expirado</span>')

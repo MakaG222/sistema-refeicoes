@@ -87,7 +87,7 @@
         <button class="btn btn-ok">✅ Dar Entrada (marcar presente)</button>
       </form>
       {% else %}
-      <form method="post" onsubmit="return confirm('Confirmar saída de {{ al.Nome_completo }}?')">
+      <form method="post" data-confirm="Confirmar saída de {{ al.Nome_completo }}?">
         {{ csrf_input() }}
         <input type="hidden" name="acao" value="dar_saida">
         <input type="hidden" name="ni" value="{{ ni_val }}">
@@ -115,7 +115,7 @@
     <div class="card-title">📊 Resumo geral — {{ dt_fmt }}</div>
     <div class="grid grid-3">
       {% for r in anos_resumo %}
-      <div class="stat-box" style="cursor:pointer" onclick="window.location='{{ url_for('.lista_alunos_ano', ano=r.ano, d=dt_iso) }}'">
+      <div class="stat-box" style="cursor:pointer" data-href="{{ url_for('.lista_alunos_ano', ano=r.ano, d=dt_iso) }}">
         <div class="stat-num">{{ r.presentes }} <small style="font-size:.6em;color:var(--muted)">/ {{ r.total }}</small></div>
         <div class="stat-lbl">{{ ano_label(r.ano) }} — Presentes</div>
         <div style="margin-top:.35rem;font-size:.75rem">

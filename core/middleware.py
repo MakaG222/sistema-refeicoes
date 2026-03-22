@@ -98,7 +98,14 @@ def register_middleware(app: Flask) -> None:
         r.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
         r.headers.setdefault(
             "Content-Security-Policy",
-            "default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'",
+            "default-src 'self';"
+            " script-src 'self';"
+            " style-src 'self' 'unsafe-inline';"  # inline style= attrs nos templates
+            " img-src 'self' data:;"
+            " font-src 'self';"
+            " form-action 'self';"
+            " frame-ancestors 'none';"
+            " base-uri 'self'",
         )
         t0 = getattr(g, "_t0", None)
         if t0 is not None:

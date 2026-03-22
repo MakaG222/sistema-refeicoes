@@ -72,7 +72,7 @@
                   <input type="hidden" name="sexta" value="{{ dia.d_iso }}">
                   <input type="hidden" name="acao_fds" value="cancelar">
                   <button class="btn btn-danger btn-sm" style="width:100%;font-size:.7rem"
-                    onclick="return confirm('Cancelar licença de fim de semana?')">
+                    data-confirm="Cancelar licença de fim de semana?">
                     🔄 Cancelar licença FDS
                   </button>
                 </form>
@@ -82,7 +82,7 @@
                   <input type="hidden" name="sexta" value="{{ dia.d_iso }}">
                   <input type="hidden" name="acao_fds" value="marcar">
                   <button class="btn btn-gold btn-sm" style="width:100%;font-size:.7rem"
-                    onclick="return confirm('Marcar licença de fim de semana?\nIsto vai:\n• Retirar o jantar de sexta\n• Apagar refeições de sábado e domingo')">
+                    data-confirm="Marcar licença de fim de semana?&#10;Isto vai:&#10;• Retirar o jantar de sexta&#10;• Apagar refeições de sábado e domingo">
                     🏖️ Licença FDS
                   </button>
                 </form>
