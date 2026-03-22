@@ -134,12 +134,12 @@ def get_companhias_data() -> dict:
             ]
         if a >= 6:
             destino = "Concluído"
-            cor = "#922b21"
+            cor_cls = "promo-final"
         else:
             destino = _ano_label(a + 1)
-            cor = "#1e8449"
+            cor_cls = "promo-next"
         promocao_data.append(
-            {"ano": a, "alunos": alunos_a, "destino": destino, "cor": cor}
+            {"ano": a, "alunos": alunos_a, "destino": destino, "cor_cls": cor_cls}
         )
 
     with db() as conn:

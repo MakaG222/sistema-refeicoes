@@ -114,9 +114,9 @@ def _bar_html(val: int, cap: int | None) -> Markup:
     if cap is None or cap <= 0:
         return Markup(f'<div class="occ-label">{val} (sem limite)</div>')  # nosec B704
     pct = min(100, int(round(100 * val / cap)))
-    color = "#1e8449" if pct < 80 else ("#d68910" if pct < 95 else "#c0392b")
-    return Markup(  # nosec B704 — val/cap/pct are integers, color is hardcoded
-        f'<div class="occ-bar"><span style="width:{pct}%;background:{color}"></span></div>'
+    cls = "occ-ok" if pct < 80 else ("occ-warn" if pct < 95 else "occ-danger")
+    return Markup(  # nosec B704 — val/cap/pct are integers, cls is hardcoded
+        f'<div class="occ-bar"><span class="{cls}" data-pct="{pct}"></span></div>'
         f'<div class="occ-label">{val} / {cap} ({pct}%)</div>'
     )
 

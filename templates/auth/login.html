@@ -2,8 +2,8 @@
 {% block content %}
     <div class="login-wrap">
       <div class="login-box">
-        <div class="login-header" style="flex-direction:column;text-align:center">
-          <img src="/static/logo_escola_naval.jpg" style="height:100px;width:auto;margin-bottom:.5rem" alt="Escola Naval">
+        <div class="login-header login-header-col">
+          <img src="/static/logo_escola_naval.jpg" class="login-logo" alt="Escola Naval">
           <div class="login-title">Escola Naval</div>
         </div>
         {% if error %}
@@ -19,7 +19,7 @@
             <label>Password</label>
             <input type="password" name="pw" maxlength="256" autocomplete="current-password" required placeholder="&#x2022;&#x2022;&#x2022;&#x2022;&#x2022;&#x2022;&#x2022;&#x2022;">
           </div>
-          <button type="submit" class="btn btn-primary" style="width:100%;justify-content:center;padding:.72rem;font-size:.95rem;margin-top:.2rem">
+          <button type="submit" class="btn btn-primary login-btn">
             Entrar
           </button>
         </form>

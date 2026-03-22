@@ -8,16 +8,16 @@
       <div class="grid grid-2">
         <div class="card">
           <div class="card-title">ℹ️ Informação pessoal</div>
-          <div style="display:flex;flex-direction:column;gap:.6rem;font-size:.9rem">
+          <div class="profile-info">
             <div><span class="text-muted">Nome completo:</span><br><strong>{{ aluno.Nome_completo }}</strong></div>
             <div><span class="text-muted">NII:</span><br><strong>{{ aluno.NII }}</strong></div>
             <div><span class="text-muted">NI:</span><br><strong>{{ aluno.NI or "—" }}</strong></div>
             <div><span class="text-muted">Ano:</span><br><strong>{{ aluno.ano }}º Ano</strong></div>
           </div>
-          <hr style="margin:1rem 0">
+          <hr class="mt-xl mb-xl">
           <div class="grid grid-2">
             <div class="stat-box"><div class="stat-num">{{ total_ref }}</div><div class="stat-lbl">Refeições registadas</div></div>
-            <div class="stat-box"><div class="stat-num" style="color:{{ "var(--warn)" if ausencias_ativas else "var(--ok)" }}">{{ ausencias_ativas }}</div><div class="stat-lbl">Ausências ativas</div></div>
+            <div class="stat-box"><div class="stat-num {{ "text-warn" if ausencias_ativas else "text-ok" }}">{{ ausencias_ativas }}</div><div class="stat-lbl">Ausências ativas</div></div>
           </div>
         </div>
         <div class="card">

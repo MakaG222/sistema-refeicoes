@@ -8,7 +8,7 @@
       <div class="alert alert-info">
         📌 Com uma ausência ativa as tuas refeições não são contabilizadas e não podes editar refeições para esse período.
       </div>
-      <div class="card" style="max-width:520px">
+      <div class="card max-w-sm">
         <div class="card-title">{{ form_title }}</div>
         <form method="post">
           {{ csrf_input() }}
@@ -65,7 +65,7 @@
                   <div class="gap-btn">
                     {% if pode %}
                     <a class="btn btn-ghost btn-sm" href="{{ url_for(".aluno_ausencias") }}?edit={{ r.id }}">✏️</a>
-                    <form method="post" style="display:inline">
+                    <form method="post" class="form-inline">
                       {{ csrf_input() }}
                       <input type="hidden" name="acao" value="remover">
                       <input type="hidden" name="id" value="{{ r.id }}">
@@ -76,7 +76,7 @@
                 </td>
               </tr>
               {% else %}
-              <tr><td colspan="5" class="text-muted" style="padding:1.5rem;text-align:center">Sem ausências registadas.</td></tr>
+              <tr><td colspan="5" class="text-muted center empty-cell">Sem ausências registadas.</td></tr>
               {% endfor %}
             </tbody>
           </table>

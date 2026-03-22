@@ -16,27 +16,27 @@
   {% endif %}
 
   {% if ok_prazo %}
-  <div class="alert alert-ok" style="margin-bottom:.7rem">✅ Os alunos ainda podem editar as próprias refeições (prazo não expirou).</div>
+  <div class="alert alert-ok mb-md">✅ Os alunos ainda podem editar as próprias refeições (prazo não expirou).</div>
   {% else %}
-  <div class="alert alert-info" style="margin-bottom:.7rem">🔒 Prazo expirado — os alunos já não podem alterar. Usa o botão <strong>✏️</strong> para fazer exceções.</div>
+  <div class="alert alert-info mb-md">🔒 Prazo expirado — os alunos já não podem alterar. Usa o botão <strong>✏️</strong> para fazer exceções.</div>
   {% endif %}
 
-  <div class="grid grid-4" style="margin-bottom:1.1rem">
+  <div class="grid grid-4 mb-2xl">
     <div class="stat-box"><div class="stat-num">{{ total_alunos }}</div><div class="stat-lbl">Total alunos</div></div>
-    <div class="stat-box"><div class="stat-num" style="color:var(--ok)">{{ com_ref }}</div><div class="stat-lbl">Com refeições</div></div>
-    <div class="stat-box"><div class="stat-num" style="color:var(--danger)">{{ total_alunos - com_ref }}</div><div class="stat-lbl">Sem refeições</div></div>
-    <div class="stat-box"><div class="stat-num" style="color:var(--warn)">{{ ausentes }}</div><div class="stat-lbl">Ausentes</div></div>
+    <div class="stat-box"><div class="stat-num text-ok">{{ com_ref }}</div><div class="stat-lbl">Com refeições</div></div>
+    <div class="stat-box"><div class="stat-num text-danger">{{ total_alunos - com_ref }}</div><div class="stat-lbl">Sem refeições</div></div>
+    <div class="stat-box"><div class="stat-num text-warn">{{ ausentes }}</div><div class="stat-lbl">Ausentes</div></div>
   </div>
 
-  <div class="card" style="padding:.9rem 1.2rem;margin-bottom:.8rem">
+  <div class="card card-compact">
     <div class="flex-between">
       <div class="flex">
         <a class="btn btn-ghost btn-sm" href="{{ url_for('.lista_alunos_ano', ano=ano, d=prev_d) }}">← Anterior</a>
         <strong>{{ dt_fmt }}</strong>
         <a class="btn btn-ghost btn-sm" href="{{ url_for('.lista_alunos_ano', ano=ano, d=next_d) }}">Próximo →</a>
       </div>
-      <form method="get" style="display:flex;gap:.3rem">
-        <input type="date" name="d" value="{{ d_str }}" style="width:auto">
+      <form method="get" class="date-nav-form">
+        <input type="date" name="d" value="{{ d_str }}" class="w-auto">
         <button class="btn btn-primary btn-sm">Ir</button>
       </form>
     </div>
@@ -45,7 +45,7 @@
   <div class="card">
     <div class="card-title">Lista de presenças
       {% if perfil in ("oficialdia", "admin") %}
-      <span class="badge badge-info" style="margin-left:.5rem;font-weight:400;font-size:.7rem">Usa o módulo <a href="{{ url_for('.controlo_presencas', d=d_str) }}">Controlo de Presenças</a> para marcar entradas/saídas</span>
+      <span class="badge badge-info ml-md fw-normal text-xs">Usa o módulo <a href="{{ url_for('.controlo_presencas', d=d_str) }}">Controlo de Presenças</a> para marcar entradas/saídas</span>
       {% endif %}
     </div>
     <div class="table-wrap">
@@ -57,26 +57,26 @@
           {% for a in alunos %}
           {% set sem = not (a.pequeno_almoco or a.lanche or a.almoco or a.jantar_tipo) %}
           {% if a.ausente %}
-          {% set row_bg = "background:#fdecea" %}
+          {% set row_cls = "row-absent" %}
           {% elif sem %}
-          {% set row_bg = "background:#fff3cd" %}
+          {% set row_cls = "row-no-meals" %}
           {% else %}
-          {% set row_bg = "background:#d5f5e3" %}
+          {% set row_cls = "row-present" %}
           {% endif %}
-          <tr style="{{ row_bg }}">
+          <tr class="{{ row_cls }}">
             <td class="small text-muted">{{ a.NI }}</td>
             <td>
               <strong>{{ a.Nome_completo }}</strong>
-              {% if a.ausente %}<span class="badge badge-warn" style="font-size:.65rem">Ausente</span>{% endif %}
-              {% if a.licenca_tipo == "antes_jantar" %}<span class="badge badge-info" style="font-size:.6rem">🌅 Lic. antes</span>
-              {% elif a.licenca_tipo == "apos_jantar" %}<span class="badge badge-muted" style="font-size:.6rem">🌙 Lic. após</span>{% endif %}
+              {% if a.ausente %}<span class="badge badge-warn text-2xs">Ausente</span>{% endif %}
+              {% if a.licenca_tipo == "antes_jantar" %}<span class="badge badge-info text-2xs">🌅 Lic. antes</span>
+              {% elif a.licenca_tipo == "apos_jantar" %}<span class="badge badge-muted text-2xs">🌙 Lic. após</span>{% endif %}
             </td>
             <td>{% if a.pequeno_almoco %}<span class="meal-chip chip-ok">PA ✓</span>{% else %}<span class="meal-chip chip-no">PA ✗</span>{% endif %}</td>
             <td>{% if a.lanche %}<span class="meal-chip chip-ok">Lan ✓</span>{% else %}<span class="meal-chip chip-no">Lan ✗</span>{% endif %}</td>
-            <td>{% if a.almoco %}<span class="meal-chip chip-type">{{ a.almoco[:3] }} ✓</span>{% if a.almoco_estufa %}<span class="badge" style="font-size:.65rem;color:#f39c12">♨️</span>{% endif %}{% else %}<span class="meal-chip chip-no">Almoço ✗</span>{% endif %}</td>
+            <td>{% if a.almoco %}<span class="meal-chip chip-type">{{ a.almoco[:3] }} ✓</span>{% if a.almoco_estufa %}<span class="badge text-2xs text-estufa">♨️</span>{% endif %}{% else %}<span class="meal-chip chip-no">Almoço ✗</span>{% endif %}</td>
             <td>
-              {% if a.jantar_tipo %}<span class="meal-chip chip-type">{{ a.jantar_tipo[:3] }} ✓</span>{% if a.jantar_estufa %}<span class="badge" style="font-size:.65rem;color:#f39c12">♨️</span>{% endif %}{% else %}<span class="meal-chip chip-no">Jantar ✗</span>{% endif %}
-              {% if a.jantar_sai_unidade %}<span class="badge badge-muted" style="font-size:.65rem">🚪</span>{% endif %}
+              {% if a.jantar_tipo %}<span class="meal-chip chip-type">{{ a.jantar_tipo[:3] }} ✓</span>{% if a.jantar_estufa %}<span class="badge text-2xs text-estufa">♨️</span>{% endif %}{% else %}<span class="meal-chip chip-no">Jantar ✗</span>{% endif %}
+              {% if a.jantar_sai_unidade %}<span class="badge badge-muted text-2xs">🚪</span>{% endif %}
             </td>
             <td>
               <div class="gap-btn">
@@ -89,15 +89,15 @@
             </td>
           </tr>
           {% else %}
-          <tr><td colspan="7" class="text-muted center" style="padding:1.5rem">Sem dados.</td></tr>
+          <tr><td colspan="7" class="text-muted center empty-cell">Sem dados.</td></tr>
           {% endfor %}
         </tbody>
       </table>
     </div>
-    <div style="margin-top:.7rem;font-size:.78rem;color:var(--muted);display:flex;gap:.8rem;flex-wrap:wrap">
-      <span style="display:inline-flex;align-items:center;gap:.3rem"><span style="width:.75rem;height:.75rem;background:#d5f5e3;border:1px solid #a9dfbf;border-radius:3px;display:inline-block"></span>Presente com refeições</span>
-      <span style="display:inline-flex;align-items:center;gap:.3rem"><span style="width:.75rem;height:.75rem;background:#fff3cd;border:1px solid #ffc107;border-radius:3px;display:inline-block"></span>Sem refeições marcadas</span>
-      <span style="display:inline-flex;align-items:center;gap:.3rem"><span style="width:.75rem;height:.75rem;background:#fdecea;border:1px solid #f1948a;border-radius:3px;display:inline-block"></span>Ausente</span>
+    <div class="cal-legend hint-sm">
+      <span class="cal-legend-item"><span class="legend-dot bg-ok"></span>Presente com refeições</span>
+      <span class="cal-legend-item"><span class="legend-dot bg-warn-light"></span>Sem refeições marcadas</span>
+      <span class="cal-legend-item"><span class="legend-dot bg-danger-light"></span>Ausente</span>
     </div>
   </div>
 
@@ -109,7 +109,7 @@
       <div class="stat-box"><div class="stat-num">{{ t.alm_norm + t.alm_veg + t.alm_dieta }}</div><div class="stat-lbl">Almoços</div></div>
       <div class="stat-box"><div class="stat-num">{{ t.jan_norm + t.jan_veg + t.jan_dieta }}</div><div class="stat-lbl">Jantares</div></div>
     </div>
-    <div class="gap-btn" style="margin-top:.8rem">
+    <div class="gap-btn mt-lg">
       <a class="btn btn-primary" href="{{ url_for('reporting.exportar_dia', d=d_str, fmt='csv') }}">⬇ CSV</a>
       <a class="btn btn-primary" href="{{ url_for('reporting.exportar_dia', d=d_str, fmt='xlsx') }}">⬇ Excel</a>
       <a class="btn btn-ghost" href="{{ url_for('.imprimir_ano', ano=ano, d=d_str) }}" target="_blank">🖨 Imprimir</a>

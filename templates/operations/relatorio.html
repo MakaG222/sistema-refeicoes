@@ -5,15 +5,15 @@
     {{ back_btn(back_url) }}
     <div class="page-title">📊 Relatório Semanal</div>
   </div>
-  <div class="card" style="padding:.9rem 1.2rem;margin-bottom:.8rem">
+  <div class="card card-compact">
     <div class="flex-between">
       <div class="flex">
         <a class="btn btn-ghost btn-sm" href="{{ url_for('.relatorio_semanal', d0=prev_w) }}">← Semana anterior</a>
         <strong>{{ d0_fmt }} — {{ d1_fmt }}</strong>
         <a class="btn btn-ghost btn-sm" href="{{ url_for('.relatorio_semanal', d0=next_w) }}">Semana seguinte →</a>
       </div>
-      <form method="get" style="display:flex;gap:.3rem">
-        <input type="date" name="d0" value="{{ d0_str }}" style="width:auto">
+      <form method="get" class="date-nav-form">
+        <input type="date" name="d0" value="{{ d0_str }}" class="w-auto">
         <button class="btn btn-primary btn-sm">Ir</button>
       </form>
     </div>
@@ -27,31 +27,31 @@
           {% set is_off = r.tipo in ("feriado", "exercicio") %}
           {% set is_wknd = r.weekday >= 5 %}
           {% if is_off %}
-          {% set st = "color:var(--muted);background:#f9fafb" %}
+          {% set row_cls = "row-off" %}
           {% elif is_wknd %}
-          {% set st = "background:#fffdf5" %}
+          {% set row_cls = "row-weekend" %}
           {% else %}
-          {% set st = "" %}
+          {% set row_cls = "" %}
           {% endif %}
-          <tr style="{{ st }}">
+          <tr class="{{ row_cls }}">
             <td><strong>{{ r.abrev }}</strong> {{ r.data_fmt }} {{ r.icone }}</td>
             <td class="center">{{ r.t.pa }}</td><td class="center">{{ r.t.lan }}</td>
-            <td class="center">{{ r.t.alm_norm }}</td><td class="center">{{ r.t.alm_veg }}</td><td class="center">{{ r.t.alm_dieta }}</td><td class="center" style="color:#f39c12">{{ r.t.alm_estufa }}</td>
+            <td class="center">{{ r.t.alm_norm }}</td><td class="center">{{ r.t.alm_veg }}</td><td class="center">{{ r.t.alm_dieta }}</td><td class="center text-estufa">{{ r.t.alm_estufa }}</td>
             <td class="center">{{ r.t.jan_norm }}</td><td class="center">{{ r.t.jan_veg }}</td><td class="center">{{ r.t.jan_dieta }}</td>
-            {% if show_sai %}<td class="center">{{ r.t.jan_sai }}</td>{% endif %}<td class="center" style="color:#f39c12">{{ r.t.jan_estufa }}</td>
+            {% if show_sai %}<td class="center">{{ r.t.jan_sai }}</td>{% endif %}<td class="center text-estufa">{{ r.t.jan_estufa }}</td>
           </tr>
           {% endfor %}
-          <tr style="font-weight:800;background:#f0f4f8;border-top:2px solid var(--border)">
+          <tr class="row-summary">
             <td>TOTAL</td>
             <td class="center">{{ totais.pa }}</td><td class="center">{{ totais.lan }}</td>
-            <td class="center">{{ totais.alm_norm }}</td><td class="center">{{ totais.alm_veg }}</td><td class="center">{{ totais.alm_dieta }}</td><td class="center" style="color:#f39c12">{{ totais.alm_estufa }}</td>
+            <td class="center">{{ totais.alm_norm }}</td><td class="center">{{ totais.alm_veg }}</td><td class="center">{{ totais.alm_dieta }}</td><td class="center text-estufa">{{ totais.alm_estufa }}</td>
             <td class="center">{{ totais.jan_norm }}</td><td class="center">{{ totais.jan_veg }}</td><td class="center">{{ totais.jan_dieta }}</td>
-            {% if show_sai %}<td class="center">{{ totais.jan_sai }}</td>{% endif %}<td class="center" style="color:#f39c12">{{ totais.jan_estufa }}</td>
+            {% if show_sai %}<td class="center">{{ totais.jan_sai }}</td>{% endif %}<td class="center text-estufa">{{ totais.jan_estufa }}</td>
           </tr>
         </tbody>
       </table>
     </div>
-    <div class="gap-btn" style="margin-top:.9rem">
+    <div class="gap-btn mt-lg">
       <a class="btn btn-primary" href="{{ url_for('reporting.exportar_relatorio', d0=d0_str, fmt='csv') }}">⬇ CSV</a>
       <a class="btn btn-primary" href="{{ url_for('reporting.exportar_relatorio', d0=d0_str, fmt='xlsx') }}">⬇ Excel</a>
     </div>
@@ -60,9 +60,9 @@
     <div class="stat-box"><div class="stat-num">{{ totais.pa }}</div><div class="stat-lbl">Total PA</div></div>
     <div class="stat-box"><div class="stat-num">{{ totais.lan }}</div><div class="stat-lbl">Total Lanches</div></div>
     <div class="stat-box"><div class="stat-num">{{ totais.alm_norm + totais.alm_veg + totais.alm_dieta }}</div><div class="stat-lbl">Total Almoços</div></div>
-    <div class="stat-box" style="border-color:#f39c12"><div class="stat-num" style="color:#f39c12">{{ totais.alm_estufa }}</div><div class="stat-lbl">♨️ Estufa Alm</div></div>
+    <div class="stat-box stat-box-estufa"><div class="stat-num text-estufa">{{ totais.alm_estufa }}</div><div class="stat-lbl">♨️ Estufa Alm</div></div>
     <div class="stat-box"><div class="stat-num">{{ totais.jan_norm + totais.jan_veg + totais.jan_dieta }}</div><div class="stat-lbl">Total Jantares</div></div>
-    <div class="stat-box" style="border-color:#f39c12"><div class="stat-num" style="color:#f39c12">{{ totais.jan_estufa }}</div><div class="stat-lbl">♨️ Estufa Jan</div></div>
+    <div class="stat-box stat-box-estufa"><div class="stat-num text-estufa">{{ totais.jan_estufa }}</div><div class="stat-lbl">♨️ Estufa Jan</div></div>
   </div>
 </div>
 {% endblock %}

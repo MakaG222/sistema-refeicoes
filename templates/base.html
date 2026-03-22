@@ -12,22 +12,22 @@
 {% autoescape true %}
 {% if session.user %}
 <nav>
-  <span class="nav-brand" style="display:flex;align-items:center;gap:.6rem"><img src="/static/logo_escola_naval.jpg" style="height:36px;width:auto;border-radius:4px" alt="EN"> <span style="color:#fff">Escola Naval</span></span>
+  <span class="nav-brand"><img src="/static/logo_escola_naval.jpg" class="nav-logo" alt="EN"> <span class="nav-brand-text">Escola Naval</span></span>
   <div class="nav-right">
     <span class="nav-user">{{ session.user.nome }} &middot; <strong>{{ session.user.perfil }}</strong></span>
     {% if session.user.perfil == 'aluno' %}
     <a class="nav-link" href="{{ url_for('aluno.aluno_perfil') }}">&#x1f464; Perfil</a>
     {% endif %}
-    <form method="post" action="{{ url_for('auth.logout') }}" style="display:inline;margin:0">
+    <form method="post" action="{{ url_for('auth.logout') }}" class="form-inline">
       {{ csrf_input() }}
-      <button type="submit" class="nav-link" style="background:none;border:none;cursor:pointer;padding:0;font:inherit;color:inherit">Sair</button>
+      <button type="submit" class="nav-link btn-logout">Sair</button>
     </form>
   </div>
 </nav>
 {% endif %}
 {% with msgs = get_flashed_messages(with_categories=true) %}
   {% if msgs %}
-    <div class="container" style="margin-top:.8rem;margin-bottom:0">
+    <div class="container container-flush">
     {% for cat,msg in msgs %}
       <div class="alert alert-{{ cat }}">{{ msg }}</div>
     {% endfor %}
@@ -37,5 +37,6 @@
 {% block content %}{% endblock %}
 {% endautoescape %}
 <script src="/static/js/app.js"></script>
+<script src="/static/js/dynamic-styles.js"></script>
 {% block scripts %}{% endblock %}
 </body></html>

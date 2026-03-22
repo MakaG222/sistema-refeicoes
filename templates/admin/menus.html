@@ -2,11 +2,11 @@
 {% block content %}
 <div class="container">
   <div class="page-header">{{ back_btn(back_url) }}<div class="page-title">🍽️ Menus & Capacidade</div></div>
-  <div class="card" style="max-width:640px">
+  <div class="card max-w-lg">
     <form method="post">
       {{ csrf_input() }}
       <div class="form-group"><label>Data</label><input type="date" name="data" value="{{ dt.isoformat() }}" required></div>
-      <div class="card-title" style="margin:.7rem 0 .55rem">Ementa</div>
+      <div class="card-title mt-md mb-sm">Ementa</div>
       <div class="grid grid-2">
         <div class="form-group"><label>☕ Pequeno Almoço</label><input type="text" name="pequeno_almoco" value="{{ menu.pequeno_almoco or '' if menu else '' }}"></div>
         <div class="form-group"><label>🥐 Lanche</label><input type="text" name="lanche" value="{{ menu.lanche or '' if menu else '' }}"></div>
@@ -17,7 +17,7 @@
         <div class="form-group"><label>🌿 Jantar Vegetariano</label><input type="text" name="jantar_veg" value="{{ menu.jantar_veg or '' if menu else '' }}"></div>
         <div class="form-group"><label>🥗 Jantar Dieta</label><input type="text" name="jantar_dieta" value="{{ menu.jantar_dieta or '' if menu else '' }}"></div>
       </div>
-      <div class="card-title" style="margin:.7rem 0 .55rem">Capacidades <span class="text-muted small">(-1 ou vazio = sem limite)</span></div>
+      <div class="card-title mt-md mb-sm">Capacidades <span class="text-muted small">(-1 ou vazio = sem limite)</span></div>
       <div class="grid grid-2">
         <div class="form-group"><label>PA</label><input type="number" name="cap_pequeno_almoco" value="{{ caps.get('Pequeno Almoço', '') }}"></div>
         <div class="form-group"><label>Lanche</label><input type="number" name="cap_lanche" value="{{ caps.get('Lanche', '') }}"></div>

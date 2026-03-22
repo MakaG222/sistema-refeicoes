@@ -462,8 +462,12 @@ def dashboard_semanal():
         off = d["tipo"] in ("feriado", "exercicio")
         d["alm"] = alm
         d["jan"] = jan
-        d["col_bg"] = "#f9fafb" if off else ("#fffdf5" if d["is_wknd"] else "#fff")
-        d["dow_col"] = "#c9a227" if d["is_wknd"] else "#0a2d4e"
+        d["col_cls"] = (
+            "chart-col-off"
+            if off
+            else ("chart-col-wknd" if d["is_wknd"] else "chart-col-day")
+        )
+        d["dow_cls"] = "chart-dow-wknd" if d["is_wknd"] else "chart-dow-day"
         d["dow"] = ABREV_DIAS[d["data"].weekday()]
         d["data_fmt"] = d["data"].strftime("%d/%m")
         # Bar heights (px out of 80)

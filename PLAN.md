@@ -57,9 +57,11 @@
 - [x] SQL dinâmico: allowlist de colunas em get_user_by_nii_fields()
 - [x] Bandit: zero skips globais — tudo suprimido inline com justificação
 - [x] CSP: `script-src 'self'` (sem unsafe-inline), CSS/JS extraído para static/
+- [x] CSP: `style-src 'self'` (sem unsafe-inline) — zero `style=""` em templates e helpers
 - [x] Migrações versionadas (core/migrations.py) — separadas do bootstrap
 
 ## Limpeza final
 - [x] Corrigir templates híbridos (perfil_aluno, editar_aluno)
+- [x] Eliminar todos os estilos inline (300+ ocorrências → CSS classes + data attributes + JS)
 - [x] ruff check + format
 - [x] pytest --cov final = **92%** (583 testes, 0 falhas)

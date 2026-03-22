@@ -100,7 +100,7 @@ def register_middleware(app: Flask) -> None:
             "Content-Security-Policy",
             "default-src 'self';"
             " script-src 'self';"
-            " style-src 'self' 'unsafe-inline';"  # inline style= attrs nos templates
+            " style-src 'self';"
             " img-src 'self' data:;"
             " font-src 'self';"
             " form-action 'self';"
