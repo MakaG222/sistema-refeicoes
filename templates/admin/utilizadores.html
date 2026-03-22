@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% block content %}
 <div class="container">
-  <div class="page-header">{{ back_btn(url_for('.admin_home')) }}<div class="page-title">👥 Utilizadores ({{ rows|length }})</div>
+  <div class="page-header">{{ back_btn(url_for('.admin_home')) }}<div class="page-title">👥 Utilizadores ({{ total }})</div>
     <a class="btn btn-primary btn-sm" href="{{ url_for('.admin_importar_csv') }}">📥 Importar CSV</a>
   </div>
 
@@ -146,6 +146,17 @@
         </tbody>
       </table>
     </div>
+    {% if total_pages > 1 %}
+    <div class="d-flex gap-sm flex-wrap mt-md" role="navigation" aria-label="Paginação">
+      {% if page > 1 %}
+      <a class="btn btn-ghost btn-sm" href="?q={{ q }}&ano={{ ano_f }}&page={{ page - 1 }}">← Anterior</a>
+      {% endif %}
+      <span class="text-muted text-sm">Página {{ page }} de {{ total_pages }}</span>
+      {% if page < total_pages %}
+      <a class="btn btn-ghost btn-sm" href="?q={{ q }}&ano={{ ano_f }}&page={{ page + 1 }}">Seguinte →</a>
+      {% endif %}
+    </div>
+    {% endif %}
   </div>
 </div>
 {% endblock %}

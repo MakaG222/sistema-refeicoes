@@ -22,37 +22,37 @@ def admin_log():
     q_campo = request.args.get("q_campo", "").strip()
     q_d0 = request.args.get("d0", "").strip()
     q_d1 = request.args.get("d1", "").strip()
-    q_limit_str = request.args.get("limite", "500")
-    try:
-        q_limit = min(int(q_limit_str), 5000)
-    except Exception:
-        q_limit = 500
+    page = max(1, int(request.args.get("page", "1") or "1"))
+    per_page = 50
 
-    rows, total_logs, campos_disponiveis = query_meal_log(
+    rows, filtered_total, total_logs, campos_disponiveis = query_meal_log(
         q_nome=q_nome,
         q_por=q_por,
         q_campo=q_campo,
         q_d0=q_d0,
         q_d1=q_d1,
-        limit=q_limit,
+        page=page,
+        per_page=per_page,
     )
 
-    mostrando = len(rows)
+    total_pages = max(1, (filtered_total + per_page - 1) // per_page)
     filtros_ativos = any([q_nome, q_por, q_campo, q_d0, q_d1])
 
     return render_template(
         "admin/log.html",
         rows=rows,
         total_logs=total_logs,
+        filtered_total=filtered_total,
         campos_disponiveis=campos_disponiveis,
-        mostrando=mostrando,
+        mostrando=len(rows),
         filtros_ativos=filtros_ativos,
+        page=page,
+        total_pages=total_pages,
         q_nome=q_nome,
         q_por=q_por,
         q_campo=q_campo,
         q_d0=q_d0,
         q_d1=q_d1,
-        q_limit=q_limit,
     )
 
 

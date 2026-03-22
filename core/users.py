@@ -11,19 +11,63 @@ def count_users() -> int:
         return conn.execute("SELECT COUNT(*) c FROM utilizadores").fetchone()["c"]
 
 
-def list_users(q: str | None = None, ano: str | None = None) -> list[dict]:
-    """Lista utilizadores com filtros opcionais de nome e ano."""
-    sql = "SELECT id,NII,NI,Nome_completo,ano,perfil,locked_until,email,telemovel FROM utilizadores WHERE 1=1"
+def list_users(
+    q: str | None = None,
+    ano: str | None = None,
+    page: int = 1,
+    per_page: int = 50,
+) -> tuple[list[dict], int]:
+    """Lista utilizadores com filtros opcionais, pesquisa FTS e paginação.
+
+    Returns:
+        (rows, total) — lista paginada e contagem total.
+    """
+    where = "WHERE 1=1"
     args: list = []
+
+    # Pesquisa FTS se disponível, senão fallback para LIKE
     if q:
-        sql += " AND Nome_completo LIKE ?"
-        args.append(f"%{q}%")
+        try:
+            with db() as conn:
+                fts_ids = [
+                    r[0]
+                    for r in conn.execute(
+                        "SELECT rowid FROM utilizadores_fts WHERE utilizadores_fts MATCH ?",
+                        (q + "*",),
+                    ).fetchall()
+                ]
+            if fts_ids:
+                placeholders = ",".join("?" for _ in fts_ids)
+                where += f" AND id IN ({placeholders})"  # nosec B608
+                args.extend(fts_ids)
+            else:
+                # FTS não encontrou — fallback LIKE
+                where += " AND Nome_completo LIKE ?"
+                args.append(f"%{q}%")
+        except Exception:
+            where += " AND Nome_completo LIKE ?"
+            args.append(f"%{q}%")
+
     if ano and ano != "all":
-        sql += " AND ano=?"
+        where += " AND ano=?"
         args.append(ano)
-    sql += " ORDER BY ano, NI"
+
     with db() as conn:
-        return [dict(r) for r in conn.execute(sql, args).fetchall()]
+        total = conn.execute(
+            f"SELECT COUNT(*) c FROM utilizadores {where}",  # nosec B608
+            args,
+        ).fetchone()["c"]
+
+        offset = (page - 1) * per_page
+        rows = [
+            dict(r)
+            for r in conn.execute(
+                f"SELECT id,NII,NI,Nome_completo,ano,perfil,locked_until,email,telemovel"  # nosec B608
+                f" FROM utilizadores {where} ORDER BY ano, NI LIMIT ? OFFSET ?",
+                [*args, per_page, offset],
+            ).fetchall()
+        ]
+    return rows, total
 
 
 def update_user(
