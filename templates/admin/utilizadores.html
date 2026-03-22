@@ -137,7 +137,7 @@
               {% if r.locked_until %}
               <form method="post" style="display:inline">{{ csrf_input() }}<input type="hidden" name="acao" value="desbloquear"><input type="hidden" name="nii" maxlength="32" value="{{ r.NII }}"><button class="btn btn-ghost btn-sm">🔓</button></form>
               {% endif %}
-              <form method="post" style="display:inline" onsubmit="return confirm('Eliminar {{ r.NII }}?');">{{ csrf_input() }}<input type="hidden" name="acao" value="eliminar"><input type="hidden" name="nii" maxlength="32" value="{{ r.NII }}"><button class="btn btn-danger btn-sm">🗑</button></form>
+              <form method="post" style="display:inline" data-confirm="Eliminar {{ r.NII }}?">{{ csrf_input() }}<input type="hidden" name="acao" value="eliminar"><input type="hidden" name="nii" maxlength="32" value="{{ r.NII }}"><button class="btn btn-danger btn-sm">🗑</button></form>
             </td>
           </tr>
           {% else %}

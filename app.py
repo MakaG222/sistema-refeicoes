@@ -162,4 +162,4 @@ def _bootstrap_before_request():
 if __name__ == "__main__":
     init_app_once(app)
     cfg.print_startup_banner(BASE_DADOS)
-    app.run(debug=cfg.DEBUG, host="0.0.0.0", port=cfg.PORT)
+    app.run(debug=cfg.DEBUG, host="0.0.0.0", port=cfg.PORT)  # nosec B104

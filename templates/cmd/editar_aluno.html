@@ -40,7 +40,7 @@
         </form>
         <hr style="margin:1rem 0">
         <form method="post" action="{{ url_for(".cmd_reset_password", nii=nii) }}"
-              onsubmit="return confirm('Tens a certeza que queres resetar a password de {{ aluno.get("Nome_completo", "") }}?')">
+              data-confirm="Tens a certeza que queres resetar a password de {{ aluno.get('Nome_completo', '') }}?">
           {{ csrf_input() }}
           <input type="hidden" name="ano" value="{{ ano_ret }}">
           <input type="hidden" name="d" value="{{ d_ret }}">

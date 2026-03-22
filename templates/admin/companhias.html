@@ -8,24 +8,11 @@
 
   <!-- Tabs -->
   <div class="year-tabs" style="margin-bottom:1rem">
-    <a class="year-tab" href="#turmas" onclick="showTab('turmas')">📚 Turmas</a>
-    <a class="year-tab" href="#atribuir" onclick="showTab('atribuir')">👥 Atribuir Turma</a>
-    <a class="year-tab" href="#promocao" onclick="showTab('promocao')">🎖️ Promoção</a>
-    <a class="year-tab" href="#mover" onclick="showTab('mover')">🔄 Mover Aluno</a>
+    <a class="year-tab" href="#turmas">📚 Turmas</a>
+    <a class="year-tab" href="#atribuir">👥 Atribuir Turma</a>
+    <a class="year-tab" href="#promocao">🎖️ Promoção</a>
+    <a class="year-tab" href="#mover">🔄 Mover Aluno</a>
   </div>
-  <script>
-    function showTab(id) {
-      ['turmas','atribuir','promocao','mover'].forEach(function(t) {
-        document.getElementById('tab-'+t).style.display = (t===id) ? '' : 'none';
-      });
-      document.querySelectorAll('.year-tab').forEach(function(el) {
-        el.classList.toggle('active', el.getAttribute('href')==='#'+id);
-      });
-    }
-    // Mostrar tab por hash ou primeiro
-    var hash = window.location.hash.replace('#','') || 'turmas';
-    showTab(hash);
-  </script>
 
   <!-- Tab: Turmas -->
   <div id="tab-turmas">
@@ -76,7 +63,7 @@
                 <td>{{ t.descricao or "—" }}</td>
                 <td class="small text-muted">{{ (t.criado_em or "")[:16] }}</td>
                 <td>
-                  <form method="post" style="display:inline" onsubmit="return confirm('Eliminar turma?')">
+                  <form method="post" style="display:inline" data-confirm="Eliminar turma?">
                     {{ csrf_input() }}
                     <input type="hidden" name="acao" value="eliminar_turma">
                     <input type="hidden" name="tid" value="{{ t.id }}">
@@ -134,7 +121,7 @@
     <div class="card">
       <div class="card-title">🚀 Promoção global — todos os anos em simultâneo</div>
       <p style="font-size:.85rem;color:var(--muted);margin-bottom:.8rem">Promove todos: 1º→2º, 2º→3º, ..., 5º→6º, 6º→Concluído. CFBO e CFCO não são afetados pela promoção global.</p>
-      <form method="post" onsubmit="return confirm('Promover TODOS os alunos de todos os anos?')">
+      <form method="post" data-confirm="Promover TODOS os alunos de todos os anos?">
         {{ csrf_input() }}<input type="hidden" name="acao" value="promover_todos_anos">
         <button class="btn btn-danger">🎖️ Promoção Global</button>
       </form>
@@ -144,7 +131,7 @@
       <div class="card" style="border-top:3px solid {{ p.cor }}">
         <div class="card-title" style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:.4rem">
           <span>{{ ano_label(p.ano) }} <span class="badge badge-info" style="margin-left:.4rem">{{ p.alunos|length }} alunos</span></span>
-          <form method="post" style="display:inline" onsubmit="return confirm('Promover todos os alunos deste ano?')">
+          <form method="post" style="display:inline" data-confirm="Promover todos os alunos deste ano?">
             {{ csrf_input() }}
             <input type="hidden" name="acao" value="promover_todos"><input type="hidden" name="ano_origem" value="{{ p.ano }}">
             <button class="btn btn-sm" style="background:{{ p.cor }};color:#fff" {{ "disabled" if not p.alunos }}>🎖️ Promover todos → {{ p.destino }}</button>
@@ -205,3 +192,4 @@
   </div>
 </div>
 {% endblock %}
+{% block scripts %}<script src="/static/js/tabs.js"></script>{% endblock %}

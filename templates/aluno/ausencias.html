@@ -69,7 +69,7 @@
                       {{ csrf_input() }}
                       <input type="hidden" name="acao" value="remover">
                       <input type="hidden" name="id" value="{{ r.id }}">
-                      <button class="btn btn-danger btn-sm" onclick="return confirm('Remover ausência?')">🗑</button>
+                      <button class="btn btn-danger btn-sm" data-confirm="Remover ausência?">🗑</button>
                     </form>
                     {% endif %}
                   </div>
