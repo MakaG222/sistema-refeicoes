@@ -3,38 +3,42 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>Escola Naval — Refeições</title>
-  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E⚓%3C/text%3E%3C/svg%3E">
+  <meta name="description" content="Sistema de gest&atilde;o de refei&ccedil;&otilde;es da Escola Naval Portuguesa">
+  <meta name="theme-color" content="#0A2D4E">
+  <title>Escola Naval — Refei&ccedil;&otilde;es</title>
+  <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
   <link rel="stylesheet" href="/static/css/app.css">
   {% block head_extra %}{% endblock %}
 </head>
 <body>
 {% autoescape true %}
 {% if session.user %}
-<nav>
-  <span class="nav-brand"><img src="/static/logo_escola_naval.jpg" class="nav-logo" alt="EN"> <span class="nav-brand-text">Escola Naval</span></span>
+<nav role="navigation" aria-label="Navega&ccedil;&atilde;o principal">
+  <span class="nav-brand"><img src="/static/logo_escola_naval.jpg" class="nav-logo" alt="Escola Naval — Bras&atilde;o"> <span class="nav-brand-text">Escola Naval</span></span>
   <div class="nav-right">
-    <span class="nav-user">{{ session.user.nome }} &middot; <strong>{{ session.user.perfil }}</strong></span>
+    <span class="nav-user" aria-label="Utilizador autenticado">{{ session.user.nome }} &middot; <strong>{{ session.user.perfil }}</strong></span>
     {% if session.user.perfil == 'aluno' %}
-    <a class="nav-link" href="{{ url_for('aluno.aluno_perfil') }}">&#x1f464; Perfil</a>
+    <a class="nav-link" href="{{ url_for('aluno.aluno_perfil') }}" aria-label="Ver perfil">&#x1f464; Perfil</a>
     {% endif %}
     <form method="post" action="{{ url_for('auth.logout') }}" class="form-inline">
       {{ csrf_input() }}
-      <button type="submit" class="nav-link btn-logout">Sair</button>
+      <button type="submit" class="nav-link btn-logout" aria-label="Terminar sess&atilde;o">Sair</button>
     </form>
   </div>
 </nav>
 {% endif %}
 {% with msgs = get_flashed_messages(with_categories=true) %}
   {% if msgs %}
-    <div class="container container-flush">
+    <div class="container container-flush" role="alert" aria-live="polite">
     {% for cat,msg in msgs %}
-      <div class="alert alert-{{ cat }}">{{ msg }}</div>
+      <div class="alert alert-{{ cat }}" role="status">{{ msg }}</div>
     {% endfor %}
     </div>
   {% endif %}
 {% endwith %}
+<main id="content">
 {% block content %}{% endblock %}
+</main>
 {% endautoescape %}
 <script src="/static/js/app.js"></script>
 <script src="/static/js/dynamic-styles.js"></script>
