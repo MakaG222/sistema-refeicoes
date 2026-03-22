@@ -60,23 +60,33 @@ def configure_logging(flask_app) -> None:
         """Formatter que produz uma linha JSON por log entry."""
 
         def format(self, record: logging.LogRecord) -> str:
+            rid = getattr(record, "request_id", "-")
             entry = {
                 "ts": self.formatTime(record, self.datefmt),
                 "level": record.levelname,
                 "logger": record.name,
                 "msg": record.getMessage(),
+                "rid": rid,
             }
             if record.exc_info and record.exc_info[0] is not None:
                 entry["exception"] = self.formatException(record.exc_info)
             return json.dumps(entry, ensure_ascii=False)
+
+    class DevFormatter(logging.Formatter):
+        """Formatter de dev que inclui request_id se disponível."""
+
+        def format(self, record: logging.LogRecord) -> str:
+            if not hasattr(record, "request_id"):
+                record.request_id = "-"  # type: ignore[attr-defined]
+            return super().format(record)
 
     handler = logging.StreamHandler(sys.stdout)
     if is_production:
         handler.setFormatter(JsonFormatter(datefmt="%Y-%m-%dT%H:%M:%S"))
     else:
         handler.setFormatter(
-            logging.Formatter(
-                "%(asctime)s %(levelname)s [%(name)s]: %(message)s",
+            DevFormatter(
+                "%(asctime)s %(levelname)s [%(name)s] [%(request_id)s]: %(message)s",
                 datefmt="%Y-%m-%d %H:%M:%S",
             )
         )

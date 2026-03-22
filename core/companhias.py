@@ -78,16 +78,22 @@ def promote_all_in_year(ano: int) -> str:
     return _ano_label(novo_ano) if novo_ano else "Concluído"
 
 
-def promote_all_years() -> None:
-    """Promove todos os alunos de todos os anos (do maior para o menor)."""
+def promote_all_years() -> dict[int, int]:
+    """Promove todos os alunos de todos os anos (do maior para o menor).
+
+    Retorna dict {ano_origem: contagem} com o número de alunos promovidos por ano.
+    """
+    counts: dict[int, int] = {}
     with db() as conn:
         for ano_a in range(6, 0, -1):
             novo_ano = 0 if ano_a >= 6 else ano_a + 1
-            conn.execute(
+            cursor = conn.execute(
                 "UPDATE utilizadores SET ano=? WHERE perfil='aluno' AND ano=?",
                 (novo_ano, ano_a),
             )
+            counts[ano_a] = cursor.rowcount
         conn.commit()
+    return counts
 
 
 def get_companhias_data() -> dict:

@@ -119,16 +119,22 @@ def health():
 
 @api_bp.route("/health/metrics")
 def health_metrics():
-    """Métricas básicas de request — contadores in-memory."""
-    from core.middleware import get_metrics
+    """Métricas básicas de request — contadores in-memory + per-route."""
+    from core.middleware import get_metrics, get_route_metrics
 
     m = get_metrics()
     count = m["request_count"]
+    route_m = get_route_metrics()
+    # Top 10 rotas por contagem
+    top_routes = dict(
+        sorted(route_m.items(), key=lambda x: x[1]["count"], reverse=True)[:10]
+    )
     return _api_ok(
         {
             "request_count": count,
             "error_count": m["error_count"],
             "avg_latency_ms": round(m["total_latency_ms"] / max(count, 1), 1),
+            "routes": top_routes,
         }
     )
 

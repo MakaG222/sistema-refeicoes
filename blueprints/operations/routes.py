@@ -14,13 +14,27 @@ from flask import (
 
 from core.auth_db import user_by_nii
 from core.backup import ensure_daily_backup
-from core.database import db
 from core.meals import (
     dias_operacionais_batch,
     get_totais_dia,
     get_totais_periodo,
     refeicao_editavel,
     refeicao_get,
+)
+from core.operations import (
+    get_alunos_ano_com_estado,
+    get_alunos_para_impressao,
+    get_anos_resumo,
+    get_ausencias_lista,
+    get_ausencias_recentes,
+    get_detidos_dia,
+    get_licencas_contadores,
+    get_licencas_dia,
+    get_presenca_consulta,
+    marcar_presente,
+    registar_entrada_presenca,
+    registar_hora_licenca,
+    registar_saida_presenca,
 )
 from blueprints.operations import ops_bp
 from utils.auth import current_user, role_required
@@ -238,31 +252,12 @@ def painel_dia():
     # Painel de detidos (oficialdia / admin)
     detidos = []
     if perfil in ("oficialdia", "admin"):
-        with db() as conn:
-            detidos = [
-                dict(r)
-                for r in conn.execute(
-                    """SELECT uu.NI, uu.Nome_completo, uu.ano, d.detido_de, d.detido_ate, d.motivo
-                    FROM detencoes d JOIN utilizadores uu ON uu.id=d.utilizador_id
-                    WHERE uu.perfil='aluno' AND d.detido_de<=? AND d.detido_ate>=?
-                    ORDER BY uu.ano, uu.NI""",
-                    (d_str, d_str),
-                ).fetchall()
-            ]
+        detidos = get_detidos_dia(d_str)
 
     # Licenças do dia (oficialdia / admin)
     lics = []
     if perfil in ("oficialdia", "admin"):
-        with db() as conn:
-            lics = [
-                dict(r)
-                for r in conn.execute(
-                    """SELECT uu.NI, uu.Nome_completo, uu.ano, l.tipo, l.hora_saida, l.hora_entrada
-                    FROM licencas l JOIN utilizadores uu ON uu.id=l.utilizador_id
-                    WHERE l.data=? ORDER BY uu.ano, uu.NI""",
-                    (d_str,),
-                ).fetchall()
-            ]
+        lics = get_licencas_dia(d_str)
 
     back_url = url_for("admin.admin_home") if perfil == "admin" else ""
     label_ano = f" — {ano_int}º Ano" if ano_int else ""
@@ -320,39 +315,10 @@ def lista_alunos_ano(ano):
                 u["nii"],
             )
         elif acao == "marcar_presente" and uid_t:
-            with db() as conn:
-                conn.execute(
-                    """DELETE FROM ausencias WHERE utilizador_id=?
-                                AND ausente_de=? AND ausente_ate=?""",
-                    (uid_t, dt.isoformat(), dt.isoformat()),
-                )
-                conn.commit()
+            marcar_presente(int(uid_t), dt.isoformat())
         return redirect(url_for(".lista_alunos_ano", ano=ano, d=d_str))
 
-    with db() as conn:
-        alunos = [
-            dict(r)
-            for r in conn.execute(
-                """
-            SELECT u.id, u.NII, u.NI, u.Nome_completo,
-                   r.pequeno_almoco, r.lanche, r.almoco, r.jantar_tipo, r.jantar_sai_unidade,
-                   EXISTS(SELECT 1 FROM ausencias a WHERE a.utilizador_id=u.id
-                          AND a.ausente_de <= ? AND a.ausente_ate >= ?) AS ausente,
-                   (SELECT l.tipo FROM licencas l WHERE l.utilizador_id=u.id AND l.data=?) AS licenca_tipo
-            FROM utilizadores u
-            LEFT JOIN refeicoes r ON r.utilizador_id=u.id AND r.data=?
-            WHERE u.ano=?
-            ORDER BY u.NI
-        """,
-                (
-                    dt.isoformat(),
-                    dt.isoformat(),
-                    dt.isoformat(),
-                    dt.isoformat(),
-                    ano,
-                ),
-            ).fetchall()
-        ]
+    alunos = get_alunos_ano_com_estado(ano, dt)
 
     t = get_totais_dia(dt.isoformat(), ano)
     total_alunos = len(alunos)
@@ -522,15 +488,7 @@ def excecoes_dia(d):
         ausente_hoje = uid_info and _tem_ausencia_ativa(uid_info, dt)
         ok_prazo, _ = refeicao_editavel(dt)
         if uid_info:
-            with db() as conn:
-                aus_hist = [
-                    dict(row)
-                    for row in conn.execute(
-                        """SELECT ausente_de, ausente_ate, motivo FROM ausencias
-                        WHERE utilizador_id=? ORDER BY ausente_de DESC LIMIT 5""",
-                        (uid_info,),
-                    ).fetchall()
-                ]
+            aus_hist = get_ausencias_recentes(uid_info)
         chk_items = [
             ("pa", r.get("pequeno_almoco"), "☕", "Pequeno Almoço"),
             ("lanche", r.get("lanche"), "🥐", "Lanche"),
@@ -592,16 +550,7 @@ def ausencias():
             )
         return redirect(url_for(".ausencias"))
 
-    with db() as conn:
-        rows = [
-            dict(r)
-            for r in conn.execute("""
-            SELECT a.id, u.NII, u.Nome_completo, u.NI, u.ano,
-                   a.ausente_de, a.ausente_ate, a.motivo
-            FROM ausencias a JOIN utilizadores u ON u.id=a.utilizador_id
-            ORDER BY a.ausente_de DESC""").fetchall()
-        ]
-
+    rows = get_ausencias_lista()
     hoje = date.today().isoformat()
 
     return render_template(
@@ -626,104 +575,24 @@ def licencas_entradas_saidas():
     if request.method == "POST":
         acao = request.form.get("acao", "")
         lic_id = request.form.get("lic_id", "")
-        agora = datetime.now().strftime("%H:%M")
 
-        with db() as conn:
-            if acao == "saida" and lic_id:
-                conn.execute(
-                    "UPDATE licencas SET hora_saida=? WHERE id=? AND hora_saida IS NULL",
-                    (agora, lic_id),
-                )
-                conn.commit()
+        if acao in ("saida", "entrada", "limpar_saida", "limpar_entrada") and lic_id:
+            registar_hora_licenca(lic_id, acao)
+            if acao == "saida":
                 flash("✅ Saída registada.", "ok")
-
-            elif acao == "entrada" and lic_id:
-                conn.execute(
-                    "UPDATE licencas SET hora_entrada=? WHERE id=? AND hora_entrada IS NULL",
-                    (agora, lic_id),
-                )
-                conn.commit()
+            elif acao == "entrada":
                 flash("✅ Entrada registada.", "ok")
-
-            elif acao == "limpar_saida" and lic_id:
-                conn.execute(
-                    "UPDATE licencas SET hora_saida=NULL WHERE id=?", (lic_id,)
-                )
-                conn.commit()
-
-            elif acao == "limpar_entrada" and lic_id:
-                conn.execute(
-                    "UPDATE licencas SET hora_entrada=NULL WHERE id=?", (lic_id,)
-                )
-                conn.commit()
 
         return redirect(url_for(".licencas_entradas_saidas", d=d_str))
 
-    # ── Contadores ────────────────────────────────────────────────────────
-    with db() as conn:
-        # Total de licenças marcadas para hoje
-        total = conn.execute(
-            """SELECT COUNT(*) c FROM licencas l
-               JOIN utilizadores uu ON uu.id=l.utilizador_id
-               WHERE l.data=? AND uu.perfil='aluno'""",
-            (d_str,),
-        ).fetchone()["c"]
-
-        # Saíram hoje (têm hora_saida)
-        saidas = conn.execute(
-            """SELECT COUNT(*) c FROM licencas l
-               JOIN utilizadores uu ON uu.id=l.utilizador_id
-               WHERE l.data=? AND uu.perfil='aluno' AND l.hora_saida IS NOT NULL""",
-            (d_str,),
-        ).fetchone()["c"]
-
-        # Regressaram (têm hora_entrada)
-        entradas = conn.execute(
-            """SELECT COUNT(*) c FROM licencas l
-               JOIN utilizadores uu ON uu.id=l.utilizador_id
-               WHERE l.data=? AND uu.perfil='aluno' AND l.hora_entrada IS NOT NULL""",
-            (d_str,),
-        ).fetchone()["c"]
-
-        # Fora da unidade = saíram (em qualquer data) mas ainda não regressaram
-        fora = conn.execute(
-            """SELECT COUNT(*) c FROM licencas l
-               JOIN utilizadores uu ON uu.id=l.utilizador_id
-               WHERE uu.perfil='aluno'
-                 AND l.hora_saida IS NOT NULL
-                 AND l.hora_entrada IS NULL""",
-        ).fetchone()["c"]
-
-        # ── Lista principal: licenças do dia selecionado ──────────────────
-        rows_hoje = [
-            dict(r)
-            for r in conn.execute(
-                """SELECT l.id, uu.NI, uu.Nome_completo, uu.ano,
-                          l.data, l.tipo, l.hora_saida, l.hora_entrada
-                   FROM licencas l
-                   JOIN utilizadores uu ON uu.id=l.utilizador_id
-                   WHERE l.data=? AND uu.perfil='aluno'
-                   ORDER BY uu.ano, uu.NI""",
-                (d_str,),
-            ).fetchall()
-        ]
-
-        # ── Alunos ainda fora de dias anteriores ─────────────────────────
-        rows_fora = [
-            dict(r)
-            for r in conn.execute(
-                """SELECT l.id, uu.NI, uu.Nome_completo, uu.ano,
-                          l.data, l.tipo, l.hora_saida, l.hora_entrada
-                   FROM licencas l
-                   JOIN utilizadores uu ON uu.id=l.utilizador_id
-                   WHERE uu.perfil='aluno'
-                     AND l.hora_saida IS NOT NULL
-                     AND l.hora_entrada IS NULL
-                     AND l.data != ?
-                   ORDER BY l.data ASC, uu.ano, uu.NI""",
-                (d_str,),
-            ).fetchall()
-        ]
+    # ── Contadores e listas ───────────────────────────────────────────────
+    lic_data = get_licencas_contadores(d_str)
+    total = lic_data["total"]
+    saidas = lic_data["saidas"]
+    entradas = lic_data["entradas"]
+    fora = lic_data["fora"]
+    rows_hoje = lic_data["rows_hoje"]
+    rows_fora = lic_data["rows_fora"]
 
     prev_d = (dt - timedelta(days=1)).isoformat()
     next_d = (dt + timedelta(days=1)).isoformat()
@@ -765,59 +634,18 @@ def controlo_presencas():
         ni_q = request.form.get("ni", "").strip()
 
         if acao == "consultar" and ni_q:
-            with db() as conn:
-                aluno = conn.execute(
-                    "SELECT id,NII,NI,Nome_completo,ano,email,telemovel FROM utilizadores WHERE NI=? AND perfil='aluno'",
-                    (ni_q,),
-                ).fetchone()
-            if aluno:
-                aluno = dict(aluno)
-                uid = aluno["id"]
-                ausente = _tem_ausencia_ativa(uid, dt)
-                with db() as conn:
-                    ref = conn.execute(
-                        "SELECT * FROM refeicoes WHERE utilizador_id=? AND data=?",
-                        (uid, dt.isoformat()),
-                    ).fetchone()
-                    ref = dict(ref) if ref else {}
-                    lic = conn.execute(
-                        "SELECT tipo, hora_saida, hora_entrada FROM licencas WHERE utilizador_id=? AND data=?",
-                        (uid, dt.isoformat()),
-                    ).fetchone()
-                    lic = dict(lic) if lic else {}
-                resultado = {
-                    "aluno": aluno,
-                    "ausente": ausente,
-                    "ref": ref,
-                    "ni": ni_q,
-                    "licenca": lic,
-                }
-            else:
+            resultado = get_presenca_consulta(ni_q, dt)
+            if not resultado:
                 flash(f'NI "{ni_q}" não encontrado.', "error")
 
         elif acao == "dar_saida" and ni_q:
-            with db() as conn:
-                aluno = conn.execute(
-                    "SELECT id,NII,Nome_completo FROM utilizadores WHERE NI=? AND perfil='aluno'",
-                    (ni_q,),
-                ).fetchone()
+            from core.users import get_aluno_by_ni
+
+            aluno = get_aluno_by_ni(ni_q)
             if aluno:
-                aluno = dict(aluno)
-                _registar_ausencia(
-                    aluno["id"],
-                    dt.isoformat(),
-                    dt.isoformat(),
-                    f"Saída registada por {u['nome']} ({u['perfil']})",
-                    u["nii"],
+                registar_saida_presenca(
+                    aluno["id"], dt, u["nii"], u["nome"], u["perfil"]
                 )
-                # Sincronizar hora_saida na licença (se existir)
-                agora = datetime.now().strftime("%H:%M")
-                with db() as conn:
-                    conn.execute(
-                        "UPDATE licencas SET hora_saida=? WHERE utilizador_id=? AND data=? AND hora_saida IS NULL",
-                        (agora, aluno["id"], dt.isoformat()),
-                    )
-                    conn.commit()
                 flash(
                     f"✅ Saída registada para {aluno['Nome_completo']} (NI {ni_q}).",
                     "ok",
@@ -826,28 +654,11 @@ def controlo_presencas():
                 flash(f'NI "{ni_q}" não encontrado.', "error")
 
         elif acao == "dar_entrada" and ni_q:
-            with db() as conn:
-                aluno = conn.execute(
-                    "SELECT id,NII,Nome_completo FROM utilizadores WHERE NI=? AND perfil='aluno'",
-                    (ni_q,),
-                ).fetchone()
+            from core.users import get_aluno_by_ni
+
+            aluno = get_aluno_by_ni(ni_q)
             if aluno:
-                aluno = dict(aluno)
-                with db() as conn:
-                    conn.execute(
-                        """DELETE FROM ausencias WHERE utilizador_id=?
-                                    AND ausente_de=? AND ausente_ate=?""",
-                        (aluno["id"], dt.isoformat(), dt.isoformat()),
-                    )
-                    conn.commit()
-                # Sincronizar hora_entrada na licença (se existir)
-                agora = datetime.now().strftime("%H:%M")
-                with db() as conn:
-                    conn.execute(
-                        "UPDATE licencas SET hora_entrada=? WHERE utilizador_id=? AND data=? AND hora_entrada IS NULL",
-                        (agora, aluno["id"], dt.isoformat()),
-                    )
-                    conn.commit()
+                registar_entrada_presenca(aluno["id"], dt)
                 flash(
                     f"✅ Entrada registada para {aluno['Nome_completo']} (NI {ni_q}).",
                     "ok",
@@ -860,38 +671,7 @@ def controlo_presencas():
             return redirect(url_for(".controlo_presencas", d=dt.isoformat()))
 
     # Resumo de todos os anos para a data
-    anos_resumo = []
-    for ano in _get_anos_disponiveis():
-        with db() as conn:
-            total = conn.execute(
-                "SELECT COUNT(*) c FROM utilizadores WHERE ano=? AND perfil='aluno'",
-                (ano,),
-            ).fetchone()["c"]
-            ausentes_a = conn.execute(
-                """
-                SELECT COUNT(*) c FROM utilizadores u
-                WHERE u.ano=? AND u.perfil='aluno'
-                AND EXISTS(SELECT 1 FROM ausencias a WHERE a.utilizador_id=u.id
-                           AND a.ausente_de<=? AND a.ausente_ate>=?)""",
-                (ano, dt.isoformat(), dt.isoformat()),
-            ).fetchone()["c"]
-            com_ref = conn.execute(
-                """
-                SELECT COUNT(*) c FROM utilizadores u
-                WHERE u.ano=? AND u.perfil='aluno'
-                AND EXISTS(SELECT 1 FROM refeicoes r WHERE r.utilizador_id=u.id
-                           AND r.data=? AND (r.almoco IS NOT NULL OR r.jantar_tipo IS NOT NULL))""",
-                (ano, dt.isoformat()),
-            ).fetchone()["c"]
-        anos_resumo.append(
-            {
-                "ano": ano,
-                "total": total,
-                "ausentes": ausentes_a,
-                "presentes": total - ausentes_a,
-                "com_ref": com_ref,
-            }
-        )
+    anos_resumo = get_anos_resumo(dt, _get_anos_disponiveis())
 
     # Build ref_chips for resultado
     ref_chips = []
@@ -945,22 +725,7 @@ def imprimir_ano(ano):
     d_str = request.args.get("d", date.today().isoformat())
     dt = _parse_date(d_str)
 
-    with db() as conn:
-        alunos = [
-            dict(r)
-            for r in conn.execute(
-                """
-            SELECT u.NI, u.Nome_completo,
-                   r.pequeno_almoco, r.lanche, r.almoco, r.jantar_tipo, r.jantar_sai_unidade,
-                   EXISTS(SELECT 1 FROM ausencias a WHERE a.utilizador_id=u.id
-                          AND a.ausente_de<=? AND a.ausente_ate>=?) AS ausente
-            FROM utilizadores u
-            LEFT JOIN refeicoes r ON r.utilizador_id=u.id AND r.data=?
-            WHERE u.ano=? ORDER BY u.NI
-        """,
-                (dt.isoformat(), dt.isoformat(), dt.isoformat(), ano),
-            ).fetchall()
-        ]
+    alunos = get_alunos_para_impressao(ano, dt)
 
     def sim_nao(v):
         return "✓" if v else "–"

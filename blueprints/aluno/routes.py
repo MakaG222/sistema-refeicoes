@@ -17,7 +17,6 @@ from flask import (
 
 import config as cfg
 from core.auth_db import user_id_by_nii
-from core.database import db
 from core.meals import (
     dias_operacionais_batch,
     get_menu_do_dia,
@@ -25,6 +24,18 @@ from core.meals import (
     refeicoes_batch,
 )
 from core.absences import ausencias_batch, detencoes_batch, licencas_batch
+from core.users import (
+    delete_ausencia_propria,
+    delete_licenca,
+    get_aluno_ano_ni,
+    get_aluno_historico,
+    get_aluno_licenca,
+    get_aluno_profile_data,
+    get_aluno_stats,
+    get_ausencias_aluno,
+    update_aluno_contacts,
+    upsert_licenca,
+)
 from blueprints.aluno import aluno_bp
 from utils.auth import current_user, login_required
 from utils.business import (
@@ -98,12 +109,7 @@ def aluno_licenca_fds():
         )
     else:
         # Verificar regras de licença para a sexta
-        with db() as conn:
-            aluno_row = conn.execute(
-                "SELECT ano, NI FROM utilizadores WHERE id=?", (uid,)
-            ).fetchone()
-        ano_aluno = int(aluno_row["ano"]) if aluno_row else 1
-        ni_aluno = aluno_row["NI"] if aluno_row else ""
+        ano_aluno, ni_aluno = get_aluno_ano_ni(uid)
 
         pode, motivo = _pode_marcar_licenca(uid, sexta, ano_aluno, ni_aluno)
         if not pode:
@@ -201,18 +207,7 @@ def aluno_home():
     stats = None
     if uid:
         d0 = (hoje - timedelta(days=30)).isoformat()
-        with db() as conn:
-            rows = conn.execute(
-                "SELECT pequeno_almoco,lanche,almoco,jantar_tipo FROM refeicoes WHERE utilizador_id=? AND data>=?",
-                (uid, d0),
-            ).fetchall()
-        if rows:
-            stats = {
-                "pa": sum(1 for r in rows if r["pequeno_almoco"]),
-                "lanche": sum(1 for r in rows if r["lanche"]),
-                "almoco": sum(1 for r in rows if r["almoco"]),
-                "jantar": sum(1 for r in rows if r["jantar_tipo"]),
-            }
+        stats = get_aluno_stats(uid, d0)
 
     return render_template(
         "aluno/home.html",
@@ -256,20 +251,10 @@ def aluno_editar(d):
     detido = _tem_detencao_ativa(uid, dt)
 
     # Dados do aluno para regras de licença
-    with db() as conn:
-        aluno_row = conn.execute(
-            "SELECT ano, NI FROM utilizadores WHERE id=?", (uid,)
-        ).fetchone()
-    ano_aluno = int(aluno_row["ano"]) if aluno_row else 1
-    ni_aluno = aluno_row["NI"] if aluno_row else ""
+    ano_aluno, ni_aluno = get_aluno_ano_ni(uid)
 
     # Licença existente para este dia
-    with db() as conn:
-        lic_row = conn.execute(
-            "SELECT tipo FROM licencas WHERE utilizador_id=? AND data=?",
-            (uid, dt.isoformat()),
-        ).fetchone()
-    licenca_atual = lic_row["tipo"] if lic_row else ""
+    licenca_atual = get_aluno_licenca(uid, dt.isoformat())
 
     pode_lic, motivo_lic = _pode_marcar_licenca(uid, dt, ano_aluno, ni_aluno)
 
@@ -282,29 +267,19 @@ def aluno_editar(d):
 
         # Processar licença (antes_jantar / apos_jantar / vazio)
         licenca_tipo = request.form.get("licenca", "")
-        with db() as conn:
-            if licenca_tipo in ("antes_jantar", "apos_jantar"):
-                pode, motivo = _pode_marcar_licenca(uid, dt, ano_aluno, ni_aluno)
-                if pode:
-                    conn.execute(
-                        """INSERT INTO licencas(utilizador_id, data, tipo)
-                        VALUES(?,?,?)
-                        ON CONFLICT(utilizador_id, data) DO UPDATE SET tipo=excluded.tipo""",
-                        (uid, dt.isoformat(), licenca_tipo),
-                    )
-                    if licenca_tipo == "antes_jantar":
-                        jan = ""
-                        sai = 1
-                    else:
-                        sai = 1
+        if licenca_tipo in ("antes_jantar", "apos_jantar"):
+            pode, motivo = _pode_marcar_licenca(uid, dt, ano_aluno, ni_aluno)
+            if pode:
+                upsert_licenca(uid, dt.isoformat(), licenca_tipo)
+                if licenca_tipo == "antes_jantar":
+                    jan = ""
+                    sai = 1
                 else:
-                    flash(motivo, "warn")
+                    sai = 1
             else:
-                conn.execute(
-                    "DELETE FROM licencas WHERE utilizador_id=? AND data=?",
-                    (uid, dt.isoformat()),
-                )
-            conn.commit()
+                flash(motivo, "warn")
+        else:
+            delete_licenca(uid, dt.isoformat())
 
         if _refeicao_set(uid, dt, pa, lanche, alm, jan, sai, alterado_por=u["nii"]):
             flash("Refeições atualizadas!", "ok")
@@ -392,23 +367,11 @@ def aluno_ausencias():
         elif acao == "remover":
             aid = _val_int_id(request.form.get("id", ""))
             if aid is not None:
-                with db() as conn:
-                    conn.execute(
-                        "DELETE FROM ausencias WHERE id=? AND utilizador_id=?",
-                        (aid, uid),
-                    )
-                    conn.commit()
+                delete_ausencia_propria(aid, uid)
                 flash("Ausência removida.", "ok")
         return redirect(url_for(".aluno_ausencias"))
 
-    with db() as conn:
-        rows = [
-            dict(r)
-            for r in conn.execute(
-                "SELECT id,ausente_de,ausente_ate,motivo FROM ausencias WHERE utilizador_id=? ORDER BY ausente_de DESC",
-                (uid,),
-            ).fetchall()
-        ]
+    rows = get_ausencias_aluno(uid)
 
     hoje = date.today().isoformat()
     edit_id = request.args.get("edit", "")
@@ -446,12 +409,7 @@ def aluno_historico():
     hoje = date.today()
     rows = []
     if uid:
-        with db() as conn:
-            rows = conn.execute(
-                """SELECT data,pequeno_almoco,lanche,almoco,jantar_tipo,jantar_sai_unidade
-              FROM refeicoes WHERE utilizador_id=? AND data>=? ORDER BY data DESC""",
-                (uid, (hoje - timedelta(days=30)).isoformat()),
-            ).fetchall()
+        rows = get_aluno_historico(uid, (hoje - timedelta(days=30)).isoformat())
 
     return render_template("aluno/historico.html", rows=rows)
 
@@ -468,12 +426,7 @@ def exportar_historico_aluno():
     hoje = date.today()
     rows = []
     if uid:
-        with db() as conn:
-            rows = conn.execute(
-                """SELECT data,pequeno_almoco,lanche,almoco,jantar_tipo,jantar_sai_unidade
-              FROM refeicoes WHERE utilizador_id=? AND data>=? ORDER BY data DESC""",
-                (uid, (hoje - timedelta(days=30)).isoformat()),
-            ).fetchall()
+        rows = get_aluno_historico(uid, (hoje - timedelta(days=30)).isoformat())
 
     headers = ["Data", "PA", "Lanche", "Almoço", "Jantar", "Sai Unidade"]
 
@@ -613,13 +566,12 @@ def aluno_perfil():
         flash("Conta de sistema — funcionalidade não disponível.", "error")
         return redirect(url_for(".aluno_home"))
 
-    with db() as conn:
-        row = dict(
-            conn.execute(
-                "SELECT NII, NI, Nome_completo, ano, email, telemovel FROM utilizadores WHERE id=?",
-                (uid,),
-            ).fetchone()
-        )
+    from core.users import get_user_by_nii_fields
+
+    row = get_user_by_nii_fields(u["nii"], "NII,NI,Nome_completo,ano,email,telemovel")
+    if not row:
+        flash("Erro ao carregar perfil.", "error")
+        return redirect(url_for(".aluno_home"))
 
     if request.method == "POST":
         email_n = _val_email(request.form.get("email", ""))
@@ -631,12 +583,7 @@ def aluno_perfil():
             flash("Telemóvel inválido.", "error")
             return redirect(url_for(".aluno_perfil"))
         try:
-            with db() as conn:
-                conn.execute(
-                    "UPDATE utilizadores SET email=?, telemovel=? WHERE id=?",
-                    (email_n, telef_n, uid),
-                )
-                conn.commit()
+            update_aluno_contacts(uid, email_n, telef_n)
             _audit(
                 current_user().get("nii", "?"),
                 "aluno_perfil_update",
@@ -648,19 +595,11 @@ def aluno_perfil():
             flash(f"Erro: {ex}", "error")
 
     hoje = date.today()
-    with db() as conn:
-        total_ref = conn.execute(
-            "SELECT COUNT(*) c FROM refeicoes WHERE utilizador_id=?", (uid,)
-        ).fetchone()["c"]
-        ausencias_ativas = conn.execute(
-            """SELECT COUNT(*) c FROM ausencias WHERE utilizador_id=?
-               AND ausente_de<=? AND ausente_ate>=?""",
-            (uid, hoje.isoformat(), hoje.isoformat()),
-        ).fetchone()["c"]
+    profile = get_aluno_profile_data(uid, hoje.isoformat())
 
     return render_template(
         "aluno/perfil.html",
         aluno=row,
-        total_ref=total_ref,
-        ausencias_ativas=ausencias_ativas,
+        total_ref=profile["total_ref"],
+        ausencias_ativas=profile["ausencias_ativas"],
     )

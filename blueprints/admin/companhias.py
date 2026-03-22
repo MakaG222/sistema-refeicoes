@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import sqlite3
+
 from flask import (
+    current_app,
     flash,
     redirect,
     render_template,
@@ -22,7 +25,7 @@ from core.companhias import (
     promote_one,
 )
 from utils.auth import role_required
-from utils.constants import ANOS_OPCOES
+from utils.constants import ANOS_OPCOES, MSG_ERRO_INTERNO, MSG_ID_INVALIDO
 from utils.helpers import _ano_label
 from utils.validators import _val_ano, _val_int_id, _val_ni, _val_nii, _val_text
 
@@ -50,19 +53,23 @@ def admin_companhias():
                         f'Turma "{nome_turma}" ({_ano_label(ano_int)}) criada com sucesso!',
                         "ok",
                     )
+                except sqlite3.IntegrityError:
+                    flash("Turma duplicada ou violação de integridade.", "error")
                 except Exception as ex:
-                    flash(f"Erro ao criar turma: {ex}", "error")
+                    current_app.logger.error("criar_turma: %s", ex)
+                    flash(MSG_ERRO_INTERNO, "error")
 
         elif acao == "eliminar_turma":
             tid = _val_int_id(request.form.get("tid", ""))
             if tid is None:
-                flash("ID de turma inválido.", "error")
+                flash(MSG_ID_INVALIDO, "error")
                 return redirect(url_for(".admin_companhias"))
             try:
                 delete_turma(tid)
                 flash("Turma eliminada.", "ok")
             except Exception as ex:
-                flash(f"Erro: {ex}", "error")
+                current_app.logger.error("eliminar_turma: %s", ex)
+                flash(MSG_ERRO_INTERNO, "error")
 
         elif acao == "atribuir_turma":
             nii_at = request.form.get("nii_at", "").strip()
@@ -72,8 +79,11 @@ def admin_companhias():
                     turma_val = int(tid_at) if tid_at else None
                     assign_turma(nii_at, turma_val)
                     flash(f"Turma do aluno {nii_at} atualizada.", "ok")
+                except ValueError:
+                    flash(MSG_ID_INVALIDO, "error")
                 except Exception as ex:
-                    flash(f"Erro: {ex}", "error")
+                    current_app.logger.error("atribuir_turma: %s", ex)
+                    flash(MSG_ERRO_INTERNO, "error")
 
         elif acao == "mover_aluno":
             nii_m = _val_nii(request.form.get("nii_m", ""))
@@ -87,7 +97,8 @@ def admin_companhias():
                     move_aluno_ano(nii_m, novo_ano_v)
                     flash(f"Aluno {nii_m} movido para {_ano_label(novo_ano_v)}.", "ok")
                 except Exception as ex:
-                    flash(f"Erro: {ex}", "error")
+                    current_app.logger.error("mover_aluno: %s", ex)
+                    flash(MSG_ERRO_INTERNO, "error")
 
         elif acao == "promover_um":
             uid_p = _val_int_id(request.form.get("uid", ""))
@@ -110,8 +121,10 @@ def admin_companhias():
             )
 
         elif acao == "promover_todos_anos":
-            promote_all_years()
-            flash("Promoção global concluída.", "ok")
+            counts = promote_all_years()
+            parts = [f"{c} do {_ano_label(a)}" for a, c in counts.items() if c > 0]
+            detail = ", ".join(parts) if parts else "nenhum aluno"
+            flash(f"Promoção global concluída: {detail}.", "ok")
 
         return redirect(url_for(".admin_companhias"))
 
