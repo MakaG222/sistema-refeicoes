@@ -49,3 +49,12 @@ _RE_ALNUM = re.compile(r"^[A-Za-z0-9_]+$")
 _MAX_NOME = 200
 _MAX_TEXT = 500
 _MAX_DATE_RANGE = 366
+
+# ── Mensagens padronizadas ────────────────────────────────────────────────
+MSG_NAO_ENCONTRADO = "Registo não encontrado."
+MSG_ID_INVALIDO = "Identificador inválido."
+MSG_ERRO_INTERNO = "Erro interno. Tenta novamente."
+MSG_SUCESSO_CRIAR = "Registo criado com sucesso."
+MSG_SUCESSO_EDITAR = "Dados atualizados."
+MSG_SUCESSO_ELIMINAR = "Registo eliminado."
+MSG_NAO_AUTORIZADO = "Não autorizado."

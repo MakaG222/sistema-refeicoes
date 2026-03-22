@@ -62,70 +62,62 @@ class TestCronEndpointRequiresToken:
     Podem retornar 302 (CSRF redirect), 401 ou 403."""
 
     def test_backup_cron_no_token(self, app):
-        import config as cfg
+        from unittest import mock
 
-        original = cfg.CRON_API_TOKEN
-        cfg.CRON_API_TOKEN = "real-secret-token"
-        try:
+        from blueprints.api import routes as api_mod
+
+        with mock.patch.object(api_mod.cfg, "CRON_API_TOKEN", "real-secret-token"):
             with app.test_client() as c:
                 resp = c.post("/api/backup-cron")
             assert resp.status_code == 403
-        finally:
-            cfg.CRON_API_TOKEN = original
 
     def test_backup_cron_invalid_token(self, app):
-        import config as cfg
+        from unittest import mock
 
-        original = cfg.CRON_API_TOKEN
-        cfg.CRON_API_TOKEN = "real-secret-token"
-        try:
+        from blueprints.api import routes as api_mod
+
+        with mock.patch.object(api_mod.cfg, "CRON_API_TOKEN", "real-secret-token"):
             with app.test_client() as c:
                 resp = c.post(
                     "/api/backup-cron",
                     headers={"Authorization": "Bearer token-errado-123"},
                 )
             assert resp.status_code == 403
-        finally:
-            cfg.CRON_API_TOKEN = original
 
     def test_autopreencher_cron_no_token(self, app):
-        import config as cfg
+        from unittest import mock
 
-        original = cfg.CRON_API_TOKEN
-        cfg.CRON_API_TOKEN = "real-secret-token"
-        try:
+        from blueprints.api import routes as api_mod
+
+        with mock.patch.object(api_mod.cfg, "CRON_API_TOKEN", "real-secret-token"):
             with app.test_client() as c:
                 resp = c.post("/api/autopreencher-cron")
             assert resp.status_code == 403
-        finally:
-            cfg.CRON_API_TOKEN = original
 
     def test_autopreencher_cron_invalid_token(self, app):
-        import config as cfg
+        from unittest import mock
 
-        original = cfg.CRON_API_TOKEN
-        cfg.CRON_API_TOKEN = "real-secret-token"
-        try:
+        from blueprints.api import routes as api_mod
+
+        with mock.patch.object(api_mod.cfg, "CRON_API_TOKEN", "real-secret-token"):
             with app.test_client() as c:
                 resp = c.post(
                     "/api/autopreencher-cron",
                     headers={"Authorization": "Bearer token-errado-123"},
                 )
             assert resp.status_code == 403
-        finally:
-            cfg.CRON_API_TOKEN = original
 
 
 class TestCronEndpointHappyPath:
     """CRON endpoints devem funcionar com token válido."""
 
     def test_backup_cron_with_valid_token(self, app):
-        import config as cfg
+        from unittest import mock
+
+        from blueprints.api import routes as api_mod
 
         test_token = "test-cron-token-valid-123"
-        original = cfg.CRON_API_TOKEN
-        cfg.CRON_API_TOKEN = test_token
-        try:
+        with mock.patch.object(api_mod.cfg, "CRON_API_TOKEN", test_token):
             with app.test_client() as c:
                 resp = c.post(
                     "/api/backup-cron",
@@ -134,16 +126,14 @@ class TestCronEndpointHappyPath:
             assert resp.status_code == 200
             data = resp.get_json()
             assert data["status"] == "ok"
-        finally:
-            cfg.CRON_API_TOKEN = original
 
     def test_autopreencher_cron_with_valid_token(self, app):
-        import config as cfg
+        from unittest import mock
+
+        from blueprints.api import routes as api_mod
 
         test_token = "test-cron-token-valid-456"
-        original = cfg.CRON_API_TOKEN
-        cfg.CRON_API_TOKEN = test_token
-        try:
+        with mock.patch.object(api_mod.cfg, "CRON_API_TOKEN", test_token):
             with app.test_client() as c:
                 resp = c.post(
                     "/api/autopreencher-cron",
@@ -152,8 +142,6 @@ class TestCronEndpointHappyPath:
             assert resp.status_code == 200
             data = resp.get_json()
             assert data["status"] == "ok"
-        finally:
-            cfg.CRON_API_TOKEN = original
 
 
 # ── Security Headers ─────────────────────────────────────────────────────────

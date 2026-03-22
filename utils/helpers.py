@@ -142,7 +142,13 @@ def _prazo_label(d: date) -> Markup:
 
 
 def _audit(actor: str, action: str, detail: str = "") -> None:
-    """Regista uma entrada de auditoria na tabela admin_audit_log."""
+    """Regista uma entrada de auditoria na tabela admin_audit_log + log estruturado."""
+    from flask import g
+
+    rid = getattr(g, "request_id", "-") if g else "-"
+    current_app.logger.info(
+        "action=%s actor=%s detail=%s rid=%s", action, actor, detail, rid
+    )
     try:
         with db() as conn:
             conn.execute(

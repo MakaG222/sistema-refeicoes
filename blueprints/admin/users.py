@@ -6,6 +6,7 @@ import csv
 import io
 
 from flask import (
+    current_app,
     flash,
     redirect,
     render_template,
@@ -181,7 +182,8 @@ def admin_utilizadores():
                     )
                     flash("Utilizador atualizado.", "ok")
                 except Exception as ex:
-                    flash(f"Erro: {ex}", "error")
+                    current_app.logger.error("editar_utilizador: %s", ex)
+                    flash("Erro interno. Tenta novamente.", "error")
         elif acao == "editar_contactos":
             nii_e = _val_nii(request.form.get("nii", ""))
             email_e = _val_email(request.form.get("email", ""))
@@ -202,7 +204,8 @@ def admin_utilizadores():
                     )
                     flash("Contactos atualizados.", "ok")
                 except Exception as ex:
-                    flash(f"Erro: {ex}", "error")
+                    current_app.logger.error("editar_contactos: %s", ex)
+                    flash("Erro interno. Tenta novamente.", "error")
         elif acao == "reset_pw":
             nii = request.form.get("nii", "")
             ok, msg = _reset_pw(nii)
