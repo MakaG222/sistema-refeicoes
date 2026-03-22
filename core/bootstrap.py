@@ -55,12 +55,14 @@ def bootstrap_dev_accounts(conn=None, *, is_production: bool = False) -> None:
             nome = p.get("nome", nii)
             perfil = p.get("perfil", "aluno")
             ano = str(p.get("ano", "") or "")
+            # Alunos de teste forçam mudança de password; contas de sistema não
+            must_change = 1 if perfil == "aluno" else 0
             if row is None:
                 conn.execute(
                     """INSERT INTO utilizadores
                     (NII,NI,Nome_completo,Palavra_chave,ano,perfil,must_change_password,password_updated_at,is_active)
-                    VALUES (?,?,?,?,?,?,0,datetime('now','localtime'),1)""",
-                    (nii, nii, nome, pw_hash, ano, perfil),
+                    VALUES (?,?,?,?,?,?,?,datetime('now','localtime'),1)""",
+                    (nii, nii, nome, pw_hash, ano, perfil, must_change),
                 )
             else:
                 stored = row["Palavra_chave"] or ""
