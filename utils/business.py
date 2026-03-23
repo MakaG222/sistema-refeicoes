@@ -329,7 +329,6 @@ def _alertas_painel(d_str: str, perfil: str) -> list[dict[str, str]]:
         return alertas
 
     hoje = date.today().isoformat()
-    amanha = (date.today() + timedelta(days=1)).isoformat()
 
     with db() as conn:
         # 1. Detenções que expiram hoje
