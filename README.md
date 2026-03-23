@@ -48,7 +48,7 @@ utils/                  Helpers partilhados
 
 templates/              Jinja2 templates (extends base.html)
 static/                 CSS e JS externos (app.css, meal-editor.css, app.js, etc.)
-tests/                  583 testes pytest (cobertura ≥ 90%)
+tests/                  701 testes pytest (cobertura ≥ 92%)
 ```
 
 ## Perfis de utilizador
@@ -138,7 +138,7 @@ DB_PATH=/mnt/data/sistema.db   # volume persistente
 gunicorn app:app --workers 2 --bind 0.0.0.0:$PORT
 ```
 
-A sessão expira após 3 minutos de inactividade.
+A sessão expira após 10 minutos de inactividade.
 Cookies são `HttpOnly`, `SameSite=Lax`, e `Secure` em produção.
 
 ## Segurança
