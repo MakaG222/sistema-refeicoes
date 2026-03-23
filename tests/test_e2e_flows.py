@@ -401,7 +401,12 @@ class TestSecurityFlows:
         create_aluno("e2e_sec1", "S001", "Security Test", pw="Sectest12")
         login_as(client, "e2e_sec1", "Sectest12")
 
-        admin_pages = ["/admin", "/admin/utilizadores", "/admin/log", "/admin/auditoria"]
+        admin_pages = [
+            "/admin",
+            "/admin/utilizadores",
+            "/admin/log",
+            "/admin/auditoria",
+        ]
         for url in admin_pages:
             resp = client.get(url)
             assert resp.status_code in (302, 403), f"Aluno não deveria aceder a {url}"
@@ -515,7 +520,7 @@ class TestA11yAndTemplates:
         """Página de login tem atributos ARIA."""
         resp = client.get("/login")
         html = resp.data.decode()
-        assert 'aria-label=' in html
+        assert "aria-label=" in html
         assert 'aria-required="true"' in html
 
     def test_base_template_has_nav_aria(self, app, client):
@@ -531,7 +536,7 @@ class TestA11yAndTemplates:
         """Template base tem <main> como landmark."""
         resp = client.get("/login")
         html = resp.data.decode()
-        assert '<main' in html
+        assert "<main" in html
 
     def test_error_404_has_role_alert(self, app, client):
         """Página 404 tem role=alert."""
