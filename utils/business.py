@@ -363,33 +363,7 @@ def _alertas_painel(d_str: str, perfil: str) -> list[dict[str, str]]:
                 }
             )
 
-        # 3. Alunos ativos sem refeições para amanhã (dias úteis)
-        amanha_dt = date.today() + timedelta(days=1)
-        if amanha_dt.weekday() < 5:
-            sem_ref = conn.execute(
-                """SELECT COUNT(*) c FROM utilizadores u
-                   WHERE u.perfil='aluno' AND u.is_active=1
-                   AND NOT EXISTS (
-                       SELECT 1 FROM refeicoes r
-                       WHERE r.utilizador_id=u.id AND r.data=?
-                   )
-                   AND NOT EXISTS (
-                       SELECT 1 FROM ausencias a
-                       WHERE a.utilizador_id=u.id
-                       AND a.ausente_de<=? AND a.ausente_ate>=?
-                   )""",
-                (amanha, amanha, amanha),
-            ).fetchone()["c"]
-            if sem_ref:
-                alertas.append(
-                    {
-                        "icon": "📋",
-                        "msg": f"{sem_ref} aluno(s) sem refeições marcadas para amanhã.",
-                        "cat": "info",
-                    }
-                )
-
-        # 4. Ausências registadas hoje
+        # 3. Ausências registadas hoje
         novas_aus = conn.execute(
             """SELECT COUNT(*) c FROM ausencias
                WHERE date(criado_em)=?""",

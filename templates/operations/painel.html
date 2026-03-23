@@ -45,21 +45,19 @@
       </div>
       {% endfor %}
     </div>
-    <div class="grid grid-3 mt-lg">
+    <div class="grid grid-4 mt-lg">
       <div class="stat-box"><div class="stat-num">{{ t.alm_norm }}</div><div class="stat-lbl">Almoço Normal</div></div>
       <div class="stat-box"><div class="stat-num">{{ t.alm_veg }}</div><div class="stat-lbl">Almoço Vegetariano</div></div>
       <div class="stat-box"><div class="stat-num">{{ t.alm_dieta }}</div><div class="stat-lbl">Almoço Dieta</div></div>
+      <div class="stat-box stat-box-estufa"><div class="stat-num text-estufa">{{ t.alm_estufa }}</div><div class="stat-lbl">♨️ Estufa Almoço</div></div>
       <div class="stat-box"><div class="stat-num">{{ t.jan_norm }}</div><div class="stat-lbl">Jantar Normal</div></div>
       <div class="stat-box"><div class="stat-num">{{ t.jan_veg }}</div><div class="stat-lbl">Jantar Vegetariano</div></div>
       <div class="stat-box"><div class="stat-num">{{ t.jan_dieta }}</div><div class="stat-lbl">Jantar Dieta</div></div>
-    </div>
-    <div class="grid grid-3 mt-lg">
-      <div class="stat-box stat-box-estufa"><div class="stat-num text-estufa">{{ t.alm_estufa }}</div><div class="stat-lbl">♨️ Estufa Almoço</div></div>
       <div class="stat-box stat-box-estufa"><div class="stat-num text-estufa">{{ t.jan_estufa }}</div><div class="stat-lbl">♨️ Estufa Jantar</div></div>
-      {% if perfil != "cozinha" %}
-      <div class="stat-box"><div class="stat-num">{{ t.jan_sai }}</div><div class="stat-lbl">🚪 Saem após jantar</div></div>
-      {% endif %}
     </div>
+    {% if perfil != "cozinha" %}
+    <div class="hint mt-md">🚪 Saem após jantar: <strong>{{ t.jan_sai }}</strong></div>
+    {% endif %}
   </div>
 
   {% if previsao %}
@@ -71,14 +69,11 @@
       <div class="stat-box"><div class="stat-num">{{ previsao.alm_a }}{{ previsao.deltas.alm|safe }}</div><div class="stat-lbl">🍽️ Almoços</div></div>
       <div class="stat-box"><div class="stat-num">{{ previsao.jan_a }}{{ previsao.deltas.jan|safe }}</div><div class="stat-lbl">🌙 Jantares</div></div>
     </div>
-    <div class="grid grid-3 mt-sm">
+    <div class="grid grid-4 mt-sm">
       <div class="stat-box"><div class="stat-num">{{ previsao.t_am.alm_norm }}</div><div class="stat-lbl">Alm Normal</div></div>
       <div class="stat-box"><div class="stat-num">{{ previsao.t_am.alm_veg }}</div><div class="stat-lbl">Alm Veg</div></div>
       <div class="stat-box"><div class="stat-num">{{ previsao.t_am.alm_dieta }}</div><div class="stat-lbl">Alm Dieta</div></div>
-    </div>
-    <div class="grid grid-3 mt-sm">
       <div class="stat-box stat-box-estufa"><div class="stat-num text-estufa">{{ previsao.t_am.alm_estufa }}</div><div class="stat-lbl">♨️ Estufa Alm</div></div>
-      <div class="stat-box stat-box-estufa"><div class="stat-num text-estufa">{{ previsao.t_am.jan_estufa }}</div><div class="stat-lbl">♨️ Estufa Jan</div></div>
     </div>
   </div>
   {% endif %}
