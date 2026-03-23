@@ -21,7 +21,7 @@
       <a class="btn btn-ghost btn-sm" href="{{ url_for('.painel_dia', d=next_d) }}">Próximo →</a>
     </div>
     <form method="get" class="date-nav-form">
-      <input type="date" name="d" value="{{ d_str }}" class="w-auto">
+      <input type="date" name="d" id="painel_data" value="{{ d_str }}" class="w-auto">
       <button class="btn btn-primary btn-sm">Ir</button>
     </form>
   </div>

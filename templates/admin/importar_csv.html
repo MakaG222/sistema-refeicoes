@@ -32,8 +32,8 @@
       {{ csrf_input() }}
       <input type="hidden" name="acao" value="preview">
       <div class="form-group">
-        <label>Ficheiro CSV</label>
-        <input type="file" name="csvfile" accept=".csv,.txt" required>
+        <label for="csvfile">Ficheiro CSV</label>
+        <input type="file" name="csvfile" id="csvfile" accept=".csv,.txt" required>
       </div>
       <button class="btn btn-primary">🔍 Pré-visualizar</button>
     </form>

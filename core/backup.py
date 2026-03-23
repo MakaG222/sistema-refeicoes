@@ -50,7 +50,7 @@ def limpar_backups_antigos() -> None:
                     f.unlink()
                     removidos += 1
             except Exception:
-                pass
+                log.exception("limpar_backups_antigos: falha ao remover %s", f)
         if removidos:
             log.info(
                 "%d backup(s) antigo(s) removido(s) (retenção: %d dias).",

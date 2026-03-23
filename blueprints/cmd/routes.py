@@ -1,5 +1,6 @@
 """Rotas do blueprint cmd."""
 
+import logging
 from datetime import date
 
 from flask import (
@@ -44,6 +45,8 @@ from utils.validators import (
     _val_phone,
     _val_text,
 )
+
+log = logging.getLogger(__name__)
 
 
 @cmd_bp.route("/cmd/editar-aluno/<nii>", methods=["GET", "POST"])
@@ -91,6 +94,7 @@ def cmd_editar_aluno(nii):
                     )
                 )
             except Exception:
+                log.exception("cmd_editar_aluno: erro ao atualizar dados")
                 flash(MSG_ERRO_INTERNO, "error")
 
     back_url = url_for("operations.lista_alunos_ano", ano=ano_ret, d=d_ret)
@@ -326,6 +330,7 @@ def detencoes_cmd():
                 )
                 return redirect(url_for(".detencoes_cmd"))
         except Exception:
+            log.exception("detencoes_cmd: erro ao processar datas")
             flash("Datas inválidas.", "error")
             return redirect(url_for(".detencoes_cmd"))
 

@@ -2,6 +2,7 @@
 
 import io
 import csv as _csv
+import logging
 from datetime import date, timedelta
 
 from flask import (
@@ -66,6 +67,8 @@ from utils.validators import (
     _val_refeicao,
     _val_text,
 )
+
+log = logging.getLogger(__name__)
 
 
 @aluno_bp.route("/aluno/licenca-fds", methods=["POST"])
@@ -644,6 +647,7 @@ def aluno_perfil():
             flash("Perfil atualizado com sucesso!", "ok")
             return redirect(url_for(".aluno_perfil"))
         except Exception as ex:
+            log.exception("aluno_perfil: erro ao atualizar contactos")
             flash(f"Erro: {ex}", "error")
 
     hoje = date.today()

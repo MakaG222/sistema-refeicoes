@@ -9,7 +9,7 @@
     <div class="card-title">Pesquisar utilizador</div>
     <form method="get" class="search-form">
       <input type="hidden" name="d" value="{{ d }}">
-      <input type="text" name="nii" maxlength="32" placeholder="NII do utilizador" value="{{ nii_q }}" class="flex-1">
+      <input type="text" name="nii" id="nii" maxlength="32" placeholder="NII do utilizador" value="{{ nii_q }}" class="flex-1">
       <button class="btn btn-primary">Pesquisar</button>
     </form>
   </div>
@@ -35,8 +35,8 @@
         </label>
         {% endfor %}
         <div class="form-group filter-group">
-          <label>🍽️ Almoço</label>
-          <select name="almoco">
+          <label for="almoco">🍽️ Almoço</label>
+          <select name="almoco" id="almoco">
             <option value="">— Sem almoço —</option>
             {% for tp in tipos_refeicao %}
             <option value="{{ tp }}" {{ "selected" if ref_almoco == tp else "" }}>{{ tp }}</option>
@@ -44,8 +44,8 @@
           </select>
         </div>
         <div class="form-group filter-group">
-          <label>🌙 Jantar</label>
-          <select name="jantar">
+          <label for="jantar">🌙 Jantar</label>
+          <select name="jantar" id="jantar">
             <option value="">— Sem jantar —</option>
             {% for tp in tipos_refeicao %}
             <option value="{{ tp }}" {{ "selected" if ref_jantar == tp else "" }}>{{ tp }}</option>

@@ -2,7 +2,11 @@
 
 from __future__ import annotations
 
+import logging
+
 from core.database import db
+
+log = logging.getLogger(__name__)
 
 
 def count_users() -> int:
@@ -45,6 +49,7 @@ def list_users(
                 where += " AND Nome_completo LIKE ?"
                 args.append(f"%{q}%")
         except Exception:
+            log.exception("list_users: FTS query falhou, fallback para LIKE")
             where += " AND Nome_completo LIKE ?"
             args.append(f"%{q}%")
 

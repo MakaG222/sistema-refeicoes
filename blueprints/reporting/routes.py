@@ -2,6 +2,7 @@
 
 import io
 import csv as _csv
+import logging
 from datetime import date, timedelta
 
 from flask import (
@@ -25,6 +26,8 @@ from utils.helpers import (
     _parse_date,
     _parse_date_strict,
 )
+
+log = logging.getLogger(__name__)
 
 
 @report_bp.route("/exportar/mensal")
@@ -294,6 +297,7 @@ def calendario_publico():
     try:
         ano_m, mes_m = int(mes_str[:4]), int(mes_str[5:7])
     except Exception:
+        log.exception("calendario_publico: erro ao processar parâmetro mes")
         ano_m, mes_m = hoje.year, hoje.month
 
     ICONES = {
@@ -647,6 +651,7 @@ def exportar_dia():
             flash("openpyxl não instalado — a exportar CSV.", "warn")
             fmt = "csv"
         except Exception as ex:
+            log.exception("exportar_mensal: erro ao gerar Excel")
             flash(f"Erro ao gerar Excel: {ex} — a exportar CSV.", "warn")
             fmt = "csv"
 
@@ -867,6 +872,7 @@ def exportar_relatorio():
         except ImportError:
             flash("openpyxl não instalado — a exportar CSV.", "warn")
         except Exception as ex:
+            log.exception("exportar_diario: erro ao gerar Excel")
             flash(f"Erro ao gerar Excel: {ex} — a exportar CSV.", "warn")
 
     # CSV (com BOM para Excel abrir correctamente)
