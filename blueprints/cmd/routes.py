@@ -35,6 +35,7 @@ from utils.helpers import (
     _parse_date,
 )
 from utils.passwords import _reset_pw
+from utils.constants import MSG_ERRO_INTERNO, MSG_ID_INVALIDO, MSG_NAO_ENCONTRADO
 from utils.validators import (
     _val_email,
     _val_int_id,
@@ -58,7 +59,7 @@ def cmd_editar_aluno(nii):
     aluno = get_user_by_nii_fields(nii) or {}
 
     if not aluno:
-        flash("Aluno não encontrado.", "error")
+        flash(MSG_NAO_ENCONTRADO, "error")
         back_ano = aluno.get("ano", ano_cmd or 1) if aluno else (ano_cmd or 1)
         return redirect(url_for("operations.lista_alunos_ano", ano=back_ano, d=d_ret))
 
@@ -90,7 +91,7 @@ def cmd_editar_aluno(nii):
                     )
                 )
             except Exception as ex:
-                flash(f"Erro: {ex}", "error")
+                flash(MSG_ERRO_INTERNO, "error")
 
     back_url = url_for("operations.lista_alunos_ano", ano=ano_ret, d=d_ret)
     return render_template(
@@ -115,7 +116,7 @@ def cmd_reset_password(nii):
     aluno = get_user_by_nii_fields(nii, "NII,Nome_completo,ano,perfil")
 
     if not aluno:
-        flash("Aluno não encontrado.", "error")
+        flash(MSG_NAO_ENCONTRADO, "error")
         return redirect(
             url_for("operations.lista_alunos_ano", ano=ano_cmd or 1, d=d_ret)
         )
@@ -163,7 +164,7 @@ def ver_perfil_aluno(nii):
     aluno = get_user_by_nii_fields(nii)
 
     if not aluno:
-        flash("Aluno não encontrado.", "error")
+        flash(MSG_NAO_ENCONTRADO, "error")
         return redirect(url_for("operations.painel_dia"))
 
     # CMD só pode ver alunos do seu ano
@@ -215,17 +216,17 @@ def ausencias_cmd():
         if acao == "remover":
             aid = _val_int_id(request.form.get("id"))
             if aid is None:
-                flash("ID inválido.", "error")
+                flash(MSG_ID_INVALIDO, "error")
                 return redirect(url_for(".ausencias_cmd"))
             if remover_ausencia_autorizada(aid, ano_cmd, perfil == "admin"):
                 flash("Ausência removida.", "ok")
             else:
-                flash("Não autorizado.", "error")
+                flash(MSG_NAO_ENCONTRADO, "error")
             return redirect(url_for(".ausencias_cmd"))
         nii = request.form.get("nii", "").strip()
         db_u = user_by_nii(nii)
         if not db_u:
-            flash("Utilizador não encontrado.", "error")
+            flash(MSG_NAO_ENCONTRADO, "error")
         elif perfil == "cmd" and int(db_u.get("ano", 0)) != ano_cmd:
             flash(
                 f"Só podes registar ausências para alunos do {ano_cmd}º ano.", "error"
@@ -291,7 +292,7 @@ def detencoes_cmd():
         if acao == "remover":
             did = _val_int_id(request.form.get("id", ""))
             if did is None:
-                flash("ID inválido.", "error")
+                flash(MSG_ID_INVALIDO, "error")
                 return redirect(url_for(".detencoes_cmd"))
             if remover_detencao(did, ano_cmd, perfil == "admin"):
                 flash("Detenção removida.", "ok")
@@ -307,7 +308,7 @@ def detencoes_cmd():
 
         db_u = user_by_nii(nii)
         if not db_u:
-            flash("Utilizador não encontrado.", "error")
+            flash(MSG_NAO_ENCONTRADO, "error")
             return redirect(url_for(".detencoes_cmd"))
 
         if perfil == "cmd" and int(db_u.get("ano", 0)) != ano_cmd:
