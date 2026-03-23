@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
+import logging
 import sqlite3
 from datetime import date, datetime, timedelta
 from typing import Any
 
 from core.constants import PRAZO_LIMITE_HORAS
 from core.database import db
+
+log = logging.getLogger(__name__)
 
 
 def refeicao_editavel(d: date) -> tuple[bool, str]:
@@ -356,6 +359,7 @@ def refeicao_exists(uid: int, d: date) -> bool:
             ).fetchone()
             return r is not None
     except Exception:
+        log.exception("refeicao_exists: erro ao verificar refeição uid=%s", uid)
         return False
 
 

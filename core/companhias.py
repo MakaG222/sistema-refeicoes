@@ -2,8 +2,12 @@
 
 from __future__ import annotations
 
+import logging
+
 from core.database import db
 from utils.helpers import _ano_label
+
+log = logging.getLogger(__name__)
 
 
 def create_turma(nome: str, ano: int, descricao: str | None = None) -> None:
@@ -110,6 +114,7 @@ def get_companhias_data() -> dict:
                 ).fetchall()
             ]
     except Exception:
+        log.exception("get_companhias_data: erro ao carregar turmas")
         turmas = []
 
     all_anos = list(range(1, 7)) + [7, 8]

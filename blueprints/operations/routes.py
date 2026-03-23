@@ -1,5 +1,6 @@
 """Rotas do blueprint operations."""
 
+import logging
 from datetime import date, datetime, timedelta
 
 from flask import (
@@ -54,6 +55,8 @@ from utils.helpers import (
 )
 from utils.validators import _val_refeicao
 
+log = logging.getLogger(__name__)
+
 
 @ops_bp.route("/painel", methods=["GET", "POST"])
 @role_required("cozinha", "oficialdia", "cmd", "admin")
@@ -70,6 +73,7 @@ def painel_dia():
                 ensure_daily_backup()
                 flash("Backup criado.", "ok")
             except Exception as e:
+                log.exception("painel_dia: falha ao criar backup")
                 flash(f"Falha: {e}", "error")
         return redirect(url_for(".painel_dia", d=dt.isoformat()))
 

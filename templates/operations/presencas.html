@@ -15,7 +15,7 @@
         <a class="btn btn-ghost btn-sm" href="{{ url_for('.controlo_presencas', d=next_d) }}">Próximo →</a>
       </div>
       <form method="get" class="date-nav-form">
-        <input type="date" name="d" value="{{ dt_iso }}" class="w-auto">
+        <input type="date" name="d" id="presencas_data" value="{{ dt_iso }}" class="w-auto">
         <button class="btn btn-primary btn-sm">Ir</button>
       </form>
     </div>
@@ -30,7 +30,7 @@
     <form method="post" class="d-flex gap-md flex-wrap">
       {{ csrf_input() }}
       <input type="hidden" name="acao" value="consultar">
-      <input type="text" name="ni" value="{{ ni_q }}" placeholder="NI do aluno (ex: 222)"
+      <input type="text" name="ni" id="ni" value="{{ ni_q }}" placeholder="NI do aluno (ex: 222)"
         class="ni-input"
         autofocus autocomplete="off">
       <button class="btn btn-primary btn-search">🔍 Consultar</button>

@@ -9,7 +9,11 @@ Responsabilidades:
 
 from __future__ import annotations
 
+import logging
+
 import click
+
+log = logging.getLogger(__name__)
 
 from core.auth_db import PERFIS_ADMIN, PERFIS_TESTE
 from core.backup import (
@@ -81,6 +85,7 @@ def bootstrap_dev_accounts(conn=None, *, is_production: bool = False) -> None:
         if owns_conn:
             conn.commit()
     except Exception as exc:
+        log.warning("bootstrap_dev_accounts falhou: %s", exc)
         print(f"[AVISO] bootstrap_dev_accounts falhou: {exc}", flush=True)
     finally:
         if owns_conn and conn is not None:

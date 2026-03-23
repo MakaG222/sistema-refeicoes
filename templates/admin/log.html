@@ -11,16 +11,16 @@
     </div>
     <form method="get" class="filter-form">
       <div class="form-group filter-group min-w-md flex-1">
-        <label class="filter-label">👤 Utilizador (nome)</label>
-        <input type="text" name="q_nome" value="{{ q_nome }}" placeholder="Nome do aluno..." class="filter-input">
+        <label class="filter-label" for="q_nome">👤 Utilizador (nome)</label>
+        <input type="text" name="q_nome" id="q_nome" value="{{ q_nome }}" placeholder="Nome do aluno..." class="filter-input">
       </div>
       <div class="form-group filter-group min-w-sm">
-        <label class="filter-label">✏️ Alterado por (NII)</label>
-        <input type="text" name="q_por" value="{{ q_por }}" placeholder="NII..." class="filter-input">
+        <label class="filter-label" for="q_por">✏️ Alterado por (NII)</label>
+        <input type="text" name="q_por" id="q_por" value="{{ q_por }}" placeholder="NII..." class="filter-input">
       </div>
       <div class="form-group filter-group min-w-sm">
-        <label class="filter-label">🏷 Campo</label>
-        <select name="q_campo" class="filter-input">
+        <label class="filter-label" for="q_campo">🏷 Campo</label>
+        <select name="q_campo" id="q_campo" class="filter-input">
           <option value="">Todos os campos</option>
           {% for c in campos_disponiveis %}
           <option value="{{ c }}" {{ "selected" if q_campo == c }}>{{ c }}</option>
@@ -28,12 +28,12 @@
         </select>
       </div>
       <div class="form-group filter-group">
-        <label class="filter-label">📅 Data ref. de</label>
-        <input type="date" name="d0" value="{{ q_d0 }}" class="filter-input w-auto">
+        <label class="filter-label" for="d0">📅 Data ref. de</label>
+        <input type="date" name="d0" id="d0" value="{{ q_d0 }}" class="filter-input w-auto">
       </div>
       <div class="form-group filter-group">
-        <label class="filter-label">📅 até</label>
-        <input type="date" name="d1" value="{{ q_d1 }}" class="filter-input w-auto">
+        <label class="filter-label" for="d1">📅 até</label>
+        <input type="date" name="d1" id="d1" value="{{ q_d1 }}" class="filter-input w-auto">
       </div>
       <button class="btn btn-primary btn-sm items-end">🔍 Filtrar</button>
       {% if filtros_ativos %}

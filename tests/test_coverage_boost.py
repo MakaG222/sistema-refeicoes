@@ -785,3 +785,311 @@ class TestDevFormatter:
         formatted = handler.formatter.format(record)
         assert "-" in formatted  # default request_id
         assert "test message" in formatted
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# utils/helpers.py coverage (86% → 95%+)
+# ═══════════════════════════════════════════════════════════════════════════
+
+
+class TestHelpersRender:
+    """Cobertura da função render() — linhas 24-25."""
+
+    def test_render_returns_html_response(self, app, client):
+        """render() devolve Response com HTML do base.html."""
+        from utils.helpers import render
+
+        with app.test_request_context("/"):
+            from flask import session
+
+            session["_csrf_token"] = "tok"
+            resp = render("<p>hello</p>")
+            assert resp.status_code == 200
+            assert resp.mimetype == "text/html"
+            assert b"<!doctype html>" in resp.data.lower() or b"<html" in resp.data
+
+    def test_render_custom_status(self, app, client):
+        """render() respeita o status code passado."""
+        from utils.helpers import render
+
+        with app.test_request_context("/"):
+            from flask import session
+
+            session["_csrf_token"] = "tok"
+            resp = render("<p>err</p>", status=404)
+            assert resp.status_code == 404
+
+
+class TestHelpersPrazoLabel:
+    """Cobertura da _prazo_label — linhas 136-140 (branch h <= 24)."""
+
+    def test_prazo_label_within_24h(self, app, monkeypatch):
+        """Quando faltam < 24h para o prazo, mostra aviso amarelo."""
+        from datetime import datetime as _dt
+        from utils.helpers import _prazo_label
+
+        # We need refeicao_editavel to return (False, ...) AND
+        # the hours remaining to be 0 < h <= 24.
+        # With PRAZO_LIMITE_HORAS=48, prazo_dt = d 00:00 - 48h.
+        # We need now to be between prazo_dt-24h and prazo_dt.
+        # Pick d = today+3 so it is definitely in the future.
+        target = date.today() + timedelta(days=3)
+
+        # prazo_dt = target 00:00 - 48h = target-2 00:00
+        # We fake "now" so that prazo_dt - now = 12h (within 24h window)
+        prazo_dt = _dt(target.year, target.month, target.day) - timedelta(hours=48)
+        fake_now = prazo_dt - timedelta(hours=12)
+
+        # Patch refeicao_editavel to return False and datetime.now
+        monkeypatch.setattr("utils.helpers.refeicao_editavel", lambda d: (False, ""))
+        monkeypatch.setattr(
+            "utils.helpers.datetime",
+            type(
+                "FakeDT",
+                (_dt,),
+                {
+                    "now": staticmethod(lambda: fake_now),
+                },
+            ),
+        )
+
+        with app.test_request_context("/"):
+            result = _prazo_label(target)
+            assert "prazo-warn" in str(result)
+            assert "12h" in str(result)
+
+    def test_prazo_label_expired(self, app, monkeypatch):
+        """Quando o prazo já expirou (h <= 0), mostra cadeado."""
+        from datetime import datetime as _dt
+        from utils.helpers import _prazo_label
+
+        target = date.today() + timedelta(days=3)
+        prazo_dt = _dt(target.year, target.month, target.day) - timedelta(hours=48)
+        fake_now = prazo_dt + timedelta(hours=1)  # past the deadline
+
+        monkeypatch.setattr("utils.helpers.refeicao_editavel", lambda d: (False, ""))
+        monkeypatch.setattr(
+            "utils.helpers.datetime",
+            type(
+                "FakeDT",
+                (_dt,),
+                {
+                    "now": staticmethod(lambda: fake_now),
+                },
+            ),
+        )
+
+        with app.test_request_context("/"):
+            result = _prazo_label(target)
+            assert "prazo-lock" in str(result)
+
+    def test_prazo_label_no_limit(self, app, monkeypatch):
+        """Quando PRAZO_LIMITE_HORAS é None, mostra cadeado genérico (linha 140)."""
+        from utils.helpers import _prazo_label
+
+        monkeypatch.setattr("utils.helpers.refeicao_editavel", lambda d: (False, ""))
+        monkeypatch.setattr("utils.helpers.PRAZO_LIMITE_HORAS", None)
+
+        with app.test_request_context("/"):
+            result = _prazo_label(date.today() + timedelta(days=1))
+            assert "prazo-lock" in str(result)
+
+
+class TestHelpersAuditException:
+    """Cobertura do except em _audit — linhas 163-164."""
+
+    def test_audit_db_failure_logs_warning(self, app, monkeypatch):
+        """_audit não levanta excepção se o INSERT falhar."""
+        from utils.helpers import _audit
+
+        def _bad_db():
+            raise RuntimeError("DB down")
+
+        # Make db() context manager raise on execute
+        from unittest.mock import MagicMock
+        import contextlib
+
+        @contextlib.contextmanager
+        def broken_db():
+            mock = MagicMock()
+            mock.execute.side_effect = RuntimeError("DB down")
+            yield mock
+
+        monkeypatch.setattr("utils.helpers.db", broken_db)
+
+        with app.test_request_context("/"):
+            # Should not raise
+            _audit("test_actor", "test_action", "detail")
+
+
+class TestHelpersClientIp:
+    """Cobertura do _client_ip — linhas 172-174."""
+
+    def test_client_ip_exception_fallback(self, app, monkeypatch):
+        """_client_ip retorna remote_addr quando access_route levanta excepção."""
+        from utils.helpers import _client_ip
+
+        with app.test_request_context("/", environ_base={"REMOTE_ADDR": "1.2.3.4"}):
+            from flask import request as req
+
+            # Monkey-patch access_route on the underlying Request class
+            original_prop = type(req._get_current_object()).access_route
+            try:
+
+                @property
+                def bad_route(self):
+                    raise RuntimeError("fail")
+
+                type(req._get_current_object()).access_route = bad_route
+                result = _client_ip()
+                assert isinstance(result, str)
+            finally:
+                type(req._get_current_object()).access_route = original_prop
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# utils/passwords.py coverage (88% → 95%+)
+# ═══════════════════════════════════════════════════════════════════════════
+
+
+class TestPasswordsMigrateException:
+    """Cobertura do except em _migrate_password_hash — linhas 59-60."""
+
+    def test_migrate_password_hash_db_error(self, app, monkeypatch):
+        """_migrate_password_hash não levanta excepção se UPDATE falhar."""
+        from utils.passwords import _migrate_password_hash
+        from unittest.mock import MagicMock
+        import contextlib
+
+        @contextlib.contextmanager
+        def broken_db():
+            mock = MagicMock()
+            mock.execute.side_effect = RuntimeError("DB fail")
+            yield mock
+
+        monkeypatch.setattr("utils.passwords.db", broken_db)
+
+        with app.test_request_context("/"):
+            # Should not raise
+            _migrate_password_hash(999999, "somepassword")
+
+
+class TestPasswordsAlterarEdgeCases:
+    """Cobertura de _alterar_password — linhas 67, 76, 82."""
+
+    def test_alterar_password_nii_not_found(self, app):
+        """_alterar_password com NII inexistente retorna erro."""
+        from utils.passwords import _alterar_password
+
+        with app.test_request_context("/"):
+            ok, msg = _alterar_password("nii_inexistente_xyz", "old", "new")
+            assert ok is False
+            assert "sistema" in msg.lower() or "não" in msg.lower()
+
+    def test_alterar_password_row_not_found(self, app, monkeypatch):
+        """_alterar_password quando user_id existe mas row não — linha 76."""
+        from utils.passwords import _alterar_password
+        from unittest.mock import MagicMock
+        import contextlib
+
+        # user_id_by_nii returns a valid ID but DB returns no row
+        monkeypatch.setattr("utils.passwords.user_id_by_nii", lambda nii: 999999)
+
+        @contextlib.contextmanager
+        def mock_db():
+            mock = MagicMock()
+            mock.execute.return_value.fetchone.return_value = None
+            yield mock
+
+        monkeypatch.setattr("utils.passwords.db", mock_db)
+
+        with app.test_request_context("/"):
+            ok, msg = _alterar_password("fake_nii", "old", "new")
+            assert ok is False
+            assert "encontrado" in msg.lower()
+
+    def test_alterar_password_weak_new_password(self, app):
+        """_alterar_password rejeita password nova fraca — linha 82."""
+        from utils.passwords import _alterar_password
+
+        # Create a real user to pass the first checks
+        create_aluno("alt_weak1", "AW1", "Alt Weak", pw="Altweak1")
+
+        with app.test_request_context("/"):
+            ok, msg = _alterar_password("alt_weak1", "Altweak1", "short")
+            assert ok is False
+            assert "8 caracteres" in msg or "letras" in msg
+
+
+class TestPasswordsCriarEdgeCases:
+    """Cobertura de _criar_utilizador — linhas 100, 108, 115, 139-141."""
+
+    def test_criar_utilizador_missing_fields(self, app):
+        """_criar_utilizador com campos em falta — linha 100."""
+        from utils.passwords import _criar_utilizador
+
+        with app.test_request_context("/"):
+            ok, msg = _criar_utilizador("", "ni", "nome", "1", "aluno", "Pass1234")
+            assert ok is False
+            assert "obrigatórios" in msg.lower()
+
+    def test_criar_utilizador_invalid_ni(self, app):
+        """_criar_utilizador com NI inválido — linha 108."""
+        from utils.passwords import _criar_utilizador
+
+        with app.test_request_context("/"):
+            # NI with special chars should be rejected by _val_ni
+            ok, msg = _criar_utilizador(
+                "validnii1", "<script>", "Nome Valid", "1", "aluno", "Pass1234"
+            )
+            assert ok is False
+            assert "NI" in msg or "inv" in msg.lower()
+
+    def test_criar_utilizador_invalid_nome(self, app):
+        """_criar_utilizador com nome inválido (whitespace only) — linha 115."""
+        from utils.passwords import _criar_utilizador
+
+        with app.test_request_context("/"):
+            # Whitespace-only nome passes the `all([...])` check but _val_nome returns None
+            ok, msg = _criar_utilizador(
+                "validnii2", "NI123", "   ", "1", "aluno", "Pass1234"
+            )
+            assert ok is False
+            assert "nome" in msg.lower() or "inv" in msg.lower()
+
+    def test_criar_utilizador_exception(self, app, monkeypatch):
+        """_criar_utilizador com excepção no INSERT — linhas 139-141."""
+        from utils.passwords import _criar_utilizador
+        from unittest.mock import MagicMock
+        import contextlib
+
+        @contextlib.contextmanager
+        def failing_db():
+            # Let validation queries pass, fail on INSERT
+            mock = MagicMock()
+            mock.execute.side_effect = RuntimeError("INSERT fail")
+            yield mock
+
+        # We need validators to pass but db INSERT to fail.
+        # Monkeypatch db only for the INSERT step.
+        monkeypatch.setattr("utils.passwords.db", failing_db)
+
+        with app.test_request_context("/"):
+            ok, msg = _criar_utilizador(
+                "criarexc1", "CE1", "Criar Exception", "1", "aluno", "Pass1234"
+            )
+            assert ok is False
+            assert "fail" in msg.lower() or "error" in msg.lower() or "INSERT" in msg
+
+
+class TestPasswordsResetNotFound:
+    """Cobertura de _reset_pw NII não encontrado — linha 157."""
+
+    def test_reset_pw_nii_not_found(self, app):
+        """_reset_pw com NII inexistente retorna erro."""
+        from utils.passwords import _reset_pw
+
+        with app.test_request_context("/"):
+            ok, msg = _reset_pw("nii_nao_existe_xyz")
+            assert ok is False
+            assert "encontrado" in msg.lower()

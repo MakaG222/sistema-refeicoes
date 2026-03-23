@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from datetime import date, datetime
 
 from flask import (
@@ -16,6 +17,8 @@ from blueprints.admin import admin_bp
 from core.calendar import add_entries, get_upcoming, remove_entry
 from utils.auth import current_user, role_required
 from utils.validators import _val_date_range, _val_text, _val_tipo_calendario
+
+log = logging.getLogger(__name__)
 
 
 @admin_bp.route("/admin/calendario", methods=["GET", "POST"])
@@ -47,6 +50,7 @@ def admin_calendario():
             except ValueError as e:
                 flash(f"Data inválida: {e}", "error")
             except Exception as e:
+                log.exception("admin_calendario: erro ao adicionar entrada")
                 flash(str(e), "error")
         elif acao == "remover":
             remove_entry(request.form.get("dia", ""))

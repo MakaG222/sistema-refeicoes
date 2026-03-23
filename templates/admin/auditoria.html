@@ -8,16 +8,16 @@
     </div>
     <form method="get" class="filter-form">
       <div class="form-group filter-group min-w-sm flex-1">
-        <label class="filter-label">👤 Actor (NII)</label>
-        <input type="text" name="actor" value="{{ q_actor }}" placeholder="NII...">
+        <label class="filter-label" for="actor">👤 Actor (NII)</label>
+        <input type="text" name="actor" id="actor" value="{{ q_actor }}" placeholder="NII...">
       </div>
       <div class="form-group filter-group min-w-sm flex-1">
-        <label class="filter-label">📌 Ação</label>
-        <input type="text" name="action" value="{{ q_action }}" placeholder="ex: login, criar_utilizador...">
+        <label class="filter-label" for="action">📌 Ação</label>
+        <input type="text" name="action" id="action" value="{{ q_action }}" placeholder="ex: login, criar_utilizador...">
       </div>
       <div class="form-group filter-group">
-        <label class="filter-label">Máx.</label>
-        <select name="limite" class="w-auto">
+        <label class="filter-label" for="limite">Máx.</label>
+        <select name="limite" id="limite" class="w-auto">
           {% for n in [100, 200, 500, 1000, 2000, 5000] %}
           <option value="{{ n }}" {{ "selected" if limite|string == n|string }}>{{ n }}</option>
           {% endfor %}

@@ -15,12 +15,12 @@
       {{ csrf_input() }}
       <div class="grid grid-2">
         <div class="form-group">
-          <label>NII do aluno</label>
-          <input type="text" name="nii" maxlength="32" required placeholder="NII" {% if alunos_ano %}list="alunos_list"{% endif %}>
+          <label for="nii">NII do aluno</label>
+          <input type="text" name="nii" id="nii" maxlength="32" required placeholder="NII" {% if alunos_ano %}list="alunos_list"{% endif %}>
         </div>
-        <div class="form-group"><label>Motivo (opcional)</label><input type="text" name="motivo" maxlength="500" placeholder="Ex: detido por..."></div>
-        <div class="form-group"><label>De</label><input type="date" name="de" required value="{{ hoje }}"></div>
-        <div class="form-group"><label>Até</label><input type="date" name="ate" required value="{{ hoje }}"></div>
+        <div class="form-group"><label for="motivo">Motivo (opcional)</label><input type="text" name="motivo" id="motivo" maxlength="500" placeholder="Ex: detido por..."></div>
+        <div class="form-group"><label for="de">De</label><input type="date" name="de" id="de" required value="{{ hoje }}"></div>
+        <div class="form-group"><label for="ate">Até</label><input type="date" name="ate" id="ate" required value="{{ hoje }}"></div>
       </div>
       <button class="btn btn-ok">Registar detenção</button>
     </form>
