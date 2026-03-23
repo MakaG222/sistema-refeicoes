@@ -6,7 +6,7 @@
   function updateEstufaVisibility(meal) {
     var h = document.getElementById('h_' + meal);
     var estufa = document.getElementById(meal === 'almoco' ? 'alm_estufa_row' : 'jan_estufa_row');
-    if (!estufa) return;
+    if (!h || !estufa) return;
     if (h.value) {
       estufa.style.display = 'flex';
     } else {
@@ -25,7 +25,8 @@
     if (!jr) return;
     if (antes && antes.checked) {
       jr.style.opacity = '.4'; jr.style.pointerEvents = 'none';
-      document.getElementById('h_jantar').value = '';
+      var hj = document.getElementById('h_jantar');
+      if (hj) hj.value = '';
       jr.querySelectorAll('.sw-pill').forEach(function(p) { p.classList.remove('sw-sel'); });
       jr.classList.remove('sw-on');
       if (jer) jer.style.display = 'none';

@@ -376,6 +376,30 @@ hr{border:none;border-top:1.5px solid var(--border);margin:.85rem 0}
 .btn-promo-next{background:#1e8449;color:#fff}
 .btn-promo-final{background:#922b21;color:#fff}
 
+@media(prefers-reduced-motion:reduce){
+  *{transition:none!important;animation:none!important}
+}
+
+@media print{
+  nav,.btn,.gap-btn,.filter-form,.date-nav-form,.page-header form,.alert{display:none!important}
+  body{background:#fff;font-size:10pt}
+  .container{max-width:100%;padding:0}
+  .card{box-shadow:none;border:1px solid #ddd;page-break-inside:avoid}
+  .stat-box{border:1px solid #ddd}
+  .table-wrap{overflow:visible}
+  a{color:#000}
+}
+
+@media(max-width:768px){
+  .container{padding:1rem .8rem}
+  .page-title{font-size:1.1rem}
+  .stat-num{font-size:1.4rem}
+  .grid-4{grid-template-columns:repeat(2,1fr)}
+  .login-box{margin:1rem;max-width:100%}
+  .flex-between{flex-direction:column;align-items:stretch}
+  nav{padding:.6rem 1rem}
+}
+
 @media(max-width:640px){
   .grid-2,.grid-3,.grid-4{grid-template-columns:1fr}
   .week-grid{grid-template-columns:1fr 1fr}
