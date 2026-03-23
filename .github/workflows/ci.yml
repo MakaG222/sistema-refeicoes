@@ -29,7 +29,7 @@ jobs:
           ruff format --check .
 
       - name: Security audit (dependencies)
-        run: pip-audit
+        run: pip-audit -r requirements.txt
 
       - name: Security scan (code)
         run: pip install bandit && bandit -r core/ blueprints/ utils/ app.py -ll
