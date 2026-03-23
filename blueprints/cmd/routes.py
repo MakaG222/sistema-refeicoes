@@ -90,7 +90,7 @@ def cmd_editar_aluno(nii):
                         "lista_alunos_ano", ano=ano_ret or aluno.get("ano", 1), d=d_ret
                     )
                 )
-            except Exception as ex:
+            except Exception:
                 flash(MSG_ERRO_INTERNO, "error")
 
     back_url = url_for("operations.lista_alunos_ano", ano=ano_ret, d=d_ret)

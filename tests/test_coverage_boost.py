@@ -7,14 +7,12 @@ aluno routes, absences, config.
 
 import os
 import sqlite3
-import tempfile
 
 os.environ.setdefault("ENV", "development")
 os.environ.setdefault("SECRET_KEY", "test-secret-key-not-for-production")
 
 from datetime import date, timedelta
 
-import pytest
 
 from conftest import create_aluno, create_system_user, get_csrf, login_as
 from core.database import db
@@ -116,7 +114,10 @@ class TestBootstrapCLIRestore:
         runner = app.test_cli_runner()
         result = runner.invoke(args=["restore", "/tmp/nonexistent_backup_xyz.db"])
         assert result.exit_code != 0
-        assert "não encontrado" in result.output.lower() or "not found" in result.output.lower()
+        assert (
+            "não encontrado" in result.output.lower()
+            or "not found" in result.output.lower()
+        )
 
     def test_restore_invalid_backup(self, app, tmp_path):
         bad = tmp_path / "bad.db"
@@ -498,7 +499,12 @@ class TestAlunoRoutesEdgeCases:
         csrf = get_csrf(client)
         resp = client.post(
             "/aluno/password",
-            data={"old": "Pwrate123", "new": "NewPw12345", "conf": "NewPw12345", "csrf_token": csrf},
+            data={
+                "old": "Pwrate123",
+                "new": "NewPw12345",
+                "conf": "NewPw12345",
+                "csrf_token": csrf,
+            },
             follow_redirects=True,
         )
         assert resp.status_code == 200
@@ -512,7 +518,12 @@ class TestAlunoRoutesEdgeCases:
         csrf = get_csrf(client)
         resp = client.post(
             "/aluno/password",
-            data={"old": "Pwmis1234", "new": "NewPass123", "conf": "WrongConf1", "csrf_token": csrf},
+            data={
+                "old": "Pwmis1234",
+                "new": "NewPass123",
+                "conf": "WrongConf1",
+                "csrf_token": csrf,
+            },
             follow_redirects=True,
         )
         assert resp.status_code == 200
@@ -651,7 +662,7 @@ class TestCMDRoutesEdgeCases:
     def test_cmd_criar_detencao_datas_invertidas(self, app, client):
         """Detenção com data 'até' antes de 'de' é rejeitada."""
         create_system_user("cmd_inv1", "cmd", pw="Cmdinv123", ano="1")
-        uid = create_aluno("cmd_det_aluno1", "CDA1", "CMD Det Aluno", "1")
+        create_aluno("cmd_det_aluno1", "CDA1", "CMD Det Aluno", "1")
         login_as(client, "cmd_inv1", "Cmdinv123")
 
         d1 = (date.today() + timedelta(days=20)).isoformat()
@@ -761,8 +772,13 @@ class TestDevFormatter:
         cfg.configure_logging(mock_app)
 
         record = logging.LogRecord(
-            name="test", level=logging.INFO, pathname="", lineno=0,
-            msg="test message", args=(), exc_info=None,
+            name="test",
+            level=logging.INFO,
+            pathname="",
+            lineno=0,
+            msg="test message",
+            args=(),
+            exc_info=None,
         )
         # No request_id set - should default to "-"
         handler = mock_app.logger.handlers[-1]
