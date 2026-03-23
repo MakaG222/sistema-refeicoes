@@ -45,7 +45,7 @@ from utils.business import (
     _remover_ausencia,
     _tem_ausencia_ativa,
 )
-from utils.constants import ABREV_DIAS, NOMES_DIAS
+from utils.constants import ABREV_DIAS, MSG_ID_INVALIDO, NOMES_DIAS
 from utils.helpers import (
     _get_anos_disponiveis,
     _parse_date,
@@ -529,7 +529,11 @@ def ausencias():
     if request.method == "POST":
         acao = request.form.get("acao", "")
         if acao == "remover":
-            _remover_ausencia(request.form.get("id"))
+            aid = request.form.get("id", "")
+            if not aid.isdigit():
+                flash(MSG_ID_INVALIDO, "error")
+                return redirect(url_for(".ausencias"))
+            _remover_ausencia(int(aid))
             flash("Ausência removida.", "ok")
             return redirect(url_for(".ausencias"))
         nii = request.form.get("nii", "").strip()
