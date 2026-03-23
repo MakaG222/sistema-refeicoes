@@ -20,7 +20,7 @@ from core.meals import (
 
 # Re-export para backward-compat
 def _default_refeicao_para_dia(d: date) -> dict[str, Any]:
-    """Marks all meals Mon-Fri, except dinner on Fridays."""
+    """Marks meals Mon-Fri, except lanches and Friday dinner."""
     if not _is_weekday_mon_to_fri(d):
         return {
             "pequeno_almoco": 0,
@@ -31,7 +31,7 @@ def _default_refeicao_para_dia(d: date) -> dict[str, Any]:
         }
     base = {
         "pequeno_almoco": 1,
-        "lanche": 1,
+        "lanche": 0,
         "almoco": "Normal",
         "jantar_tipo": "Normal",
         "jantar_sai_unidade": 0,
