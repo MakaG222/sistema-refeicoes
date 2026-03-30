@@ -62,23 +62,45 @@ tests/                  717 testes pytest (cobertura 92%)
 
 ## Setup local
 
+> **Requisito:** Python **3.11+** (as passwords usam `scrypt`, que não é suportado no Python 3.9 do macOS).
+> No macOS com Homebrew: `brew install python@3.11`
+
 ```bash
 # 1. Clonar e instalar
 git clone https://github.com/MakaG222/sistema-refeicoes.git
 cd sistema-refeicoes
-python -m venv .venv && source .venv/bin/activate
+
+# 2. Criar venv com Python 3.11+
+python3.11 -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 
-# 2. (Opcional) Instalar ferramentas de desenvolvimento
+# 3. (Opcional) Instalar ferramentas de desenvolvimento
 pip install -r requirements-dev.txt
 
-# 3. Arrancar
+# 4. Arrancar
 python app.py
 # → http://localhost:8080
 ```
 
+Se a porta 8080 estiver ocupada:
+```bash
+lsof -ti:8080 | xargs kill -9    # libertar a porta
+python app.py
+```
+
 A base de dados SQLite é criada automaticamente no primeiro arranque.
 Em desenvolvimento, contas de teste são criadas via `PERFIS_ADMIN` / `PERFIS_TESTE` em `core/constants.py`.
+
+**Contas de teste (desenvolvimento):**
+
+| Login | Password | Perfil |
+|-------|----------|--------|
+| `admin` | `admin123` | Administrador |
+| `cmd1`–`cmd8` | `cmd{N}123` | Comandante de ano |
+| `cozinha` | `cozinha123` | Cozinha |
+| `oficialdia` | `oficial123` | Oficial de dia |
+| `teste1`–`teste15` | `teste{N}` | Aluno |
+
 
 ### Comandos CLI (Flask)
 
