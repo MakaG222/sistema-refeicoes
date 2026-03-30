@@ -29,8 +29,8 @@ def _registar_ausencia(
     uid: int, de: str, ate: str, motivo: str, criado_por: str
 ) -> tuple[bool, str]:
     try:
-        datetime.strptime(de, "%Y-%m-%d")
-        datetime.strptime(ate, "%Y-%m-%d")
+        d_de = datetime.strptime(de, "%Y-%m-%d").date()
+        d_ate = datetime.strptime(ate, "%Y-%m-%d").date()
     except ValueError:
         return False, "Data inválida."
     if de > ate:
@@ -40,6 +40,18 @@ def _registar_ausencia(
             """INSERT INTO ausencias (utilizador_id,ausente_de,ausente_ate,motivo,criado_por)
                         VALUES (?,?,?,?,?)""",
             (uid, de, ate, motivo or None, criado_por),
+        )
+        # Limpar refeições durante o período de ausência
+        conn.execute(
+            """UPDATE refeicoes SET pequeno_almoco=0, lanche=0, almoco=NULL,
+               jantar_tipo=NULL, jantar_sai_unidade=0, almoco_estufa=0, jantar_estufa=0
+               WHERE utilizador_id=? AND data>=? AND data<=?""",
+            (uid, de, ate),
+        )
+        # Cancelar licenças pendentes durante o período (preservar as que já têm saída registada)
+        conn.execute(
+            "DELETE FROM licencas WHERE utilizador_id=? AND data>=? AND data<=? AND hora_saida IS NULL",
+            (uid, de, ate),
         )
         conn.commit()
     return True, ""
@@ -242,6 +254,13 @@ def _dia_editavel_aluno(d: date) -> tuple[bool, str]:
 # ── Licença FDS ──────────────────────────────────────────────────────────
 
 
+def _fds_deadline_passed(sexta: date) -> bool:
+    """Verifica se o prazo para marcar/cancelar licença FDS já passou (sexta 12h)."""
+    agora = datetime.now()
+    deadline = datetime(sexta.year, sexta.month, sexta.day, 12, 0, 0)
+    return agora >= deadline
+
+
 def _marcar_licenca_fds(uid: int, sexta: date, alterado_por: str) -> tuple[bool, str]:
     """
     Marca 'licença fim de semana' para um aluno:
@@ -249,6 +268,8 @@ def _marcar_licenca_fds(uid: int, sexta: date, alterado_por: str) -> tuple[bool,
     - Sábado e Domingo: apaga todas as refeições
     Retorna (sucesso: bool, mensagem: str)
     """
+    if _fds_deadline_passed(sexta):
+        return False, "Prazo expirado — licença FDS só pode ser marcada até sexta às 12h."
     try:
         # ── Sexta-feira: licença antes_jantar ──────────────────────────
         with db() as conn:
@@ -290,6 +311,8 @@ def _cancelar_licenca_fds(uid: int, sexta: date, alterado_por: str) -> tuple[boo
     - Remove a licença da sexta
     - Repõe jantar normal na sexta, retira sai_unidade
     """
+    if _fds_deadline_passed(sexta):
+        return False, "Prazo expirado — licença FDS só pode ser cancelada até sexta às 12h."
     try:
         # Remover licença da sexta
         with db() as conn:

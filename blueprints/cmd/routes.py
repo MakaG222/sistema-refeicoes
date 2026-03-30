@@ -334,7 +334,10 @@ def detencoes_cmd():
             flash("Datas inválidas.", "error")
             return redirect(url_for(".detencoes_cmd"))
 
-        criar_detencao(db_u["id"], d1, d2, motivo, u["nii"])
+        ok, msg = criar_detencao(db_u["id"], d1, d2, motivo, u["nii"])
+        if not ok:
+            flash(msg, "error")
+            return redirect(url_for(".detencoes_cmd"))
 
         # Auto-marcar todas as refeições para os dias de detenção (se não estiverem marcadas)
         _auto_marcar_refeicoes_detido(db_u["id"], d1, d2, u["nii"])

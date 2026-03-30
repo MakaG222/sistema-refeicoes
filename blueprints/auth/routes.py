@@ -105,10 +105,10 @@ def login():
                             )
                         else:
                             restam = max(0, 5 - falhas)
-                            error = f"Password incorreta. ({restam} tentativa(s) restante(s) antes de bloqueio)"
+                            error = f"NII ou password incorretos. ({restam} tentativa(s) restante(s) antes de bloqueio)"
             else:
                 reg_login(nii, 0, ip=_client_ip())
-                error = "NII não encontrado."
+                error = "NII ou password incorretos."
         if u:
             session["_csrf_token"] = secrets.token_urlsafe(32)  # Rodar CSRF token
             session["user"] = u

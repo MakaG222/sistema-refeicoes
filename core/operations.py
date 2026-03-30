@@ -272,15 +272,9 @@ def get_anos_resumo(dt: date, anos: list[int]) -> list[dict]:
 def registar_saida_presenca(
     uid: int, dt: date, nii_actor: str, nome_actor: str, perfil_actor: str
 ) -> None:
-    """Regista saída: cria ausência + marca hora_saida na licença."""
+    """Regista saída: marca hora_saida na licença + cria ausência."""
     d_str = dt.isoformat()
-    _registar_ausencia(
-        uid,
-        d_str,
-        d_str,
-        f"Saída registada por {nome_actor} ({perfil_actor})",
-        nii_actor,
-    )
+    # Marcar hora_saida ANTES de registar ausência (ausência limpa licenças pendentes)
     agora = datetime.now().strftime("%H:%M")
     with db() as conn:
         conn.execute(
@@ -288,6 +282,13 @@ def registar_saida_presenca(
             (agora, uid, d_str),
         )
         conn.commit()
+    _registar_ausencia(
+        uid,
+        d_str,
+        d_str,
+        f"Saída registada por {nome_actor} ({perfil_actor})",
+        nii_actor,
+    )
 
 
 def registar_entrada_presenca(uid: int, dt: date) -> None:
