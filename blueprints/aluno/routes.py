@@ -22,6 +22,7 @@ from core.meals import (
     dias_operacionais_batch,
     get_menu_do_dia,
     refeicao_get,
+    refeicao_save,
     refeicoes_batch,
 )
 from core.absences import ausencias_batch, detencoes_batch, licencas_batch
@@ -267,8 +268,17 @@ def aluno_editar(d):
         return redirect(url_for(".aluno_home"))
 
     r = refeicao_get(uid, dt)
-    occ = _get_ocupacao_dia(dt)
     is_weekend = dt.weekday() >= 5
+
+    # Auto-criar refeições por defeito se não existir registo (Seg-Sex)
+    if not r.get("id") and not is_weekend:
+        from core.autofill import _default_refeicao_para_dia
+
+        defaults = _default_refeicao_para_dia(dt)
+        refeicao_save(uid, dt, defaults, alterado_por="sistema")
+        r = refeicao_get(uid, dt)
+
+    occ = _get_ocupacao_dia(dt)
     detido = _tem_detencao_ativa(uid, dt)
 
     # Dados do aluno para regras de licença
@@ -280,6 +290,13 @@ def aluno_editar(d):
     pode_lic, motivo_lic = _pode_marcar_licenca(uid, dt, ano_aluno, ni_aluno)
 
     if request.method == "POST":
+        # Aluno detido não pode alterar refeições
+        if detido:
+            flash(
+                "Estás detido neste dia — as refeições estão bloqueadas e não podem ser alteradas.",
+                "error",
+            )
+            return redirect(url_for(".aluno_home"))
         if not _check_rate_limit("_meal_ops"):
             flash("Demasiadas alterações. Aguarda um minuto.", "warn")
             return redirect(url_for(".aluno_home"))

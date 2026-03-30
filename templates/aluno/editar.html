@@ -10,7 +10,7 @@
       <div class="alert alert-info mb-lg">Fim de semana — refeições opcionais.</div>
       {% endif %}
       {% if detido %}
-      <div class="alert alert-warn mb-lg">🚫 Estás detido neste dia. Não podes sair da unidade.</div>
+      <div class="alert alert-error mb-lg">🚫 Estás detido neste dia. As refeições estão bloqueadas e não podem ser alteradas.</div>
       {% endif %}
       {% if menu %}
       <div class="card card-accent-gold">
@@ -31,14 +31,14 @@
         {% endfor %}
       </div>
       <div class="card">
-        <div class="card-title">✏️ Marcar refeições</div>
+        <div class="card-title">{% if detido %}🔒 Refeições (bloqueadas){% else %}✏️ Marcar refeições{% endif %}</div>
         <form method="post" id="mealForm">
           {{ csrf_input() }}
           <input type="hidden" name="pa" id="h_pa" value="{{ pa_on }}">
           <input type="hidden" name="lanche" id="h_lanche" value="{{ lan_on }}">
           <input type="hidden" name="almoco" id="h_almoco" value="{{ alm_val }}">
           <input type="hidden" name="jantar" id="h_jantar" value="{{ jan_val }}">
-          <div class="sw-group">
+          <div class="sw-group"{% if detido %} style="opacity:.5;pointer-events:none"{% endif %}>
             <!-- PA toggle -->
             <div class="sw-row{{ "  sw-on" if pa_on else "" }}" data-meal="pa" data-toggle-meal>
               <span class="sw-icon">☕</span>
@@ -119,8 +119,12 @@
           {% endif %}
           <hr>
           <div class="gap-btn">
+            {% if not detido %}
             <button class="btn btn-ok btn-save">💾 Guardar</button>
             <a class="btn btn-ghost" href="{{ url_for(".aluno_home") }}">Cancelar</a>
+            {% else %}
+            <a class="btn btn-primary" href="{{ url_for(".aluno_home") }}">Voltar</a>
+            {% endif %}
           </div>
         </form>
       </div>

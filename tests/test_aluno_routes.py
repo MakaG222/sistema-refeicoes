@@ -253,6 +253,140 @@ class TestAlunoPerfil:
         assert resp.status_code == 200
 
 
+class TestAlunoDefaultMeals:
+    """Testes para a criação automática de refeições por defeito."""
+
+    def test_editar_autocria_refeicoes_dia_util(self, app, client):
+        """Abrir editor num dia útil sem registo cria refeições por defeito."""
+        from core.meals import refeicao_get
+        from core.auth_db import user_id_by_nii
+
+        _login_aluno(client)
+        # Encontrar próxima segunda a quinta (não sexta, para testar jantar)
+        hoje = date.today()
+        d = hoje + timedelta(days=10)
+        while d.weekday() >= 4:  # 4=sexta, 5=sáb, 6=dom
+            d += timedelta(days=1)
+
+        uid = user_id_by_nii("al_rt1")
+        # Garantir que não existe registo
+        r = refeicao_get(uid, d)
+        assert not r.get("id"), "Não deveria existir registo prévio"
+
+        resp = client.get(f"/aluno/editar/{d.isoformat()}")
+        if resp.status_code == 302:
+            return  # Prazo expirado — OK, não testável
+
+        # Agora deveria existir registo com defaults
+        r = refeicao_get(uid, d)
+        assert r.get("pequeno_almoco") == 1
+        assert r.get("lanche") == 0  # Lanche não incluído por defeito
+        assert r.get("almoco") == "Normal"
+        assert r.get("jantar_tipo") == "Normal"
+
+    def test_editar_autocria_sexta_sem_jantar(self, app, client):
+        """Abrir editor numa sexta cria refeições sem jantar."""
+        from core.meals import refeicao_get
+        from core.auth_db import user_id_by_nii
+
+        _login_aluno(client)
+        hoje = date.today()
+        d = hoje + timedelta(days=10)
+        while d.weekday() != 4:  # 4 = sexta
+            d += timedelta(days=1)
+
+        resp = client.get(f"/aluno/editar/{d.isoformat()}")
+        if resp.status_code == 302:
+            return  # Prazo expirado
+
+        uid = user_id_by_nii("al_rt1")
+        r = refeicao_get(uid, d)
+        assert r.get("pequeno_almoco") == 1
+        assert r.get("jantar_tipo") is None  # Sem jantar à sexta
+
+    def test_editar_fds_nao_autocria(self, app, client):
+        """Abrir editor num fim de semana NÃO cria refeições por defeito."""
+        from core.meals import refeicao_get
+        from core.auth_db import user_id_by_nii
+
+        _login_aluno(client)
+        hoje = date.today()
+        d = hoje + timedelta(days=10)
+        while d.weekday() != 5:  # 5 = sábado
+            d += timedelta(days=1)
+
+        resp = client.get(f"/aluno/editar/{d.isoformat()}")
+        if resp.status_code == 302:
+            return
+
+        uid = user_id_by_nii("al_rt1")
+        r = refeicao_get(uid, d)
+        # Fim de semana: não auto-cria
+        assert not r.get("id") or r.get("pequeno_almoco") == 0
+
+
+class TestAlunoDetidoBloqueio:
+    """Testes para o bloqueio de edição de refeições quando detido."""
+
+    def _criar_detencao(self, uid, d):
+        from core.database import db
+
+        with db() as conn:
+            conn.execute(
+                "INSERT INTO detencoes (utilizador_id, detido_de, detido_ate, motivo, criado_por) "
+                "VALUES (?,?,?,?,?)",
+                (uid, d.isoformat(), d.isoformat(), "Teste bloqueio", "cmd1"),
+            )
+            conn.commit()
+
+    def test_detido_nao_pode_alterar_post(self, app, client):
+        """POST com detenção ativa é rejeitado."""
+        from core.auth_db import user_id_by_nii
+
+        csrf = _login_aluno(client)
+        d = date.today() + timedelta(days=12)
+        while d.weekday() >= 5:
+            d += timedelta(days=1)
+
+        uid = user_id_by_nii("al_rt1")
+        self._criar_detencao(uid, d)
+
+        resp = client.post(
+            f"/aluno/editar/{d.isoformat()}",
+            data={
+                "csrf_token": csrf,
+                "pa": "0",
+                "lanche": "0",
+                "almoco": "",
+                "jantar": "",
+            },
+            follow_redirects=True,
+        )
+        html = resp.data.decode()
+        assert "bloqueadas" in html.lower() or "detido" in html.lower()
+
+    def test_detido_template_mostra_bloqueio(self, app, client):
+        """Template mostra mensagem de bloqueio e esconde botão guardar."""
+        from core.auth_db import user_id_by_nii
+
+        _login_aluno(client)
+        d = date.today() + timedelta(days=13)
+        while d.weekday() >= 5:
+            d += timedelta(days=1)
+
+        uid = user_id_by_nii("al_rt1")
+        self._criar_detencao(uid, d)
+
+        resp = client.get(f"/aluno/editar/{d.isoformat()}")
+        if resp.status_code == 302:
+            return  # Prazo expirado
+
+        html = resp.data.decode()
+        assert "bloqueadas" in html.lower()
+        assert "btn-save" not in html  # Botão guardar escondido
+        assert ">Voltar<" in html  # Botão voltar presente
+
+
 class TestAlunoLicencaFds:
     def test_licenca_post_no_data(self, app, client):
         csrf = _login_aluno(client)
