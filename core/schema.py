@@ -175,6 +175,10 @@ CREATE INDEX IF NOT EXISTS idx_ausencias_uid_datas ON ausencias(utilizador_id, a
 CREATE INDEX IF NOT EXISTS idx_detencoes_uid_datas ON detencoes(utilizador_id, detido_de, detido_ate);
 CREATE INDEX IF NOT EXISTS idx_licencas_uid_data ON licencas(utilizador_id, data);
 CREATE INDEX IF NOT EXISTS idx_cal_op_data ON calendario_operacional(data);
+CREATE INDEX IF NOT EXISTS idx_rlog_uid_data ON refeicoes_log(utilizador_id, data_refeicao);
+CREATE INDEX IF NOT EXISTS idx_audit_ts ON admin_audit_log(ts);
+CREATE INDEX IF NOT EXISTS idx_audit_actor ON admin_audit_log(actor);
+CREATE INDEX IF NOT EXISTS idx_capex_data_ref ON capacidade_excessos(data, refeicao);
 
 CREATE VIRTUAL TABLE IF NOT EXISTS utilizadores_fts USING fts5(
   Nome_completo,

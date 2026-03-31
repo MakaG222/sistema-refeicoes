@@ -42,13 +42,13 @@ def _verify_cron_token() -> bool:
         return False
     token = auth[len("Bearer ") :]
     if not cfg.CRON_API_TOKEN:
-        # Sem token configurado: bloquear em produção, avisar fora
+        # Sem token configurado: bloquear em produção, avisar e exigir token "dev" fora
         if cfg.is_production:
             return False
         current_app.logger.warning(
-            "CRON_API_TOKEN não definido — endpoint de cron desprotegido!"
+            "CRON_API_TOKEN não definido — a aceitar token 'dev' como fallback."
         )
-        return True  # permite apenas fora de produção sem token
+        return secrets.compare_digest(token, "dev")
     return secrets.compare_digest(token, cfg.CRON_API_TOKEN)
 
 

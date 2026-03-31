@@ -292,16 +292,14 @@ def registar_saida_presenca(
 
 
 def registar_entrada_presenca(uid: int, dt: date) -> None:
-    """Regista entrada: remove ausência do dia + marca hora_entrada na licença."""
+    """Regista entrada: remove ausência do dia + marca hora_entrada na licença (transação única)."""
     d_str = dt.isoformat()
+    agora = datetime.now().strftime("%H:%M")
     with db() as conn:
         conn.execute(
             "DELETE FROM ausencias WHERE utilizador_id=? AND ausente_de=? AND ausente_ate=?",
             (uid, d_str, d_str),
         )
-        conn.commit()
-    agora = datetime.now().strftime("%H:%M")
-    with db() as conn:
         conn.execute(
             "UPDATE licencas SET hora_entrada=? WHERE utilizador_id=? AND data=? AND hora_entrada IS NULL",
             (agora, uid, d_str),
