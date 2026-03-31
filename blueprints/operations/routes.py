@@ -72,9 +72,9 @@ def painel_dia():
             try:
                 ensure_daily_backup()
                 flash("Backup criado.", "ok")
-            except Exception as e:
+            except Exception:
                 log.exception("painel_dia: falha ao criar backup")
-                flash(f"Falha: {e}", "error")
+                flash("Falha ao criar backup. Consulta os logs.", "error")
         return redirect(url_for(".painel_dia", d=dt.isoformat()))
 
     ano_int = int(u["ano"]) if perfil == "cmd" and u.get("ano") else None
@@ -337,16 +337,20 @@ def lista_alunos_ano(ano):
     if request.method == "POST":
         acao = request.form.get("acao", "")
         uid_t = request.form.get("uid", "")
-        if acao == "marcar_ausente" and uid_t:
+        if not uid_t or not uid_t.isdigit():
+            flash("ID de utilizador inválido.", "error")
+            return redirect(url_for(".lista_alunos_ano", ano=ano, d=d_str))
+        uid_int = int(uid_t)
+        if acao == "marcar_ausente":
             _registar_ausencia(
-                int(uid_t),
+                uid_int,
                 dt.isoformat(),
                 dt.isoformat(),
                 f"Marcado por {u['nome']} ({perfil})",
                 u["nii"],
             )
-        elif acao == "marcar_presente" and uid_t:
-            marcar_presente(int(uid_t), dt.isoformat())
+        elif acao == "marcar_presente":
+            marcar_presente(uid_int, dt.isoformat())
         return redirect(url_for(".lista_alunos_ano", ano=ano, d=d_str))
 
     alunos = get_alunos_ano_com_estado(ano, dt)

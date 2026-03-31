@@ -342,11 +342,11 @@ def refeicao_save(
 
             conn.commit()
             return True
-    except sqlite3.IntegrityError as e:
-        print(f"Rejeitado pela BD: {e}")
+    except sqlite3.IntegrityError:
+        log.exception("refeicao_save: rejeitado pela BD")
         return False
-    except sqlite3.Error as e:
-        print(f"Erro ao salvar: {e}")
+    except sqlite3.Error:
+        log.exception("refeicao_save: erro ao salvar")
         return False
 
 

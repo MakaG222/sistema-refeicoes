@@ -245,12 +245,24 @@ _rate_store: dict[str, list[float]] = {}
 _rate_lock = _threading.Lock()
 
 
+_RATE_GC_INTERVAL = 300  # limpar entradas expiradas a cada 5 min
+_rate_last_gc: float = 0.0
+
+
 def _check_rate_limit(key: str, max_ops: int = 30, window: int = 60) -> bool:
     """Rate limiter server-side por chave (uid+ação). Retorna True se dentro do limite."""
+    global _rate_last_gc
     uid = session.get("user", {}).get("nii", "anon")
     full_key = f"{uid}:{key}"
     now = _time.time()
     with _rate_lock:
+        # Garbage collection periódica — limpar entradas expiradas
+        if now - _rate_last_gc > _RATE_GC_INTERVAL:
+            _rate_last_gc = now
+            expired = [k for k, v in _rate_store.items() if not v or now - v[-1] > window]
+            for k in expired:
+                del _rate_store[k]
+
         ops = _rate_store.get(full_key, [])
         ops = [t for t in ops if now - t < window]
         if len(ops) >= max_ops:
