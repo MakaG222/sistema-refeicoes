@@ -53,6 +53,8 @@ def _carry_forward_from_last_week(
         "almoco",
         "jantar_tipo",
         "jantar_sai_unidade",
+        "almoco_estufa",
+        "jantar_estufa",
     ]:
         if k in prev and prev[k] is not None:
             out[k] = prev[k]

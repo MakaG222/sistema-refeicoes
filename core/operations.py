@@ -186,7 +186,8 @@ def get_ausencias_lista() -> list[dict]:
             dict(r)
             for r in conn.execute(
                 """SELECT a.id, u.NII, u.Nome_completo, u.NI, u.ano,
-                       a.ausente_de, a.ausente_ate, a.motivo
+                       a.ausente_de, a.ausente_ate, a.hora_inicio, a.hora_fim,
+                       a.estufa_almoco, a.estufa_jantar, a.motivo
                 FROM ausencias a JOIN utilizadores u ON u.id=a.utilizador_id
                 ORDER BY a.ausente_de DESC"""
             ).fetchall()

@@ -329,7 +329,9 @@ def get_ausencias_aluno(uid: int) -> list[dict]:
         return [
             dict(r)
             for r in conn.execute(
-                "SELECT id,ausente_de,ausente_ate,motivo FROM ausencias WHERE utilizador_id=? ORDER BY ausente_de DESC",
+                """SELECT id,ausente_de,ausente_ate,hora_inicio,hora_fim,
+                          estufa_almoco,estufa_jantar,motivo
+                   FROM ausencias WHERE utilizador_id=? ORDER BY ausente_de DESC""",
                 (uid,),
             ).fetchall()
         ]

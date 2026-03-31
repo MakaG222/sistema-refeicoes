@@ -8,7 +8,10 @@ from core.database import db
 
 
 def ausencias_batch(uid: int, d_de: date, d_ate: date) -> set:
-    """Devolve conjunto de datas (ISO str) com ausência ativa no intervalo."""
+    """Devolve conjunto de datas (ISO str) com ausência ativa no intervalo.
+
+    Nota: ausências parciais (com hora_inicio/hora_fim) também aparecem.
+    """
     with db() as conn:
         rows = conn.execute(
             """SELECT ausente_de, ausente_ate FROM ausencias
@@ -24,6 +27,42 @@ def ausencias_batch(uid: int, d_de: date, d_ate: date) -> set:
             dates.add(d.isoformat())
             d += timedelta(days=1)
     return dates
+
+
+def ausencias_batch_detalhadas(uid: int, d_de: date, d_ate: date) -> dict:
+    """Devolve dict {iso_date: info} com detalhes das ausências (horas, estufa).
+
+    info = {"parcial": bool, "hora_inicio": str|None, "hora_fim": str|None,
+            "estufa_almoco": bool, "estufa_jantar": bool}
+    """
+    with db() as conn:
+        rows = conn.execute(
+            """SELECT ausente_de, ausente_ate, hora_inicio, hora_fim,
+                      estufa_almoco, estufa_jantar
+               FROM ausencias
+               WHERE utilizador_id=? AND ausente_ate>=? AND ausente_de<=?""",
+            (uid, d_de.isoformat(), d_ate.isoformat()),
+        ).fetchall()
+    result: dict = {}
+    for r in rows:
+        a_de = date.fromisoformat(r["ausente_de"])
+        a_ate = date.fromisoformat(r["ausente_ate"])
+        d = max(a_de, d_de)
+        parcial = bool(r["hora_inicio"] and r["hora_fim"])
+        info = {
+            "parcial": parcial,
+            "hora_inicio": r["hora_inicio"],
+            "hora_fim": r["hora_fim"],
+            "estufa_almoco": bool(r["estufa_almoco"]),
+            "estufa_jantar": bool(r["estufa_jantar"]),
+        }
+        while d <= min(a_ate, d_ate):
+            d_iso = d.isoformat()
+            # Se já existe uma ausência de dia inteiro, não substituir por parcial
+            if d_iso not in result or not parcial:
+                result[d_iso] = info
+            d += timedelta(days=1)
+    return result
 
 
 def detencoes_batch(uid: int, d_de: date, d_ate: date) -> set:
@@ -63,7 +102,8 @@ def get_ausencias_cmd(ano_cmd: int | None = None) -> list[dict]:
                 dict(r)
                 for r in conn.execute(
                     """SELECT a.id, u.NII, u.Nome_completo, u.NI, u.ano,
-                       a.ausente_de, a.ausente_ate, a.motivo
+                       a.ausente_de, a.ausente_ate, a.hora_inicio, a.hora_fim,
+                       a.estufa_almoco, a.estufa_jantar, a.motivo
                     FROM ausencias a JOIN utilizadores u ON u.id=a.utilizador_id
                     WHERE u.perfil='aluno' AND u.ano=?
                     ORDER BY a.ausente_de DESC""",
@@ -74,7 +114,8 @@ def get_ausencias_cmd(ano_cmd: int | None = None) -> list[dict]:
             dict(r)
             for r in conn.execute(
                 """SELECT a.id, u.NII, u.Nome_completo, u.NI, u.ano,
-                   a.ausente_de, a.ausente_ate, a.motivo
+                   a.ausente_de, a.ausente_ate, a.hora_inicio, a.hora_fim,
+                   a.estufa_almoco, a.estufa_jantar, a.motivo
                 FROM ausencias a JOIN utilizadores u ON u.id=a.utilizador_id
                 WHERE u.perfil='aluno'
                 ORDER BY a.ausente_de DESC"""

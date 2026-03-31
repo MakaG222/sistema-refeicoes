@@ -5,6 +5,7 @@ Re-exporta as funções públicas para acesso simplificado.
 
 from core.absences import (
     ausencias_batch,
+    ausencias_batch_detalhadas,
     detencoes_batch,
     licencas_batch,
     utilizador_ausente,
@@ -82,6 +83,7 @@ __all__ = [  # noqa: F822
     "dia_operacional",
     "dia_tem_refeicoes",
     "ausencias_batch",
+    "ausencias_batch_detalhadas",
     "detencoes_batch",
     "licencas_batch",
     "utilizador_ausente",

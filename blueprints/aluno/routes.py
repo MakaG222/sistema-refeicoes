@@ -25,7 +25,7 @@ from core.meals import (
     refeicao_save,
     refeicoes_batch,
 )
-from core.absences import ausencias_batch, detencoes_batch, licencas_batch
+from core.absences import ausencias_batch, ausencias_batch_detalhadas, detencoes_batch, licencas_batch
 from core.users import (
     delete_ausencia_propria,
     delete_licenca,
@@ -152,11 +152,13 @@ def aluno_home():
     if uid:
         ref_map, ref_defaults = refeicoes_batch(uid, hoje, d_ate)
         aus_set = ausencias_batch(uid, hoje, d_ate)
+        aus_det = ausencias_batch_detalhadas(uid, hoje, d_ate)
         det_set = detencoes_batch(uid, hoje, d_ate)
         lic_map = licencas_batch(uid, hoje, d_ate)
     else:
         ref_map, ref_defaults = {}, {}
         aus_set = set()
+        aus_det = {}
         det_set = set()
         lic_map = {}
 
@@ -178,9 +180,14 @@ def aluno_home():
         if uid and not detido_d and lic_tipo:
             lic_label = "Antes jantar" if lic_tipo == "antes_jantar" else "Após jantar"
 
-        # FDS button logic
+        # FDS button logic (sexta) + badge (sáb/dom)
         show_fds_btn = is_friday and uid and not is_off
         tem_licenca_fds = lic_map.get(d_iso) == "antes_jantar"
+        # Sat/Sun: check if the associated Friday has FDS license
+        fds_ativo = False
+        if is_weekend and uid:
+            sexta = d - timedelta(days=(d.weekday() - 4))
+            fds_ativo = lic_map.get(sexta.isoformat()) == "antes_jantar"
         show_fds_marcar = (
             show_fds_btn
             and ok_edit
@@ -198,6 +205,7 @@ def aluno_home():
             "r": r,
             "ok_edit": ok_edit,
             "ausente": ausente_d,
+            "ausencia_info": aus_det.get(d_iso),
             "detido": detido_d,
             "is_weekend": is_weekend,
             "is_off": is_off,
@@ -209,6 +217,7 @@ def aluno_home():
             "show_fds_btn": show_fds_btn and ok_edit and not detido_d and not ausente_d,
             "tem_licenca_fds": tem_licenca_fds,
             "show_fds_marcar": show_fds_marcar,
+            "fds_ativo": fds_ativo,
         }
         dias.append(dia)
 
@@ -416,7 +425,15 @@ def aluno_ausencias():
             de = request.form.get("de", "")
             ate = request.form.get("ate", "")
             motivo = _val_text(request.form.get("motivo", ""))[:500]
-            ok, err = _registar_ausencia(uid, de, ate, motivo, u["nii"])
+            hora_inicio = request.form.get("hora_inicio", "").strip() or None
+            hora_fim = request.form.get("hora_fim", "").strip() or None
+            estufa_almoco = request.form.get("estufa_almoco") == "1"
+            estufa_jantar = request.form.get("estufa_jantar") == "1"
+            ok, err = _registar_ausencia(
+                uid, de, ate, motivo, u["nii"],
+                hora_inicio=hora_inicio, hora_fim=hora_fim,
+                estufa_almoco=estufa_almoco, estufa_jantar=estufa_jantar,
+            )
             flash(
                 "Ausência registada com sucesso!" if ok else (err or "Erro."),
                 "ok" if ok else "error",
@@ -426,10 +443,18 @@ def aluno_ausencias():
             de = request.form.get("de", "")
             ate = request.form.get("ate", "")
             motivo = _val_text(request.form.get("motivo", ""))[:500]
+            hora_inicio = request.form.get("hora_inicio", "").strip() or None
+            hora_fim = request.form.get("hora_fim", "").strip() or None
+            estufa_almoco = request.form.get("estufa_almoco") == "1"
+            estufa_jantar = request.form.get("estufa_jantar") == "1"
             if aid is None:
                 flash("ID inválido.", "error")
             else:
-                ok, err = _editar_ausencia(aid, uid, de, ate, motivo)
+                ok, err = _editar_ausencia(
+                    aid, uid, de, ate, motivo,
+                    hora_inicio=hora_inicio, hora_fim=hora_fim,
+                    estufa_almoco=estufa_almoco, estufa_jantar=estufa_jantar,
+                )
                 flash(
                     "Ausência atualizada!" if ok else (err or "Erro."),
                     "ok" if ok else "error",
@@ -453,10 +478,16 @@ def aluno_ausencias():
         form_de = edit_row["ausente_de"]
         form_ate = edit_row["ausente_ate"]
         form_motivo = edit_row["motivo"] or ""
+        form_hora_inicio = edit_row.get("hora_inicio") or ""
+        form_hora_fim = edit_row.get("hora_fim") or ""
+        form_estufa_almoco = bool(edit_row.get("estufa_almoco"))
+        form_estufa_jantar = bool(edit_row.get("estufa_jantar"))
     else:
         form_title = "➕ Nova ausência"
         form_action = "criar"
         form_de = form_ate = form_motivo = ""
+        form_hora_inicio = form_hora_fim = ""
+        form_estufa_almoco = form_estufa_jantar = False
 
     return render_template(
         "aluno/ausencias.html",
@@ -468,6 +499,10 @@ def aluno_ausencias():
         form_de=form_de,
         form_ate=form_ate,
         form_motivo=form_motivo,
+        form_hora_inicio=form_hora_inicio,
+        form_hora_fim=form_hora_fim,
+        form_estufa_almoco=form_estufa_almoco,
+        form_estufa_jantar=form_estufa_jantar,
     )
 
 
@@ -570,6 +605,8 @@ def exportar_historico_aluno():
             )
         except ImportError:
             fmt = "csv"
+        except Exception:
+            fmt = "csv"
 
     buf = io.StringIO()
     writer = _csv.writer(buf, delimiter=";")
@@ -592,10 +629,8 @@ def aluno_password():
     u = current_user()
     if request.method == "POST":
         # Rate limiting: máx 10 tentativas por 5 minutos
-        import time as _t
-
         pw_attempts = session.get("_pw_attempts", [])
-        now = _t.time()
+        now = _time.time()
         pw_attempts = [t for t in pw_attempts if now - t < 300]
         if len(pw_attempts) >= 10:
             flash("Demasiadas tentativas. Aguarda uns minutos.", "error")

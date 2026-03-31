@@ -13,20 +13,20 @@
           {{ csrf_input() }}
           <div class="grid grid-2">
             <div class="form-group">
-              <label>Nome completo</label>
-              <input type="text" name="nome" value="{{ aluno.get("Nome_completo", "") }}" required>
+              <label for="ed_nome">Nome completo</label>
+              <input type="text" name="nome" id="ed_nome" value="{{ aluno.get("Nome_completo", "") }}" required>
             </div>
             <div class="form-group">
-              <label>NI <span class="text-muted small">(número interno)</span></label>
-              <input type="text" name="ni" value="{{ aluno.get("NI") or "" }}">
+              <label for="ed_ni">NI <span class="text-muted small">(número interno)</span></label>
+              <input type="text" name="ni" id="ed_ni" value="{{ aluno.get("NI") or "" }}">
             </div>
             <div class="form-group">
-              <label>📧 Email</label>
-              <input type="email" name="email" value="{{ aluno.get("email") or "" }}" placeholder="email@exemplo.pt">
+              <label for="ed_email">📧 Email</label>
+              <input type="email" name="email" id="ed_email" value="{{ aluno.get("email") or "" }}" placeholder="email@exemplo.pt">
             </div>
             <div class="form-group">
-              <label>📱 Telemóvel</label>
-              <input type="tel" name="telemovel" value="{{ aluno.get("telemovel") or "" }}" placeholder="+351XXXXXXXXX">
+              <label for="ed_telemovel">📱 Telemóvel</label>
+              <input type="tel" name="telemovel" id="ed_telemovel" value="{{ aluno.get("telemovel") or "" }}" placeholder="+351XXXXXXXXX">
             </div>
           </div>
           <div class="alert alert-info text-sm mb-lg">

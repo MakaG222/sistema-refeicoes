@@ -71,6 +71,10 @@ CREATE TABLE IF NOT EXISTS ausencias (
   utilizador_id INTEGER NOT NULL REFERENCES utilizadores(id) ON DELETE CASCADE,
   ausente_de   TEXT NOT NULL,
   ausente_ate  TEXT NOT NULL,
+  hora_inicio  TEXT,  -- HH:MM (NULL = dia inteiro)
+  hora_fim     TEXT,  -- HH:MM (NULL = dia inteiro)
+  estufa_almoco INTEGER DEFAULT 0,  -- guardar almoço na estufa durante ausência
+  estufa_jantar INTEGER DEFAULT 0,  -- guardar jantar na estufa durante ausência
   motivo       TEXT,
   criado_em    TEXT NOT NULL DEFAULT (datetime('now','localtime')),
   criado_por   TEXT
