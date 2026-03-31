@@ -2,7 +2,11 @@
 
 from __future__ import annotations
 
+import csv
+import io
+
 from flask import (
+    Response,
     current_app,
     render_template,
     request,
@@ -90,4 +94,26 @@ def admin_audit():
         q_actor=q_actor,
         q_action=q_action,
         ACTION_ICONS=ACTION_ICONS,
+    )
+
+
+@admin_bp.route("/admin/auditoria/exportar")
+@role_required("admin")
+def admin_audit_export():
+    """Exporta audit log como CSV."""
+    q_actor = request.args.get("actor", "").strip()
+    q_action = request.args.get("action", "").strip()
+    try:
+        rows, _ = query_admin_audit(actor=q_actor, action=q_action, limit=10_000)
+    except Exception:
+        rows = []
+    buf = io.StringIO()
+    w = csv.writer(buf)
+    w.writerow(["Timestamp", "Actor", "Action", "Detail"])
+    for r in rows:
+        w.writerow([r.get("ts", ""), r.get("actor", ""), r.get("action", ""), r.get("detail", "")])
+    return Response(
+        buf.getvalue(),
+        mimetype="text/csv",
+        headers={"Content-Disposition": "attachment; filename=audit_log.csv"},
     )

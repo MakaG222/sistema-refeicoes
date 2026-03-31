@@ -24,6 +24,13 @@ from core.auth_db import (
 from blueprints.auth import auth_bp
 from utils.auth import current_user, login_required
 from utils.helpers import _audit, _client_ip
+from utils.constants import (
+    IP_RATE_LIMIT_MAX,
+    IP_RATE_LIMIT_WINDOW,
+    LOGIN_BLOCK_MINUTES,
+    LOGIN_MAX_FAILURES,
+    MAX_PASSWORD_LEN,
+)
 from utils.passwords import _check_password, _migrate_password_hash
 
 
@@ -35,12 +42,12 @@ def login():
     error = None
     if request.method == "POST":
         nii = request.form.get("nii", "").strip()[:32]
-        pw = request.form.get("pw", request.form.get("password", "")).strip()[:256]
+        pw = request.form.get("pw", request.form.get("password", "")).strip()[:MAX_PASSWORD_LEN]
         # Rate limiting por IP (proteção contra ataques distribuídos)
         ip = _client_ip()
-        ip_falhas = recent_failures_by_ip(ip, 15)
-        if ip_falhas >= 20:
-            error = "Demasiadas tentativas falhadas deste endereço. Aguarda 15 minutos."
+        ip_falhas = recent_failures_by_ip(ip, IP_RATE_LIMIT_WINDOW)
+        if ip_falhas >= IP_RATE_LIMIT_MAX:
+            error = f"Demasiadas tentativas falhadas deste endereço. Aguarda {IP_RATE_LIMIT_WINDOW} minutos."
             current_app.logger.warning(
                 "IP rate-limited: IP=%s falhas=%d", ip, ip_falhas
             )
@@ -97,14 +104,14 @@ def login():
                     else:
                         reg_login(nii, 0, ip=_client_ip())
                         falhas = recent_failures(nii, 10)
-                        if falhas >= 5:
-                            block_user(nii, 15)
-                            error = "Conta bloqueada por 15 minutos após 5 tentativas falhadas."
+                        if falhas >= LOGIN_MAX_FAILURES:
+                            block_user(nii, LOGIN_BLOCK_MINUTES)
+                            error = f"Conta bloqueada por {LOGIN_BLOCK_MINUTES} minutos após {LOGIN_MAX_FAILURES} tentativas falhadas."
                             current_app.logger.warning(
                                 f"Conta bloqueada: NII={nii} IP={_client_ip()}"
                             )
                         else:
-                            restam = max(0, 5 - falhas)
+                            restam = max(0, LOGIN_MAX_FAILURES - falhas)
                             error = f"NII ou password incorretos. ({restam} tentativa(s) restante(s) antes de bloqueio)"
             else:
                 reg_login(nii, 0, ip=_client_ip())

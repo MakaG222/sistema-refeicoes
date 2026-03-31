@@ -16,7 +16,7 @@ nav{background:var(--primary);color:#fff;padding:.85rem 1.5rem;
     box-shadow:0 2px 8px rgba(0,0,0,.2);position:sticky;top:0;z-index:100}
 .nav-brand{font-weight:800;font-size:1.05rem}
 .nav-right{display:flex;align-items:center;gap:.75rem}
-.nav-user{opacity:.8;font-size:.82rem}
+.nav-user{opacity:.8;font-size:.82rem;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .nav-link{color:#fff;font-weight:600;font-size:.85rem;
           background:rgba(255,255,255,.15);padding:.38rem .75rem;
           border-radius:8px;transition:.15s}
