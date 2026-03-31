@@ -175,6 +175,10 @@ CREATE INDEX IF NOT EXISTS idx_ausencias_uid_datas ON ausencias(utilizador_id, a
 CREATE INDEX IF NOT EXISTS idx_detencoes_uid_datas ON detencoes(utilizador_id, detido_de, detido_ate);
 CREATE INDEX IF NOT EXISTS idx_licencas_uid_data ON licencas(utilizador_id, data);
 CREATE INDEX IF NOT EXISTS idx_cal_op_data ON calendario_operacional(data);
+CREATE INDEX IF NOT EXISTS idx_rlog_uid_data ON refeicoes_log(utilizador_id, data_refeicao);
+CREATE INDEX IF NOT EXISTS idx_audit_ts ON admin_audit_log(ts);
+CREATE INDEX IF NOT EXISTS idx_audit_actor ON admin_audit_log(actor);
+CREATE INDEX IF NOT EXISTS idx_capex_data_ref ON capacidade_excessos(data, refeicao);
 
 CREATE VIRTUAL TABLE IF NOT EXISTS utilizadores_fts USING fts5(
   Nome_completo,
@@ -193,6 +197,12 @@ CREATE TRIGGER IF NOT EXISTS utilizadores_au_fts
 AFTER UPDATE ON utilizadores BEGIN
   INSERT INTO utilizadores_fts(utilizadores_fts, rowid) VALUES('delete', OLD.id);
   INSERT INTO utilizadores_fts(rowid, Nome_completo) VALUES (NEW.id, NEW.Nome_completo);
+END;
+
+-- Limpar refeicoes_log quando utilizador é removido (simula FK CASCADE)
+CREATE TRIGGER IF NOT EXISTS rlog_cleanup_on_user_delete
+AFTER DELETE ON utilizadores BEGIN
+  DELETE FROM refeicoes_log WHERE utilizador_id = OLD.id;
 END;
 
 CREATE TRIGGER IF NOT EXISTS refeicoes_chk_values

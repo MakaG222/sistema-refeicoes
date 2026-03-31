@@ -297,20 +297,21 @@ class TestLicencaSync:
         d = date.today()
         create_system_user("od_sync2", "oficialdia")
 
-        # Criar licença com saída registada
+        # Registar ausência primeiro (para poder dar entrada)
+        import app as app_module
+
+        app_module._registar_ausencia(
+            uid, d.isoformat(), d.isoformat(), "Saiu", "teste"
+        )
+
+        # Criar licença com saída registada DEPOIS da ausência
+        # (ausência limpa licenças, por isso criamos depois)
         with db() as conn:
             conn.execute(
                 "INSERT OR IGNORE INTO licencas (utilizador_id, data, tipo, hora_saida) VALUES (?,?,?,?)",
                 (uid, d.isoformat(), "apos_jantar", "14:30"),
             )
             conn.commit()
-
-        # Registar ausência (para poder dar entrada)
-        import app as app_module
-
-        app_module._registar_ausencia(
-            uid, d.isoformat(), d.isoformat(), "Saiu", "teste"
-        )
 
         login_as(client, "od_sync2", "od_sync2123")
         token = get_csrf(client)

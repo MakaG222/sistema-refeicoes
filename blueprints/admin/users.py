@@ -293,8 +293,15 @@ def admin_importar_csv():
                 flash("Nenhum ficheiro selecionado.", "error")
                 return redirect(url_for(".admin_importar_csv"))
 
-            raw = f.read().decode("utf-8-sig", errors="replace")
+            raw = f.read(5 * 1024 * 1024 + 1)  # 5 MB + 1 byte
+            if len(raw) > 5 * 1024 * 1024:
+                flash("Ficheiro demasiado grande (máximo 5 MB).", "error")
+                return redirect(url_for(".admin_importar_csv"))
+            raw = raw.decode("utf-8-sig", errors="replace")
             linhas = list(csv.reader(io.StringIO(raw)))
+            if len(linhas) > 10_000:
+                flash("Demasiadas linhas (máximo 10.000).", "error")
+                return redirect(url_for(".admin_importar_csv"))
 
             if (
                 linhas

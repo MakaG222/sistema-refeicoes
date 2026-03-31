@@ -224,19 +224,26 @@ class TestCronToken:
         assert data["status"] == "ok"
 
     def test_backup_cron_no_configured_token_dev_mode(self, app, client):
-        """Linhas 43-48: CRON_API_TOKEN vazio + não-produção → aceita qualquer Bearer."""
+        """CRON_API_TOKEN vazio + não-produção → aceita Bearer 'dev' como fallback."""
         import config as cfg
 
         with (
             mock.patch.object(cfg, "CRON_API_TOKEN", ""),
             mock.patch.object(cfg, "is_production", False),
         ):
+            # Token arbitrário deve falhar
             resp = client.post(
                 "/api/backup-cron",
                 headers={"Authorization": "Bearer qualquer_coisa"},
             )
-        # Deve passar a autenticação e tentar backup
-        assert resp.status_code in (200, 500)
+            assert resp.status_code == 403
+
+            # Token 'dev' deve passar
+            resp = client.post(
+                "/api/backup-cron",
+                headers={"Authorization": "Bearer dev"},
+            )
+            assert resp.status_code in (200, 500)
 
     def test_backup_cron_no_configured_token_production_blocks(self, app, client):
         """Linhas 43-44: CRON_API_TOKEN vazio + produção → bloqueia."""

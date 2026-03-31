@@ -38,15 +38,25 @@ def get_detencoes_lista(ano_cmd: int | None = None) -> list[dict]:
 
 def criar_detencao(
     uid: int, d1: date, d2: date, motivo: str | None, criado_por: str
-) -> None:
-    """Cria uma detenção para um aluno."""
+) -> tuple[bool, str]:
+    """Cria uma detenção para um aluno. Retorna (ok, msg)."""
     with db() as conn:
+        # Verificar sobreposição com detenções existentes
+        overlap = conn.execute(
+            """SELECT id FROM detencoes
+               WHERE utilizador_id=? AND detido_de<=? AND detido_ate>=?
+               LIMIT 1""",
+            (uid, d2.isoformat(), d1.isoformat()),
+        ).fetchone()
+        if overlap:
+            return False, "Já existe uma detenção neste período para este aluno."
         conn.execute(
             """INSERT INTO detencoes(utilizador_id, detido_de, detido_ate, motivo, criado_por)
             VALUES(?,?,?,?,?)""",
             (uid, d1.isoformat(), d2.isoformat(), motivo or None, criado_por),
         )
         conn.commit()
+    return True, ""
 
 
 def remover_detencao(did: int, ano_cmd: int, is_admin: bool) -> bool:

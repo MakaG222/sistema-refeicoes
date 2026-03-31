@@ -82,6 +82,26 @@
   </div>
   {% endif %}
 
+  {% if previsao_semana %}
+  <div class="card card-accent-gold">
+    <div class="card-title">📅 Previsão Semanal</div>
+    <div class="table-wrap"><table>
+      <thead><tr><th>Dia</th><th>☕ PA</th><th>🥐 Lan</th><th>🍽️ Alm</th><th>🌙 Jan</th></tr></thead>
+      <tbody>
+        {% for d in previsao_semana %}
+        <tr{% if d.fds %} style="opacity:.6"{% endif %}>
+          <td><strong>{{ d.abrev }}</strong> {{ d.data_fmt }}</td>
+          <td>{{ d.pa }}</td>
+          <td>{{ d.lan }}</td>
+          <td>{{ d.alm }}</td>
+          <td>{{ d.jan }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table></div>
+  </div>
+  {% endif %}
+
   {% if detidos %}
   <div class="card card-accent-red">
     <div class="card-title">⛔ Detidos hoje ({{ detidos|length }})</div>

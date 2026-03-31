@@ -229,17 +229,26 @@ def aluno_home():
     )
 
 
-def _check_rate_limit(key: str, max_ops: int = 30, window: int = 60) -> bool:
-    """Rate limiter por sessão. Retorna True se dentro do limite."""
-    import time as _t
+import threading as _threading
+import time as _time
 
-    now = _t.time()
-    ops = session.get(key, [])
-    ops = [t for t in ops if now - t < window]
-    if len(ops) >= max_ops:
-        return False
-    ops.append(now)
-    session[key] = ops
+_rate_store: dict[str, list[float]] = {}
+_rate_lock = _threading.Lock()
+
+
+def _check_rate_limit(key: str, max_ops: int = 30, window: int = 60) -> bool:
+    """Rate limiter server-side por chave (uid+ação). Retorna True se dentro do limite."""
+    uid = session.get("user", {}).get("nii", "anon")
+    full_key = f"{uid}:{key}"
+    now = _time.time()
+    with _rate_lock:
+        ops = _rate_store.get(full_key, [])
+        ops = [t for t in ops if now - t < window]
+        if len(ops) >= max_ops:
+            _rate_store[full_key] = ops
+            return False
+        ops.append(now)
+        _rate_store[full_key] = ops
     return True
 
 

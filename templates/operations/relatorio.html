@@ -8,11 +8,17 @@
   <div class="card card-compact">
     <div class="flex-between">
       <div class="flex">
-        <a class="btn btn-ghost btn-sm" href="{{ url_for('.relatorio_semanal', d0=prev_w) }}">← Semana anterior</a>
-        <strong>{{ d0_fmt }} — {{ d1_fmt }}</strong>
-        <a class="btn btn-ghost btn-sm" href="{{ url_for('.relatorio_semanal', d0=next_w) }}">Semana seguinte →</a>
+        <a class="btn btn-ghost btn-sm" href="{{ url_for('.relatorio_semanal', d0=prev_w, ano=ano_filter) }}">← Semana anterior</a>
+        <strong>{{ d0_fmt }} — {{ d1_fmt }}{% if ano_filter %} ({{ ano_filter }}º Ano){% endif %}</strong>
+        <a class="btn btn-ghost btn-sm" href="{{ url_for('.relatorio_semanal', d0=next_w, ano=ano_filter) }}">Semana seguinte →</a>
       </div>
       <form method="get" class="date-nav-form">
+        <select name="ano" class="w-auto" style="padding:.3rem .5rem">
+          <option value="">Todos os anos</option>
+          {% for a in anos_disponiveis %}
+          <option value="{{ a }}"{{ " selected" if ano_filter == a|string else "" }}>{{ a }}º Ano</option>
+          {% endfor %}
+        </select>
         <input type="date" name="d0" value="{{ d0_str }}" class="w-auto">
         <button class="btn btn-primary btn-sm">Ir</button>
       </form>

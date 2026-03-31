@@ -25,6 +25,7 @@
       </div>
       <button class="btn btn-primary btn-sm">🔍 Filtrar</button>
       <a class="btn btn-ghost btn-sm" href="{{ url_for('.admin_audit') }}">✕ Limpar</a>
+      <a class="btn btn-ghost btn-sm" href="{{ url_for('.admin_audit_export', actor=q_actor, action=q_action) }}">⬇ CSV</a>
     </form>
   </div>
   <div class="card">

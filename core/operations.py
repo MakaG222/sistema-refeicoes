@@ -272,15 +272,9 @@ def get_anos_resumo(dt: date, anos: list[int]) -> list[dict]:
 def registar_saida_presenca(
     uid: int, dt: date, nii_actor: str, nome_actor: str, perfil_actor: str
 ) -> None:
-    """Regista saída: cria ausência + marca hora_saida na licença."""
+    """Regista saída: marca hora_saida na licença + cria ausência."""
     d_str = dt.isoformat()
-    _registar_ausencia(
-        uid,
-        d_str,
-        d_str,
-        f"Saída registada por {nome_actor} ({perfil_actor})",
-        nii_actor,
-    )
+    # Marcar hora_saida ANTES de registar ausência (ausência limpa licenças pendentes)
     agora = datetime.now().strftime("%H:%M")
     with db() as conn:
         conn.execute(
@@ -288,19 +282,24 @@ def registar_saida_presenca(
             (agora, uid, d_str),
         )
         conn.commit()
+    _registar_ausencia(
+        uid,
+        d_str,
+        d_str,
+        f"Saída registada por {nome_actor} ({perfil_actor})",
+        nii_actor,
+    )
 
 
 def registar_entrada_presenca(uid: int, dt: date) -> None:
-    """Regista entrada: remove ausência do dia + marca hora_entrada na licença."""
+    """Regista entrada: remove ausência do dia + marca hora_entrada na licença (transação única)."""
     d_str = dt.isoformat()
+    agora = datetime.now().strftime("%H:%M")
     with db() as conn:
         conn.execute(
             "DELETE FROM ausencias WHERE utilizador_id=? AND ausente_de=? AND ausente_ate=?",
             (uid, d_str, d_str),
         )
-        conn.commit()
-    agora = datetime.now().strftime("%H:%M")
-    with db() as conn:
         conn.execute(
             "UPDATE licencas SET hora_entrada=? WHERE utilizador_id=? AND data=? AND hora_entrada IS NULL",
             (agora, uid, d_str),
