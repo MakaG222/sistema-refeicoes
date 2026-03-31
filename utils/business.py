@@ -29,8 +29,8 @@ def _registar_ausencia(
     uid: int, de: str, ate: str, motivo: str, criado_por: str
 ) -> tuple[bool, str]:
     try:
-        d_de = datetime.strptime(de, "%Y-%m-%d").date()
-        d_ate = datetime.strptime(ate, "%Y-%m-%d").date()
+        datetime.strptime(de, "%Y-%m-%d")
+        datetime.strptime(ate, "%Y-%m-%d")
     except ValueError:
         return False, "Data inválida."
     if de > ate:
