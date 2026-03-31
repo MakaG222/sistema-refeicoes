@@ -199,6 +199,12 @@ AFTER UPDATE ON utilizadores BEGIN
   INSERT INTO utilizadores_fts(rowid, Nome_completo) VALUES (NEW.id, NEW.Nome_completo);
 END;
 
+-- Limpar refeicoes_log quando utilizador é removido (simula FK CASCADE)
+CREATE TRIGGER IF NOT EXISTS rlog_cleanup_on_user_delete
+AFTER DELETE ON utilizadores BEGIN
+  DELETE FROM refeicoes_log WHERE utilizador_id = OLD.id;
+END;
+
 CREATE TRIGGER IF NOT EXISTS refeicoes_chk_values
 BEFORE INSERT ON refeicoes
 BEGIN

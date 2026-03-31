@@ -238,16 +238,23 @@ def ausencias_cmd():
             ate = request.form.get("ate", "")
             motivo = _val_text(request.form.get("motivo", ""))[:500]
             count_ok = 0
+            erros = []
             for nii_b in niis:
                 db_b = user_by_nii(nii_b.strip())
                 if not db_b:
+                    erros.append(f"{nii_b}: não encontrado")
                     continue
                 if perfil == "cmd" and int(db_b.get("ano", 0)) != ano_cmd:
+                    erros.append(f"{db_b['Nome_completo']}: outro ano")
                     continue
-                ok, _err = _registar_ausencia(db_b["id"], de, ate, motivo, u["nii"])
+                ok, err = _registar_ausencia(db_b["id"], de, ate, motivo, u["nii"])
                 if ok:
                     count_ok += 1
-            flash(f"{count_ok} ausência(s) registada(s) em massa.", "ok" if count_ok else "error")
+                else:
+                    erros.append(f"{db_b['Nome_completo']}: {err}")
+            flash(f"{count_ok}/{len(niis)} ausência(s) registada(s).", "ok" if count_ok else "error")
+            if erros:
+                flash("Falhas: " + "; ".join(erros[:5]), "warn")
             return redirect(url_for(".ausencias_cmd"))
 
         nii = request.form.get("nii", "").strip()
@@ -345,18 +352,25 @@ def detencoes_cmd():
                 flash("Datas inválidas.", "error")
                 return redirect(url_for(".detencoes_cmd"))
             count_ok = 0
+            erros = []
             for nii_b in niis:
                 db_b = user_by_nii(nii_b.strip())
                 if not db_b:
+                    erros.append(f"{nii_b}: não encontrado")
                     continue
                 if perfil == "cmd" and int(db_b.get("ano", 0)) != ano_cmd:
+                    erros.append(f"{db_b['Nome_completo']}: outro ano")
                     continue
-                ok, _msg = criar_detencao(db_b["id"], d1, d2, motivo, u["nii"])
+                ok, msg = criar_detencao(db_b["id"], d1, d2, motivo, u["nii"])
                 if ok:
                     _auto_marcar_refeicoes_detido(db_b["id"], d1, d2, u["nii"])
                     cancelar_licencas_periodo(db_b["id"], d1, d2)
                     count_ok += 1
-            flash(f"{count_ok} detenção(ões) registada(s) em massa.", "ok" if count_ok else "error")
+                else:
+                    erros.append(f"{db_b['Nome_completo']}: {msg}")
+            flash(f"{count_ok}/{len(niis)} detenção(ões) registada(s).", "ok" if count_ok else "error")
+            if erros:
+                flash("Falhas: " + "; ".join(erros[:5]), "warn")
             return redirect(url_for(".detencoes_cmd"))
 
         # criar

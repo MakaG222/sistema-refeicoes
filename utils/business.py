@@ -118,14 +118,19 @@ def _auto_marcar_refeicoes_detido(
 ) -> None:
     """Auto-marca todas as refeições para dias de detenção se não estiverem marcadas."""
     try:
+        # Batch: buscar todos os dias que já têm almoço marcado
+        with db() as conn:
+            existentes = {
+                r["data"]
+                for r in conn.execute(
+                    "SELECT data FROM refeicoes WHERE utilizador_id=? AND data>=? AND data<=? AND almoco IS NOT NULL",
+                    (uid, d_de.isoformat(), d_ate.isoformat()),
+                ).fetchall()
+            }
+        # Marcar apenas os dias sem almoço
         d = d_de
         while d <= d_ate:
-            with db() as conn:
-                existe = conn.execute(
-                    "SELECT almoco FROM refeicoes WHERE utilizador_id=? AND data=?",
-                    (uid, d.isoformat()),
-                ).fetchone()
-            if not existe or not existe["almoco"]:
+            if d.isoformat() not in existentes:
                 _refeicao_set(
                     uid,
                     d,

@@ -15,7 +15,7 @@ from flask import (
 from blueprints.admin import admin_bp
 from core.menus import get_capacities, get_menu, save_capacity, save_menu
 from utils.auth import current_user, role_required
-from utils.helpers import _parse_date
+from utils.helpers import _audit, _parse_date
 from utils.validators import _val_cap
 
 
@@ -54,6 +54,8 @@ def admin_menus():
                 except ValueError:
                     pass
 
+        u = current_user()
+        _audit(u.get("nii", "?"), "menu_save", f"data={d_save} por {u.get('nome', '?')}")
         flash("Menu e capacidades guardados.", "ok")
         return redirect(url_for(".admin_menus", d=d_save))
 
