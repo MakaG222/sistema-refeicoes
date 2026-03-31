@@ -147,39 +147,19 @@ def _auto_marcar_refeicoes_detido(
 def _regras_licenca(ano: int, ni: str) -> dict:
     """Devolve regras de licença para um aluno com base no ano e NI.
 
-    Regras:
-    - NI começa com '7' → pode sair todos os dias (exceção especial)
-    - 4º ano e acima → pode sair todos os dias
-    - 3º ano → sex/sab/dom + 3 dias úteis (seg-qui) por semana
-    - 2º ano → sex/sab/dom + 2 dias úteis (seg-qui) por semana
-    - 1º ano → sex/sab/dom + apenas quarta-feira
+    As regras são lidas de config.LICENCA_REGRAS_ANO (configurável).
+    Exceções: NI com prefixo '7' usa sempre o default (acesso total).
     """
-    if str(ni).startswith("7"):
-        return {
-            "max_dias_uteis": 4,
-            "dias_permitidos": [0, 1, 2, 3, 4, 5, 6],
-            "excepcao_ni7": True,
-        }
-    if ano >= 4:
-        return {
-            "max_dias_uteis": 4,
-            "dias_permitidos": [0, 1, 2, 3, 4, 5, 6],
-            "excepcao_ni7": False,
-        }
-    if ano == 3:
-        return {
-            "max_dias_uteis": 3,
-            "dias_permitidos": [0, 1, 2, 3, 4, 5, 6],
-            "excepcao_ni7": False,
-        }
-    if ano == 2:
-        return {
-            "max_dias_uteis": 2,
-            "dias_permitidos": [0, 1, 2, 3, 4, 5, 6],
-            "excepcao_ni7": False,
-        }
-    # 1º ano — só quarta (2) + fim de semana (4=sex, 5=sab, 6=dom)
-    return {"max_dias_uteis": 1, "dias_permitidos": [2, 4, 5, 6], "excepcao_ni7": False}
+    excepcao_ni7 = str(ni).startswith("7")
+    if excepcao_ni7 or ano >= 4 or ano not in cfg.LICENCA_REGRAS_ANO:
+        base = cfg.LICENCA_REGRAS_ANO_DEFAULT
+    else:
+        base = cfg.LICENCA_REGRAS_ANO[ano]
+    return {
+        "max_dias_uteis": base["max_dias_uteis"],
+        "dias_permitidos": list(base["dias_permitidos"]),
+        "excepcao_ni7": excepcao_ni7,
+    }
 
 
 def _licencas_semana_usadas(uid: int, d: date) -> int:

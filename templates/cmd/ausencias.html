@@ -27,6 +27,35 @@
       </div>
       <button class="btn btn-ok">Registar ausência</button>
     </form>
+    {% if alunos_ano %}
+    <hr>
+    <div class="card-title">Registar ausência em massa</div>
+    <form method="post">
+      {{ csrf_input() }}
+      <input type="hidden" name="acao" value="bulk_ausencia">
+      <div class="grid grid-2 mb-md">
+        <div class="form-group"><label for="bulk_de">De</label><input type="date" name="de" id="bulk_de" required value="{{ hoje }}"></div>
+        <div class="form-group"><label for="bulk_ate">Até</label><input type="date" name="ate" id="bulk_ate" required value="{{ hoje }}"></div>
+        <div class="form-group"><label for="bulk_motivo">Motivo (opcional)</label><input type="text" name="motivo" id="bulk_motivo" maxlength="500" placeholder="Ex: exercício, saída de campo..."></div>
+      </div>
+      <div class="table-wrap" style="max-height:300px;overflow-y:auto">
+        <table>
+          <thead><tr><th><input type="checkbox" id="bulk_all"></th><th>NI</th><th>Nome</th></tr></thead>
+          <tbody>
+            {% for a in alunos_ano %}
+            <tr>
+              <td><input type="checkbox" name="niis" value="{{ a.NII }}"></td>
+              <td>{{ a.NI }}</td>
+              <td>{{ a.Nome_completo }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      <button class="btn btn-ok mt-md">Registar ausências selecionadas</button>
+    </form>
+    <script>document.getElementById('bulk_all').addEventListener('change',function(){document.querySelectorAll('input[name=niis]').forEach(function(c){c.checked=this.checked}.bind(this))});</script>
+    {% endif %}
   </div>
   <div class="card">
     <div class="card-title">Ausências registadas</div>

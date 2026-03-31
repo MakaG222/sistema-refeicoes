@@ -211,11 +211,26 @@ def get_aluno_profile_data(uid: int, dt_iso: str) -> dict:
             "SELECT * FROM refeicoes WHERE utilizador_id=? AND data=?",
             (uid, dt_iso),
         ).fetchone()
+        det_recentes = [
+            dict(r)
+            for r in conn.execute(
+                """SELECT detido_de, detido_ate, motivo FROM detencoes
+                WHERE utilizador_id=? ORDER BY detido_de DESC LIMIT 10""",
+                (uid,),
+            ).fetchall()
+        ]
+        detencoes_ativas = conn.execute(
+            """SELECT COUNT(*) c FROM detencoes WHERE utilizador_id=?
+               AND detido_de<=? AND detido_ate>=?""",
+            (uid, dt_iso, dt_iso),
+        ).fetchone()["c"]
     return {
         "total_ref": total_ref,
         "ausencias_ativas": ausencias_ativas,
         "aus_recentes": aus_recentes,
         "ref_hoje": dict(ref_hoje) if ref_hoje else {},
+        "det_recentes": det_recentes,
+        "detencoes_ativas": detencoes_ativas,
     }
 
 
@@ -315,6 +330,18 @@ def get_ausencias_aluno(uid: int) -> list[dict]:
             dict(r)
             for r in conn.execute(
                 "SELECT id,ausente_de,ausente_ate,motivo FROM ausencias WHERE utilizador_id=? ORDER BY ausente_de DESC",
+                (uid,),
+            ).fetchall()
+        ]
+
+
+def get_detencoes_aluno(uid: int) -> list[dict]:
+    """Lista detenções de um aluno (histórico completo)."""
+    with db() as conn:
+        return [
+            dict(r)
+            for r in conn.execute(
+                "SELECT id,detido_de,detido_ate,motivo FROM detencoes WHERE utilizador_id=? ORDER BY detido_de DESC",
                 (uid,),
             ).fetchall()
         ]

@@ -29,6 +29,19 @@ CRON_API_TOKEN: str = os.environ.get("CRON_API_TOKEN", "")
 DIAS_ANTECEDENCIA: int = int(os.environ.get("DIAS_ANTECEDENCIA", "15"))
 """Alunos podem marcar refeições até N dias à frente (inclui fins-de-semana)."""
 
+# ── Regras de licença por ano ────────────────────────────────────────────────
+# Cada entrada: (max_dias_uteis_seg_qui, dias_permitidos)
+# dias_permitidos: lista de weekday indexes (0=seg ... 6=dom)
+LICENCA_REGRAS_ANO: dict[int, dict] = {
+    1: {"max_dias_uteis": 1, "dias_permitidos": [2, 4, 5, 6]},       # só quarta + fds
+    2: {"max_dias_uteis": 2, "dias_permitidos": [0, 1, 2, 3, 4, 5, 6]},
+    3: {"max_dias_uteis": 3, "dias_permitidos": [0, 1, 2, 3, 4, 5, 6]},
+}
+LICENCA_REGRAS_ANO_DEFAULT: dict = {
+    "max_dias_uteis": 4, "dias_permitidos": [0, 1, 2, 3, 4, 5, 6],
+}
+"""4º ano e acima: todos os dias. NI com prefixo '7' também usa este default."""
+
 # ── Servidor ─────────────────────────────────────────────────────────────────
 PORT: int = int(os.environ.get("PORT", "8080"))
 DEBUG: bool = os.environ.get("DEBUG", "false").lower() == "true"

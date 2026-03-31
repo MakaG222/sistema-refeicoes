@@ -199,6 +199,8 @@ def ver_perfil_aluno(nii):
         ausencias_ativas=profile["ausencias_ativas"],
         aus_recentes=profile["aus_recentes"],
         ref_hoje=profile["ref_hoje"],
+        det_recentes=profile["det_recentes"],
+        detencoes_ativas=profile["detencoes_ativas"],
         hoje=hoje,
     )
 
@@ -227,6 +229,27 @@ def ausencias_cmd():
             else:
                 flash(MSG_NAO_ENCONTRADO, "error")
             return redirect(url_for(".ausencias_cmd"))
+        if acao == "bulk_ausencia":
+            niis = request.form.getlist("niis")
+            if not niis:
+                flash("Seleciona pelo menos um aluno.", "error")
+                return redirect(url_for(".ausencias_cmd"))
+            de = request.form.get("de", "")
+            ate = request.form.get("ate", "")
+            motivo = _val_text(request.form.get("motivo", ""))[:500]
+            count_ok = 0
+            for nii_b in niis:
+                db_b = user_by_nii(nii_b.strip())
+                if not db_b:
+                    continue
+                if perfil == "cmd" and int(db_b.get("ano", 0)) != ano_cmd:
+                    continue
+                ok, _err = _registar_ausencia(db_b["id"], de, ate, motivo, u["nii"])
+                if ok:
+                    count_ok += 1
+            flash(f"{count_ok} ausência(s) registada(s) em massa.", "ok" if count_ok else "error")
+            return redirect(url_for(".ausencias_cmd"))
+
         nii = request.form.get("nii", "").strip()
         db_u = user_by_nii(nii)
         if not db_u:
@@ -302,6 +325,38 @@ def detencoes_cmd():
                 flash("Detenção removida.", "ok")
             else:
                 flash("Não autorizado.", "error")
+            return redirect(url_for(".detencoes_cmd"))
+
+        if acao == "bulk_detencao":
+            niis = request.form.getlist("niis")
+            if not niis:
+                flash("Seleciona pelo menos um aluno.", "error")
+                return redirect(url_for(".detencoes_cmd"))
+            de = request.form.get("de", "").strip()
+            ate = request.form.get("ate", "").strip()
+            motivo = _val_text(request.form.get("motivo", ""))[:500]
+            try:
+                d1 = _parse_date(de)
+                d2 = _parse_date(ate)
+                if d2 < d1:
+                    flash("A data 'Até' tem de ser igual ou posterior à data 'De'.", "error")
+                    return redirect(url_for(".detencoes_cmd"))
+            except Exception:
+                flash("Datas inválidas.", "error")
+                return redirect(url_for(".detencoes_cmd"))
+            count_ok = 0
+            for nii_b in niis:
+                db_b = user_by_nii(nii_b.strip())
+                if not db_b:
+                    continue
+                if perfil == "cmd" and int(db_b.get("ano", 0)) != ano_cmd:
+                    continue
+                ok, _msg = criar_detencao(db_b["id"], d1, d2, motivo, u["nii"])
+                if ok:
+                    _auto_marcar_refeicoes_detido(db_b["id"], d1, d2, u["nii"])
+                    cancelar_licencas_periodo(db_b["id"], d1, d2)
+                    count_ok += 1
+            flash(f"{count_ok} detenção(ões) registada(s) em massa.", "ok" if count_ok else "error")
             return redirect(url_for(".detencoes_cmd"))
 
         # criar

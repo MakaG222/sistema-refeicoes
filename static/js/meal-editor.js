@@ -86,6 +86,17 @@
     }
   });
 
+  // Keyboard: Enter/Space triggers click on focusable buttons
+  document.addEventListener('keydown', function(e) {
+    if (e.key === 'Enter' || e.key === ' ') {
+      var t = e.target;
+      if (t.matches('[data-toggle-meal], [data-pill-meal], [data-estufa]')) {
+        e.preventDefault();
+        t.click();
+      }
+    }
+  });
+
   // Licença radio: highlight active + block jantar se antes_jantar
   document.addEventListener('DOMContentLoaded', function() {
     document.querySelectorAll('[data-lic] input[type=radio]').forEach(function(r) {

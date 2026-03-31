@@ -128,6 +128,32 @@ def painel_dia():
             },
         }
 
+    # ── Previsão semanal (cozinha / admin) ─────────────────
+    previsao_semana = None
+    if perfil in ("cozinha", "admin"):
+        d_sem_ini = dt + timedelta(days=1)
+        d_sem_fim = dt + timedelta(days=7)
+        _sem_map, _sem_empty = get_totais_periodo(
+            d_sem_ini.isoformat(), d_sem_fim.isoformat(), ano_int
+        )
+        previsao_semana = []
+        for i in range(7):
+            di = d_sem_ini + timedelta(days=i)
+            ti = _sem_map.get(di.isoformat(), _sem_empty)
+            alm_tot = ti["alm_norm"] + ti["alm_veg"] + ti["alm_dieta"]
+            jan_tot = ti["jan_norm"] + ti["jan_veg"] + ti["jan_dieta"]
+            previsao_semana.append(
+                {
+                    "abrev": ABREV_DIAS[di.weekday()],
+                    "data_fmt": di.strftime("%d/%m"),
+                    "pa": ti["pa"],
+                    "lan": ti["lan"],
+                    "alm": alm_tot,
+                    "jan": jan_tot,
+                    "fds": di.weekday() >= 5,
+                }
+            )
+
     prev_d = (dt - timedelta(days=1)).isoformat()
     next_d = (dt + timedelta(days=1)).isoformat()
 
@@ -281,6 +307,7 @@ def painel_dia():
         occ_items=occ_items,
         t=t,
         previsao=previsao,
+        previsao_semana=previsao_semana,
         detidos=detidos,
         lics=lics,
         acoes=acoes,
@@ -374,6 +401,8 @@ def relatorio_semanal():
     perfil = u.get("perfil")
     hoje = date.today()
     segunda = hoje - timedelta(days=hoje.weekday())
+    ano_filter = request.args.get("ano", "")
+    ano_int_rel = int(ano_filter) if ano_filter and ano_filter.isdigit() else None
     d0_str = request.args.get("d0", segunda.isoformat())
     d0 = _parse_date(d0_str)
     d1 = d0 + timedelta(days=6)
@@ -386,7 +415,7 @@ def relatorio_semanal():
     }
 
     # Batch: totais e calendário para a semana toda
-    _rel_map, _rel_empty = get_totais_periodo(d0.isoformat(), d1.isoformat())
+    _rel_map, _rel_empty = get_totais_periodo(d0.isoformat(), d1.isoformat(), ano_int_rel)
     _rel_cal = dias_operacionais_batch(d0, d1)
 
     totais = {
@@ -442,6 +471,8 @@ def relatorio_semanal():
         show_sai=perfil != "cozinha",
         dias=dias,
         totais=totais,
+        anos_disponiveis=_get_anos_disponiveis(),
+        ano_filter=ano_filter,
     )
 
 

@@ -21,6 +21,7 @@
           <div class="grid grid-2">
             <div class="stat-box"><div class="stat-num">{{ total_ref }}</div><div class="stat-lbl">Refeições registadas</div></div>
             <div class="stat-box"><div class="stat-num {{ "text-warn" if ausencias_ativas else "text-ok" }}">{{ ausencias_ativas }}</div><div class="stat-lbl">Ausências ativas</div></div>
+            <div class="stat-box"><div class="stat-num {{ "text-warn" if detencoes_ativas else "text-ok" }}">{{ detencoes_ativas }}</div><div class="stat-lbl">Detenções ativas</div></div>
           </div>
         </div>
         <div class="card">
@@ -53,6 +54,18 @@
             {% endfor %}
           {% else %}
             <div class="text-muted small">Sem ausências registadas.</div>
+          {% endif %}
+          <div class="card-title mt-lg">⛔ Detenções recentes</div>
+          {% if det_recentes %}
+            {% for d in det_recentes %}
+            <div class="absence-line">{{ d["detido_de"] }} → {{ d["detido_ate"] }} <span class="text-muted small">{{ d["motivo"] or "—" }}</span>
+              {% if d["detido_de"] <= hoje.isoformat() and hoje.isoformat() <= d["detido_ate"] %}
+              <span class="badge badge-warn text-2xs">Atual</span>
+              {% endif %}
+            </div>
+            {% endfor %}
+          {% else %}
+            <div class="text-muted small">Sem detenções registadas.</div>
           {% endif %}
         </div>
       </div>
