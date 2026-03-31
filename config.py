@@ -42,6 +42,16 @@ LICENCA_REGRAS_ANO_DEFAULT: dict = {
 }
 """4º ano e acima: todos os dias. NI com prefixo '7' também usa este default."""
 
+# ── Horários das refeições (para ausências inteligentes) ────────────────────
+# Formato: (hora_inicio, hora_fim) — a ausência afeta a refeição se houver
+# sobreposição com esta janela.
+REFEICAO_HORARIOS: dict[str, tuple[str, str]] = {
+    "pequeno_almoco": ("07:00", "09:30"),
+    "almoco": ("12:00", "14:00"),
+    "lanche": ("16:00", "17:30"),
+    "jantar": ("19:00", "21:00"),
+}
+
 # ── Servidor ─────────────────────────────────────────────────────────────────
 PORT: int = int(os.environ.get("PORT", "8080"))
 DEBUG: bool = os.environ.get("DEBUG", "false").lower() == "true"

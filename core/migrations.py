@@ -92,6 +92,19 @@ def _add_licenca_horas(conn: sqlite3.Connection) -> None:
         conn.execute("ALTER TABLE licencas ADD COLUMN hora_entrada TEXT")
 
 
+def _add_ausencia_horarios(conn: sqlite3.Connection) -> None:
+    """Adiciona colunas hora_inicio, hora_fim, estufa_almoco, estufa_jantar à tabela ausencias."""
+    cols = [r["name"] for r in conn.execute("PRAGMA table_info(ausencias)").fetchall()]
+    if "hora_inicio" not in cols:
+        conn.execute("ALTER TABLE ausencias ADD COLUMN hora_inicio TEXT")
+    if "hora_fim" not in cols:
+        conn.execute("ALTER TABLE ausencias ADD COLUMN hora_fim TEXT")
+    if "estufa_almoco" not in cols:
+        conn.execute("ALTER TABLE ausencias ADD COLUMN estufa_almoco INTEGER DEFAULT 0")
+    if "estufa_jantar" not in cols:
+        conn.execute("ALTER TABLE ausencias ADD COLUMN estufa_jantar INTEGER DEFAULT 0")
+
+
 def _repair_fts(conn: sqlite3.Connection) -> None:
     """Verifica e repara FTS5 se corrompida."""
     try:
@@ -202,6 +215,7 @@ MIGRATIONS: list[tuple[str, callable]] = [
     ("003_add_turma_id", _add_turma_id),
     ("004_add_estufa_columns", _add_estufa_columns),
     ("005_add_licenca_horas", _add_licenca_horas),
+    ("006_add_ausencia_horarios", _add_ausencia_horarios),
     # Data migrations (one-off fixes) — preserva nomes antigos para compat
     ("reis_ni_382_482", _fix_reis_ni),
     ("rafaela_nii_20223_21223", _fix_rafaela_nii),

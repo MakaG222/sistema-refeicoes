@@ -32,8 +32,15 @@
             <div class="week-card {{ "weekend-active" if dia.is_weekend else "" }}">
               <div class="week-dow {{ "weekend" if dia.is_weekend else "" }}">{{ dia.abrev }}</div>
               <div class="week-date">{{ dia.date_full }}</div>
+              {% if dia.fds_ativo %}
+              <span class="meal-chip chip-licenca">🏖️ Licença FDS</span>
+              {% endif %}
               {% if dia.ausente %}
+              {% if dia.ausencia_info and dia.ausencia_info.parcial %}
+              <span class="meal-chip chip-ausente">⚓ Ausente {{ dia.ausencia_info.hora_inicio }}–{{ dia.ausencia_info.hora_fim }}</span>
+              {% else %}
               <span class="meal-chip chip-ausente">⚓ Ausente</span>
+              {% endif %}
               {% endif %}
               {% if dia.detido %}
               <span class="meal-chip chip-detido">🚫 Detido</span>

@@ -25,12 +25,12 @@
           <form method="post">
             {{ csrf_input() }}
             <div class="form-group">
-              <label>📧 Email</label>
-              <input type="email" name="email" value="{{ aluno.get("email") or "" }}" placeholder="o-teu-email@exemplo.pt">
+              <label for="email">📧 Email</label>
+              <input type="email" name="email" id="email" value="{{ aluno.get("email") or "" }}" placeholder="o-teu-email@exemplo.pt">
             </div>
             <div class="form-group">
-              <label>📱 Telemóvel</label>
-              <input type="tel" name="telemovel" value="{{ aluno.get("telemovel") or "" }}" placeholder="+351XXXXXXXXX">
+              <label for="telemovel">📱 Telemóvel</label>
+              <input type="tel" name="telemovel" id="telemovel" value="{{ aluno.get("telemovel") or "" }}" placeholder="+351XXXXXXXXX">
             </div>
             <div class="gap-btn">
               <button class="btn btn-ok">💾 Guardar contactos</button>

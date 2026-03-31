@@ -266,12 +266,18 @@ def ausencias_cmd():
                 f"Só podes registar ausências para alunos do {ano_cmd}º ano.", "error"
             )
         else:
+            hora_inicio = request.form.get("hora_inicio", "").strip() or None
+            hora_fim = request.form.get("hora_fim", "").strip() or None
+            estufa_almoco = request.form.get("estufa_almoco") == "1"
+            estufa_jantar = request.form.get("estufa_jantar") == "1"
             ok, err = _registar_ausencia(
                 db_u["id"],
                 request.form.get("de", ""),
                 request.form.get("ate", ""),
                 _val_text(request.form.get("motivo", ""))[:500],
                 u["nii"],
+                hora_inicio=hora_inicio, hora_fim=hora_fim,
+                estufa_almoco=estufa_almoco, estufa_jantar=estufa_jantar,
             )
             flash(
                 f"Ausência registada para {db_u['Nome_completo']}."

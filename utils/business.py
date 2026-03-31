@@ -22,11 +22,32 @@ import config as cfg
 from utils.helpers import _refeicao_set
 
 
+def _horarios_sobrepoe(h_inicio: str, h_fim: str, ref_inicio: str, ref_fim: str) -> bool:
+    """Verifica se o intervalo [h_inicio, h_fim] se sobrepõe com [ref_inicio, ref_fim]."""
+    return h_inicio < ref_fim and h_fim > ref_inicio
+
+
+def _refeicoes_afetadas(hora_inicio: str | None, hora_fim: str | None) -> dict[str, bool]:
+    """Determina quais refeições são afetadas por uma ausência com horários.
+
+    Se hora_inicio/hora_fim são None, todas as refeições são afetadas (dia inteiro).
+    """
+    if not hora_inicio or not hora_fim:
+        return {"pequeno_almoco": True, "almoco": True, "lanche": True, "jantar": True}
+
+    afetadas = {}
+    for ref, (r_ini, r_fim) in cfg.REFEICAO_HORARIOS.items():
+        afetadas[ref] = _horarios_sobrepoe(hora_inicio, hora_fim, r_ini, r_fim)
+    return afetadas
+
+
 # ── Ausências ────────────────────────────────────────────────────────────
 
 
 def _registar_ausencia(
-    uid: int, de: str, ate: str, motivo: str, criado_por: str
+    uid: int, de: str, ate: str, motivo: str, criado_por: str,
+    hora_inicio: str | None = None, hora_fim: str | None = None,
+    estufa_almoco: bool = False, estufa_jantar: bool = False,
 ) -> tuple[bool, str]:
     try:
         datetime.strptime(de, "%Y-%m-%d")
@@ -35,18 +56,33 @@ def _registar_ausencia(
         return False, "Data inválida."
     if de > ate:
         return False, "A data de início não pode ser posterior à data de fim."
+    # Validar horas se fornecidas
+    if hora_inicio or hora_fim:
+        if not (hora_inicio and hora_fim):
+            return False, "Hora de início e fim devem ser ambas preenchidas."
+        try:
+            datetime.strptime(hora_inicio, "%H:%M")
+            datetime.strptime(hora_fim, "%H:%M")
+        except ValueError:
+            return False, "Hora inválida (formato HH:MM)."
+        if hora_inicio >= hora_fim:
+            return False, "A hora de início deve ser anterior à hora de fim."
+
+    afetadas = _refeicoes_afetadas(hora_inicio, hora_fim)
+
     with db() as conn:
         conn.execute(
-            """INSERT INTO ausencias (utilizador_id,ausente_de,ausente_ate,motivo,criado_por)
-                        VALUES (?,?,?,?,?)""",
-            (uid, de, ate, motivo or None, criado_por),
+            """INSERT INTO ausencias
+               (utilizador_id,ausente_de,ausente_ate,hora_inicio,hora_fim,
+                estufa_almoco,estufa_jantar,motivo,criado_por)
+               VALUES (?,?,?,?,?,?,?,?,?)""",
+            (uid, de, ate, hora_inicio, hora_fim,
+             1 if estufa_almoco else 0, 1 if estufa_jantar else 0,
+             motivo or None, criado_por),
         )
-        # Limpar refeições durante o período de ausência
-        conn.execute(
-            """UPDATE refeicoes SET pequeno_almoco=0, lanche=0, almoco=NULL,
-               jantar_tipo=NULL, jantar_sai_unidade=0, almoco_estufa=0, jantar_estufa=0
-               WHERE utilizador_id=? AND data>=? AND data<=?""",
-            (uid, de, ate),
+        # Limpar refeições afetadas durante o período de ausência
+        _aplicar_ausencia_refeicoes(
+            conn, uid, de, ate, afetadas, estufa_almoco, estufa_jantar
         )
         # Cancelar licenças pendentes durante o período (preservar as que já têm saída registada)
         conn.execute(
@@ -57,6 +93,38 @@ def _registar_ausencia(
     return True, ""
 
 
+def _aplicar_ausencia_refeicoes(
+    conn, uid: int, de: str, ate: str,
+    afetadas: dict[str, bool],
+    estufa_almoco: bool = False,
+    estufa_jantar: bool = False,
+) -> None:
+    """Atualiza refeições conforme as refeições afetadas pela ausência."""
+    sets = []
+    if afetadas.get("pequeno_almoco"):
+        sets.append("pequeno_almoco=0")
+    if afetadas.get("lanche"):
+        sets.append("lanche=0")
+    if afetadas.get("almoco"):
+        if estufa_almoco:
+            sets.append("almoco_estufa=1")
+        else:
+            sets.append("almoco=NULL")
+            sets.append("almoco_estufa=0")
+    if afetadas.get("jantar"):
+        if estufa_jantar:
+            sets.append("jantar_estufa=1")
+        else:
+            sets.append("jantar_tipo=NULL")
+            sets.append("jantar_sai_unidade=0")
+            sets.append("jantar_estufa=0")
+    if sets:
+        conn.execute(
+            f"UPDATE refeicoes SET {', '.join(sets)} WHERE utilizador_id=? AND data>=? AND data<=?",
+            (uid, de, ate),
+        )
+
+
 def _remover_ausencia(aid: int) -> None:
     with db() as conn:
         conn.execute("DELETE FROM ausencias WHERE id=?", (aid,))
@@ -64,7 +132,9 @@ def _remover_ausencia(aid: int) -> None:
 
 
 def _editar_ausencia(
-    aid: int, uid: int, de: str, ate: str, motivo: str
+    aid: int, uid: int, de: str, ate: str, motivo: str,
+    hora_inicio: str | None = None, hora_fim: str | None = None,
+    estufa_almoco: bool = False, estufa_jantar: bool = False,
 ) -> tuple[bool, str]:
     try:
         datetime.strptime(de, "%Y-%m-%d")
@@ -73,11 +143,24 @@ def _editar_ausencia(
         return False, "Data inválida."
     if de > ate:
         return False, "A data de início não pode ser posterior à data de fim."
+    if hora_inicio or hora_fim:
+        if not (hora_inicio and hora_fim):
+            return False, "Hora de início e fim devem ser ambas preenchidas."
+        try:
+            datetime.strptime(hora_inicio, "%H:%M")
+            datetime.strptime(hora_fim, "%H:%M")
+        except ValueError:
+            return False, "Hora inválida (formato HH:MM)."
+        if hora_inicio >= hora_fim:
+            return False, "A hora de início deve ser anterior à hora de fim."
     with db() as conn:
         conn.execute(
-            """UPDATE ausencias SET ausente_de=?,ausente_ate=?,motivo=?
-                        WHERE id=? AND utilizador_id=?""",
-            (de, ate, motivo or None, aid, uid),
+            """UPDATE ausencias SET ausente_de=?,ausente_ate=?,hora_inicio=?,hora_fim=?,
+               estufa_almoco=?,estufa_jantar=?,motivo=?
+               WHERE id=? AND utilizador_id=?""",
+            (de, ate, hora_inicio, hora_fim,
+             1 if estufa_almoco else 0, 1 if estufa_jantar else 0,
+             motivo or None, aid, uid),
         )
         conn.commit()
     return True, ""
