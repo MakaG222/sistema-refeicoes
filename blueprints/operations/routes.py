@@ -53,7 +53,7 @@ from utils.helpers import (
     _refeicao_set,
     esc,
 )
-from utils.validators import _val_refeicao
+from utils.validators import _val_int_id, _val_ni, _val_refeicao
 
 log = logging.getLogger(__name__)
 
@@ -625,14 +625,15 @@ def licencas_entradas_saidas():
 
     if request.method == "POST":
         acao = request.form.get("acao", "")
-        lic_id = request.form.get("lic_id", "")
+        lic_id = _val_int_id(request.form.get("lic_id", ""))
 
-        if acao in ("saida", "entrada", "limpar_saida", "limpar_entrada") and lic_id:
+        if not lic_id:
+            flash("ID de licença inválido.", "error")
+        elif acao in ("saida", "entrada", "limpar_saida", "limpar_entrada"):
             registar_hora_licenca(lic_id, acao)
-            if acao == "saida":
-                flash("✅ Saída registada.", "ok")
-            elif acao == "entrada":
-                flash("✅ Entrada registada.", "ok")
+            msgs = {"saida": "Saída registada.", "entrada": "Entrada registada.",
+                    "limpar_saida": "Saída limpa.", "limpar_entrada": "Entrada limpa."}
+            flash(f"✅ {msgs.get(acao, 'Ação concluída.')}", "ok")
 
         return redirect(url_for(".licencas_entradas_saidas", d=d_str))
 
@@ -682,7 +683,7 @@ def controlo_presencas():
 
     if request.method == "POST":
         acao = request.form.get("acao", "")
-        ni_q = request.form.get("ni", "").strip()
+        ni_q = _val_ni(request.form.get("ni", "")) or ""
 
         if acao == "consultar" and ni_q:
             resultado = get_presenca_consulta(ni_q, dt)
