@@ -101,6 +101,8 @@ Em desenvolvimento, contas de teste são criadas via `PERFIS_ADMIN` / `PERFIS_TE
 | `oficialdia` | `oficial123` | Oficial de dia |
 | `teste1`–`teste15` | `teste{N}` | Aluno |
 
+
+
 ### Comandos CLI (Flask)
 
 ```bash

@@ -14,4 +14,4 @@ omit = ["tests/*", "test_*.py"]
 
 [tool.coverage.report]
 show_missing = true
-fail_under = 85
+fail_under = 90

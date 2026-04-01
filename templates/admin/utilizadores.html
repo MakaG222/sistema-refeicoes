@@ -1,39 +1,39 @@
 {% extends "base.html" %}
 {% block content %}
 <div class="container">
-  <div class="page-header">{{ back_btn(url_for('.admin_home')) }}<div class="page-title">👥 Utilizadores ({{ rows|length }})</div>
+  <div class="page-header">{{ back_btn(url_for('.admin_home')) }}<div class="page-title">👥 Utilizadores ({{ total }})</div>
     <a class="btn btn-primary btn-sm" href="{{ url_for('.admin_importar_csv') }}">📥 Importar CSV</a>
   </div>
 
   {% if edit_user_row %}
-  <div class="card" style="border:1.5px solid var(--primary);max-width:640px">
+  <div class="card card-border-primary max-w-lg">
     <div class="card-title">✏️ Editar Utilizador — {{ edit_user_row.Nome_completo }}</div>
     <form method="post">
       {{ csrf_input() }}
       <input type="hidden" name="acao" value="editar_user">
       <input type="hidden" name="nii" maxlength="32" value="{{ edit_user_row.NII }}">
       <div class="grid grid-3">
-        <div class="form-group"><label>Nome completo</label><input type="text" name="nome" value="{{ edit_user_row.Nome_completo }}" required></div>
-        <div class="form-group"><label>NI</label><input type="text" name="ni" value="{{ edit_user_row.NI or '' }}"></div>
-        <div class="form-group"><label>Ano</label>
-          <select name="ano">
+        <div class="form-group"><label for="edit_nome">Nome completo</label><input type="text" name="nome" id="edit_nome" value="{{ edit_user_row.Nome_completo }}" required></div>
+        <div class="form-group"><label for="edit_ni">NI</label><input type="text" name="ni" id="edit_ni" value="{{ edit_user_row.NI or '' }}"></div>
+        <div class="form-group"><label for="edit_ano">Ano</label>
+          <select name="ano" id="edit_ano">
             <option value="0">0 — Concluído/Inativo</option>
             {% for a, _ in ANOS_OPCOES %}
             <option value="{{ a }}" {{ "selected" if edit_user_row.ano|string == a|string }}>{{ ano_label(a) }}</option>
             {% endfor %}
           </select>
         </div>
-        <div class="form-group"><label>Perfil</label>
-          <select name="perfil">
+        <div class="form-group"><label for="edit_perfil">Perfil</label>
+          <select name="perfil" id="edit_perfil">
             {% for p in ["aluno", "oficialdia", "cozinha", "cmd", "admin"] %}
             <option value="{{ p }}" {{ "selected" if edit_user_row.perfil == p }}>{{ p }}</option>
             {% endfor %}
           </select>
         </div>
-        <div class="form-group"><label>Email</label><input type="email" name="email" value="{{ edit_user_row.email or '' }}"></div>
-        <div class="form-group"><label>Telemóvel</label><input type="tel" name="telemovel" value="{{ edit_user_row.telemovel or '' }}"></div>
+        <div class="form-group"><label for="edit_email">Email</label><input type="email" name="email" id="edit_email" value="{{ edit_user_row.email or '' }}"></div>
+        <div class="form-group"><label for="edit_telemovel">Telemóvel</label><input type="tel" name="telemovel" id="edit_telemovel" value="{{ edit_user_row.telemovel or '' }}"></div>
       </div>
-      <div class="form-group"><label>Nova password (deixa em branco para não alterar)</label><input type="text" name="pw" placeholder="Nova password opcional..."></div>
+      <div class="form-group"><label for="edit_pw">Nova password (deixa em branco para não alterar)</label><input type="text" name="pw" id="edit_pw" placeholder="Nova password opcional..."></div>
       <div class="gap-btn">
         <button class="btn btn-ok">💾 Guardar alterações</button>
         <a class="btn btn-ghost" href="{{ url_for('.admin_utilizadores') }}">Cancelar</a>
@@ -43,18 +43,18 @@
   {% endif %}
 
   {% if edit_row %}
-  <div class="card" style="border:1.5px solid var(--gold);max-width:520px">
+  <div class="card card-border-gold max-w-sm">
     <div class="card-title">✉️ Contactos — {{ edit_row.Nome_completo }}</div>
     <form method="post">
       {{ csrf_input() }}
       <input type="hidden" name="acao" value="editar_contactos">
       <input type="hidden" name="nii" maxlength="32" value="{{ edit_row.NII }}">
       <div class="grid grid-2">
-        <div class="form-group"><label>Email</label>
-          <input type="email" name="email" value="{{ edit_row.email or '' }}" placeholder="nome@exemplo.pt">
+        <div class="form-group"><label for="contacto_email">Email</label>
+          <input type="email" name="email" id="contacto_email" value="{{ edit_row.email or '' }}" placeholder="nome@exemplo.pt">
         </div>
-        <div class="form-group"><label>Telemóvel</label>
-          <input type="tel" name="telemovel" value="{{ edit_row.telemovel or '' }}" placeholder="+351XXXXXXXXX">
+        <div class="form-group"><label for="contacto_telemovel">Telemóvel</label>
+          <input type="tel" name="telemovel" id="contacto_telemovel" value="{{ edit_row.telemovel or '' }}" placeholder="+351XXXXXXXXX">
         </div>
       </div>
       <div class="gap-btn">
@@ -66,9 +66,9 @@
   {% endif %}
 
   <div class="card">
-    <form method="get" style="display:flex;gap:.5rem;flex-wrap:wrap">
-      <input type="text" name="q" placeholder="Pesquisar por nome..." value="{{ q }}" style="flex:1;min-width:200px">
-      <select name="ano" style="width:auto">
+    <form method="get" class="d-flex gap-md flex-wrap">
+      <input type="text" name="q" id="filtro_q" placeholder="Pesquisar por nome..." value="{{ q }}" class="flex-1 min-w-lg">
+      <select name="ano" id="filtro_ano" class="w-auto">
         <option value="all" {{ "selected" if ano_f == "all" }}>Todos os anos</option>
         {% for a, _ in ANOS_OPCOES %}
         <option value="{{ a }}" {{ "selected" if ano_f == a|string }}>{{ ano_label(a) }}</option>
@@ -84,24 +84,24 @@
       {{ csrf_input() }}
       <input type="hidden" name="acao" value="criar">
       <div class="grid grid-3">
-        <div class="form-group"><label>NII</label><input type="text" name="nii" maxlength="32" required></div>
-        <div class="form-group"><label>NI</label><input type="text" name="ni" required></div>
-        <div class="form-group"><label>Nome completo</label><input type="text" name="nome" required></div>
-        <div class="form-group"><label>Ano</label>
-          <select name="ano" required>
+        <div class="form-group"><label for="criar_nii">NII</label><input type="text" name="nii" id="criar_nii" maxlength="32" required></div>
+        <div class="form-group"><label for="criar_ni">NI</label><input type="text" name="ni" id="criar_ni" required></div>
+        <div class="form-group"><label for="criar_nome">Nome completo</label><input type="text" name="nome" id="criar_nome" required></div>
+        <div class="form-group"><label for="criar_ano">Ano</label>
+          <select name="ano" id="criar_ano" required>
             {% for a, _ in ANOS_OPCOES %}
             <option value="{{ a }}">{{ ano_label(a) }}</option>
             {% endfor %}
           </select>
         </div>
-        <div class="form-group"><label>Perfil</label>
-          <select name="perfil">
+        <div class="form-group"><label for="criar_perfil">Perfil</label>
+          <select name="perfil" id="criar_perfil">
             {% for p in ["aluno", "oficialdia", "cozinha", "cmd", "admin"] %}
             <option value="{{ p }}">{{ p }}</option>
             {% endfor %}
           </select>
         </div>
-        <div class="form-group"><label>Password inicial</label><input type="text" name="pw" required></div>
+        <div class="form-group"><label for="criar_pw">Password inicial</label><input type="text" name="pw" id="criar_pw" required></div>
       </div>
       <button class="btn btn-ok">Criar</button>
     </form>
@@ -109,14 +109,14 @@
 
   <div class="card">
     <div class="card-title">Lista
-      <span style="font-size:.74rem;font-weight:400;color:var(--muted);margin-left:.5rem">Clica em ✉️ para editar email/telemóvel</span>
+      <span class="text-xs fw-normal text-muted ml-md">Clica em ✉️ para editar email/telemóvel</span>
     </div>
     <div class="table-wrap">
       <table>
         <thead><tr><th>NII</th><th>NI</th><th>Nome</th><th>Ano</th><th>Perfil</th><th>Email</th><th>Telemóvel</th><th>Estado</th><th>Ações</th></tr></thead>
         <tbody>
           {% for r in rows %}
-          <tr{{ ' style="background:#f0f7ff"'|safe if r.NII == edit_user_nii or r.NII == edit_nii }}>
+          <tr{{ ' class="bg-highlight"' if r.NII == edit_user_nii or r.NII == edit_nii else '' }}>
             <td class="small text-muted">{{ r.NII }}</td>
             <td>{{ r.NI }}</td>
             <td><strong>{{ r.Nome_completo }}</strong></td>
@@ -135,17 +135,28 @@
               <a class="btn btn-gold btn-sm" href="?edit_user={{ r.NII }}" title="Editar utilizador">✏️ Editar</a>
               <a class="btn btn-ghost btn-sm" href="?edit_contactos={{ r.NII }}" title="Editar email/telemóvel">✉️</a>
               {% if r.locked_until %}
-              <form method="post" style="display:inline">{{ csrf_input() }}<input type="hidden" name="acao" value="desbloquear"><input type="hidden" name="nii" maxlength="32" value="{{ r.NII }}"><button class="btn btn-ghost btn-sm">🔓</button></form>
+              <form method="post" class="form-inline">{{ csrf_input() }}<input type="hidden" name="acao" value="desbloquear"><input type="hidden" name="nii" maxlength="32" value="{{ r.NII }}"><button class="btn btn-ghost btn-sm">🔓</button></form>
               {% endif %}
-              <form method="post" style="display:inline" onsubmit="return confirm('Eliminar {{ r.NII }}?');">{{ csrf_input() }}<input type="hidden" name="acao" value="eliminar"><input type="hidden" name="nii" maxlength="32" value="{{ r.NII }}"><button class="btn btn-danger btn-sm">🗑</button></form>
+              <form method="post" class="form-inline" data-confirm="Eliminar {{ r.NII }}?">{{ csrf_input() }}<input type="hidden" name="acao" value="eliminar"><input type="hidden" name="nii" maxlength="32" value="{{ r.NII }}"><button class="btn btn-danger btn-sm">🗑</button></form>
             </td>
           </tr>
           {% else %}
-          <tr><td colspan="9" class="text-muted center" style="padding:1.5rem">Sem utilizadores.</td></tr>
+          <tr><td colspan="9" class="text-muted center empty-cell">Sem utilizadores.</td></tr>
           {% endfor %}
         </tbody>
       </table>
     </div>
+    {% if total_pages > 1 %}
+    <div class="d-flex gap-sm flex-wrap mt-md" role="navigation" aria-label="Paginação">
+      {% if page > 1 %}
+      <a class="btn btn-ghost btn-sm" href="?q={{ q }}&ano={{ ano_f }}&page={{ page - 1 }}">← Anterior</a>
+      {% endif %}
+      <span class="text-muted text-sm">Página {{ page }} de {{ total_pages }}</span>
+      {% if page < total_pages %}
+      <a class="btn btn-ghost btn-sm" href="?q={{ q }}&ano={{ ano_f }}&page={{ page + 1 }}">Seguinte →</a>
+      {% endif %}
+    </div>
+    {% endif %}
   </div>
 </div>
 {% endblock %}

@@ -2,11 +2,15 @@
 
 from __future__ import annotations
 
+import logging
 import sqlite3
+
+log = logging.getLogger(__name__)
 
 try:
     from werkzeug.security import check_password_hash as _wz_check_password_hash
 except Exception:
+    log.warning("werkzeug não disponível — check_password_hash desactivado")
     _wz_check_password_hash = None
 
 from core.constants import PERFIS_ADMIN, PERFIS_TESTE
@@ -35,6 +39,7 @@ def verify_password(pw: str, stored: str) -> bool:
         try:
             return bool(_wz_check_password_hash(stored, pw))
         except Exception:
+            log.exception("verify_password: erro ao verificar hash")
             return False
     return pw == stored
 

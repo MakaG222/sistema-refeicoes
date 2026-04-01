@@ -2,6 +2,7 @@
 
 import io
 import csv as _csv
+import logging
 from datetime import date, timedelta
 
 from flask import (
@@ -25,6 +26,8 @@ from utils.helpers import (
     _parse_date,
     _parse_date_strict,
 )
+
+log = logging.getLogger(__name__)
 
 
 @report_bp.route("/exportar/mensal")
@@ -78,10 +81,12 @@ def exportar_mensal():
             "alm_norm",
             "alm_veg",
             "alm_dieta",
+            "alm_estufa",
             "jan_norm",
             "jan_veg",
             "jan_dieta",
             "jan_sai",
+            "jan_estufa",
         ]
     }
     _men_map, _men_empty = get_totais_periodo(d0.isoformat(), d1.isoformat())
@@ -108,12 +113,14 @@ def exportar_mensal():
         "Alm. Normal",
         "Alm. Veg.",
         "Alm. Dieta",
+        "Alm. Estufa",
         "Total Almoços",
         "Jan. Normal",
         "Jan. Veg.",
         "Jan. Dieta",
         "Total Jantares",
         "Sai Unidade",
+        "Jan. Estufa",
     ]
 
     def make_row(di, tipo, t, alm, jan):
@@ -126,12 +133,14 @@ def exportar_mensal():
             t["alm_norm"],
             t["alm_veg"],
             t["alm_dieta"],
+            t.get("alm_estufa", 0),
             alm,
             t["jan_norm"],
             t["jan_veg"],
             t["jan_dieta"],
             jan,
             t["jan_sai"],
+            t.get("jan_estufa", 0),
         ]
 
     nome_ficheiro = f"relatorio_mensal_{d0.strftime('%Y-%m')}"
@@ -185,12 +194,14 @@ def exportar_mensal():
                 totais["alm_norm"],
                 totais["alm_veg"],
                 totais["alm_dieta"],
+                totais.get("alm_estufa", 0),
                 total_alm,
                 totais["jan_norm"],
                 totais["jan_veg"],
                 totais["jan_dieta"],
                 total_jan,
                 totais["jan_sai"],
+                totais.get("jan_estufa", 0),
             ]
             total_fill = PatternFill("solid", fgColor="D5F5E3")
             total_font = Font(bold=True)
@@ -218,34 +229,48 @@ def exportar_mensal():
         except ImportError:
             fmt = "csv"
 
-    buf = io.StringIO()
-    writer = _csv.writer(buf, delimiter=";")
-    writer.writerow(HEADERS)
-    for di, tipo, t, alm, jan in dias_data:
-        writer.writerow(make_row(di, tipo, t, alm, jan))
+    # Streaming CSV — evita carregar tudo em memória de uma vez
     total_alm = totais["alm_norm"] + totais["alm_veg"] + totais["alm_dieta"]
     total_jan = totais["jan_norm"] + totais["jan_veg"] + totais["jan_dieta"]
-    writer.writerow(
-        [
-            "TOTAL",
-            "",
-            "",
-            totais["pa"],
-            totais["lan"],
-            totais["alm_norm"],
-            totais["alm_veg"],
-            totais["alm_dieta"],
-            total_alm,
-            totais["jan_norm"],
-            totais["jan_veg"],
-            totais["jan_dieta"],
-            total_jan,
-            totais["jan_sai"],
-        ]
-    )
-    csv_bytes = ("\ufeff" + buf.getvalue()).encode("utf-8")
+
+    def generate_csv():
+        buf = io.StringIO()
+        writer = _csv.writer(buf, delimiter=";")
+        # BOM para Excel
+        yield "\ufeff"
+        writer.writerow(HEADERS)
+        yield buf.getvalue()
+        for di, tipo, t, alm, jan in dias_data:
+            buf.seek(0)
+            buf.truncate(0)
+            writer.writerow(make_row(di, tipo, t, alm, jan))
+            yield buf.getvalue()
+        buf.seek(0)
+        buf.truncate(0)
+        writer.writerow(
+            [
+                "TOTAL",
+                "",
+                "",
+                totais["pa"],
+                totais["lan"],
+                totais["alm_norm"],
+                totais["alm_veg"],
+                totais["alm_dieta"],
+                totais.get("alm_estufa", 0),
+                total_alm,
+                totais["jan_norm"],
+                totais["jan_veg"],
+                totais["jan_dieta"],
+                total_jan,
+                totais["jan_sai"],
+                totais.get("jan_estufa", 0),
+            ]
+        )
+        yield buf.getvalue()
+
     return Response(
-        csv_bytes,
+        generate_csv(),
         headers={
             "Content-Disposition": f"attachment; filename={nome_ficheiro}.csv",
             "Content-Type": "text/csv; charset=utf-8-sig",
@@ -272,6 +297,7 @@ def calendario_publico():
     try:
         ano_m, mes_m = int(mes_str[:4]), int(mes_str[5:7])
     except Exception:
+        log.exception("calendario_publico: erro ao processar parâmetro mes")
         ano_m, mes_m = hoje.year, hoje.month
 
     ICONES = {
@@ -452,8 +478,12 @@ def dashboard_semanal():
         off = d["tipo"] in ("feriado", "exercicio")
         d["alm"] = alm
         d["jan"] = jan
-        d["col_bg"] = "#f9fafb" if off else ("#fffdf5" if d["is_wknd"] else "#fff")
-        d["dow_col"] = "#c9a227" if d["is_wknd"] else "#0a2d4e"
+        d["col_cls"] = (
+            "chart-col-off"
+            if off
+            else ("chart-col-wknd" if d["is_wknd"] else "chart-col-day")
+        )
+        d["dow_cls"] = "chart-dow-wknd" if d["is_wknd"] else "chart-dow-day"
         d["dow"] = ABREV_DIAS[d["data"].weekday()]
         d["data_fmt"] = d["data"].strftime("%d/%m")
         # Bar heights (px out of 80)
@@ -469,10 +499,12 @@ def dashboard_semanal():
         "alm_norm",
         "alm_veg",
         "alm_dieta",
+        "alm_estufa",
         "jan_norm",
         "jan_veg",
         "jan_dieta",
         "jan_sai",
+        "jan_estufa",
     ]
     totais_semana = {k: sum(d["t"][k] for d in dias) for k in _keys}
     totais_semana["alm_total"] = (
@@ -619,6 +651,7 @@ def exportar_dia():
             flash("openpyxl não instalado — a exportar CSV.", "warn")
             fmt = "csv"
         except Exception as ex:
+            log.exception("exportar_mensal: erro ao gerar Excel")
             flash(f"Erro ao gerar Excel: {ex} — a exportar CSV.", "warn")
             fmt = "csv"
 
@@ -693,10 +726,12 @@ def exportar_relatorio():
             "alm_norm",
             "alm_veg",
             "alm_dieta",
+            "alm_estufa",
             "jan_norm",
             "jan_veg",
             "jan_dieta",
             "jan_sai",
+            "jan_estufa",
         ]
     }
     _exp_map, _exp_empty = get_totais_periodo(d0.isoformat(), d1.isoformat())
@@ -722,12 +757,14 @@ def exportar_relatorio():
         "Alm. Normal",
         "Alm. Veg.",
         "Alm. Dieta",
+        "Alm. Estufa",
         "Total Almoços",
         "Jan. Normal",
         "Jan. Veg.",
         "Jan. Dieta",
         "Total Jantares",
         "Sai Unidade",
+        "Jan. Estufa",
     ]
 
     def make_row(di, tipo, t, alm, jan):
@@ -740,12 +777,14 @@ def exportar_relatorio():
             t["alm_norm"],
             t["alm_veg"],
             t["alm_dieta"],
+            t.get("alm_estufa", 0),
             alm,
             t["jan_norm"],
             t["jan_veg"],
             t["jan_dieta"],
             jan,
             t["jan_sai"],
+            t.get("jan_estufa", 0),
         ]
 
     nome = f"relatorio_{d0_str}_a_{d1.isoformat()}"
@@ -798,12 +837,14 @@ def exportar_relatorio():
                 totais["alm_norm"],
                 totais["alm_veg"],
                 totais["alm_dieta"],
+                totais.get("alm_estufa", 0),
                 total_alm,
                 totais["jan_norm"],
                 totais["jan_veg"],
                 totais["jan_dieta"],
                 total_jan,
                 totais["jan_sai"],
+                totais.get("jan_estufa", 0),
             ]
             total_fill = PatternFill("solid", fgColor="D5E8F0")
             total_font = Font(bold=True)
@@ -831,6 +872,7 @@ def exportar_relatorio():
         except ImportError:
             flash("openpyxl não instalado — a exportar CSV.", "warn")
         except Exception as ex:
+            log.exception("exportar_diario: erro ao gerar Excel")
             flash(f"Erro ao gerar Excel: {ex} — a exportar CSV.", "warn")
 
     # CSV (com BOM para Excel abrir correctamente)
@@ -851,12 +893,14 @@ def exportar_relatorio():
             totais["alm_norm"],
             totais["alm_veg"],
             totais["alm_dieta"],
+            totais.get("alm_estufa", 0),
             total_alm,
             totais["jan_norm"],
             totais["jan_veg"],
             totais["jan_dieta"],
             total_jan,
             totais["jan_sai"],
+            totais.get("jan_estufa", 0),
         ]
     )
     csv_bytes = ("\ufeff" + buf.getvalue()).encode("utf-8")

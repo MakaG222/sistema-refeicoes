@@ -7,25 +7,12 @@
   </div>
 
   <!-- Tabs -->
-  <div class="year-tabs" style="margin-bottom:1rem">
-    <a class="year-tab" href="#turmas" onclick="showTab('turmas')">📚 Turmas</a>
-    <a class="year-tab" href="#atribuir" onclick="showTab('atribuir')">👥 Atribuir Turma</a>
-    <a class="year-tab" href="#promocao" onclick="showTab('promocao')">🎖️ Promoção</a>
-    <a class="year-tab" href="#mover" onclick="showTab('mover')">🔄 Mover Aluno</a>
+  <div class="year-tabs mb-xl">
+    <a class="year-tab" href="#turmas">📚 Turmas</a>
+    <a class="year-tab" href="#atribuir">👥 Atribuir Turma</a>
+    <a class="year-tab" href="#promocao">🎖️ Promoção</a>
+    <a class="year-tab" href="#mover">🔄 Mover Aluno</a>
   </div>
-  <script>
-    function showTab(id) {
-      ['turmas','atribuir','promocao','mover'].forEach(function(t) {
-        document.getElementById('tab-'+t).style.display = (t===id) ? '' : 'none';
-      });
-      document.querySelectorAll('.year-tab').forEach(function(el) {
-        el.classList.toggle('active', el.getAttribute('href')==='#'+id);
-      });
-    }
-    // Mostrar tab por hash ou primeiro
-    var hash = window.location.hash.replace('#','') || 'turmas';
-    showTab(hash);
-  </script>
 
   <!-- Tab: Turmas -->
   <div id="tab-turmas">
@@ -44,20 +31,20 @@
           {{ csrf_input() }}
           <input type="hidden" name="acao" value="criar_turma">
           <div class="form-group">
-            <label>Nome da turma <span class="text-muted small">(ex: Alpha, Bravo...)</span></label>
-            <input type="text" name="nome_turma" required placeholder="Ex: Alpha">
+            <label for="nome_turma">Nome da turma <span class="text-muted small">(ex: Alpha, Bravo...)</span></label>
+            <input type="text" name="nome_turma" id="nome_turma" required placeholder="Ex: Alpha">
           </div>
           <div class="form-group">
-            <label>Ano curricular / Curso</label>
-            <select name="ano_turma" required>
+            <label for="ano_turma">Ano curricular / Curso</label>
+            <select name="ano_turma" id="ano_turma" required>
               {% for a, lbl in ANOS_OPCOES %}
               <option value="{{ a }}">{{ lbl }}</option>
               {% endfor %}
             </select>
           </div>
           <div class="form-group">
-            <label>Descrição <span class="text-muted small">(opcional)</span></label>
-            <input type="text" name="descricao" placeholder="Ex: Turma de engenharia naval">
+            <label for="descricao">Descrição <span class="text-muted small">(opcional)</span></label>
+            <input type="text" name="descricao" id="descricao" placeholder="Ex: Turma de engenharia naval">
           </div>
           <button class="btn btn-ok">💾 Criar turma</button>
         </form>
@@ -76,7 +63,7 @@
                 <td>{{ t.descricao or "—" }}</td>
                 <td class="small text-muted">{{ (t.criado_em or "")[:16] }}</td>
                 <td>
-                  <form method="post" style="display:inline" onsubmit="return confirm('Eliminar turma?')">
+                  <form method="post" class="form-inline" data-confirm="Eliminar turma?">
                     {{ csrf_input() }}
                     <input type="hidden" name="acao" value="eliminar_turma">
                     <input type="hidden" name="tid" value="{{ t.id }}">
@@ -89,25 +76,25 @@
           </table>
         </div>
         {% else %}
-        <div class="text-muted" style="padding:.8rem">Nenhuma turma criada ainda.</div>
+        <div class="text-muted p-lg">Nenhuma turma criada ainda.</div>
         {% endif %}
       </div>
     </div>
   </div>
 
   <!-- Tab: Atribuir Turma -->
-  <div id="tab-atribuir" style="display:none">
-    <div class="card" style="max-width:520px">
+  <div id="tab-atribuir" class="d-none">
+    <div class="card max-w-sm">
       <div class="card-title">👥 Atribuir aluno a uma turma</div>
-      <div class="alert alert-info" style="font-size:.81rem;margin-bottom:.8rem">
+      <div class="alert alert-info text-sm mb-lg">
         💡 Liga um aluno a uma turma/companhia criada no separador Turmas.
       </div>
       <form method="post">
         {{ csrf_input() }}
         <input type="hidden" name="acao" value="atribuir_turma">
         <div class="form-group">
-          <label>Aluno (NII)</label>
-          <select name="nii_at" required>
+          <label for="nii_at">Aluno (NII)</label>
+          <select name="nii_at" id="nii_at" required>
             <option value="">— Selecionar aluno —</option>
             {% for a in alunos_all %}
             <option value="{{ a.NII }}">[{{ ano_label(a.ano) }}] {{ a.NI }} — {{ a.Nome_completo }}</option>
@@ -115,8 +102,8 @@
           </select>
         </div>
         <div class="form-group">
-          <label>Turma</label>
-          <select name="turma_id">
+          <label for="turma_id">Turma</label>
+          <select name="turma_id" id="turma_id">
             <option value="">— Sem turma —</option>
             {% for t in turmas %}
             <option value="{{ t.id }}">{{ t.nome }} ({{ ano_label(t.ano) }})</option>
@@ -129,41 +116,41 @@
   </div>
 
   <!-- Tab: Promoção -->
-  <div id="tab-promocao" style="display:none">
+  <div id="tab-promocao" class="d-none">
     <div class="alert alert-warn">⚠️ <strong>Atenção:</strong> A promoção é permanente. Recomenda-se fazer backup antes.</div>
     <div class="card">
       <div class="card-title">🚀 Promoção global — todos os anos em simultâneo</div>
-      <p style="font-size:.85rem;color:var(--muted);margin-bottom:.8rem">Promove todos: 1º→2º, 2º→3º, ..., 5º→6º, 6º→Concluído. CFBO e CFCO não são afetados pela promoção global.</p>
-      <form method="post" onsubmit="return confirm('Promover TODOS os alunos de todos os anos?')">
+      <p class="text-base text-muted mb-lg">Promove todos: 1º→2º, 2º→3º, ..., 5º→6º, 6º→Concluído. CFBO e CFCO não são afetados pela promoção global.</p>
+      <form method="post" data-confirm="Promover TODOS os alunos de todos os anos?">
         {{ csrf_input() }}<input type="hidden" name="acao" value="promover_todos_anos">
         <button class="btn btn-danger">🎖️ Promoção Global</button>
       </form>
     </div>
     <div class="grid grid-2">
       {% for p in promocao_data %}
-      <div class="card" style="border-top:3px solid {{ p.cor }}">
-        <div class="card-title" style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:.4rem">
-          <span>{{ ano_label(p.ano) }} <span class="badge badge-info" style="margin-left:.4rem">{{ p.alunos|length }} alunos</span></span>
-          <form method="post" style="display:inline" onsubmit="return confirm('Promover todos os alunos deste ano?')">
+      <div class="card card-accent-{{ p.cor_cls }}">
+        <div class="card-title flex-between">
+          <span>{{ ano_label(p.ano) }} <span class="badge badge-info ml-sm">{{ p.alunos|length }} alunos</span></span>
+          <form method="post" class="form-inline" data-confirm="Promover todos os alunos deste ano?">
             {{ csrf_input() }}
             <input type="hidden" name="acao" value="promover_todos"><input type="hidden" name="ano_origem" value="{{ p.ano }}">
-            <button class="btn btn-sm" style="background:{{ p.cor }};color:#fff" {{ "disabled" if not p.alunos }}>🎖️ Promover todos → {{ p.destino }}</button>
+            <button class="btn btn-sm btn-{{ p.cor_cls }}" {{ "disabled" if not p.alunos }}>🎖️ Promover todos → {{ p.destino }}</button>
           </form>
         </div>
-        <div style="max-height:180px;overflow-y:auto;border-top:1px solid var(--border);padding-top:.4rem">
+        <div class="scroll-y">
           {% for al in p.alunos %}
-          <div style="display:flex;justify-content:space-between;align-items:center;padding:.3rem 0;border-bottom:1px solid var(--border);font-size:.82rem;gap:.4rem">
+          <div class="promo-row">
             <span><strong>{{ al.NI }}</strong> — {{ al.Nome_completo }}</span>
-            <form method="post" style="display:inline;display:flex;gap:.3rem;align-items:center">
+            <form method="post" class="d-flex gap-xs items-center">
               {{ csrf_input() }}
               <input type="hidden" name="acao" value="promover_um">
               <input type="hidden" name="uid" value="{{ al.id }}">
-              <input type="text" name="novo_ni" placeholder="Novo NI" style="width:110px;padding:.25rem .45rem;font-size:.78rem;border-radius:7px;border:1.5px solid var(--border)">
+              <input type="text" name="novo_ni" placeholder="Novo NI" class="promo-input">
               <button class="btn btn-ghost btn-sm" title="Promover este aluno">↑ Promover</button>
             </form>
           </div>
           {% else %}
-          <div class="text-muted small" style="padding:.3rem">Sem alunos.</div>
+          <div class="text-muted small p-sm">Sem alunos.</div>
           {% endfor %}
         </div>
       </div>
@@ -172,18 +159,18 @@
   </div>
 
   <!-- Tab: Mover Aluno -->
-  <div id="tab-mover" style="display:none">
-    <div class="card" style="max-width:520px">
+  <div id="tab-mover" class="d-none">
+    <div class="card max-w-sm">
       <div class="card-title">🔄 Mover aluno de ano</div>
-      <div class="alert alert-info" style="font-size:.81rem;margin-bottom:.8rem">
+      <div class="alert alert-info text-sm mb-lg">
         💡 Usa esta função para mover um aluno individualmente para outro ano sem usar a promoção global, incluindo para os cursos CFBO e CFCO.
       </div>
       <form method="post">
         {{ csrf_input() }}
         <input type="hidden" name="acao" value="mover_aluno">
         <div class="form-group">
-          <label>Aluno (NII)</label>
-          <select name="nii_m" required>
+          <label for="nii_m">Aluno (NII)</label>
+          <select name="nii_m" id="nii_m" required>
             <option value="">— Selecionar aluno —</option>
             {% for a in alunos_all %}
             <option value="{{ a.NII }}">[{{ ano_label(a.ano) }}] {{ a.NI }} — {{ a.Nome_completo }}</option>
@@ -191,8 +178,8 @@
           </select>
         </div>
         <div class="form-group">
-          <label>Mover para</label>
-          <select name="novo_ano" required>
+          <label for="novo_ano">Mover para</label>
+          <select name="novo_ano" id="novo_ano" required>
             {% for a, _ in ANOS_OPCOES %}
             <option value="{{ a }}">{{ ano_label(a) }}</option>
             {% endfor %}
@@ -205,3 +192,4 @@
   </div>
 </div>
 {% endblock %}
+{% block scripts %}<script src="/static/js/tabs.js"></script>{% endblock %}

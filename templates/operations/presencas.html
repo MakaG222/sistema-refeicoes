@@ -7,33 +7,33 @@
   </div>
 
   <!-- Navegação de datas -->
-  <div class="card" style="padding:.75rem 1.1rem;margin-bottom:.8rem">
+  <div class="card card-compact">
     <div class="flex-between">
       <div class="flex">
         <a class="btn btn-ghost btn-sm" href="{{ url_for('.controlo_presencas', d=prev_d) }}">← Anterior</a>
         <strong>{{ dia_semana }}, {{ dt_fmt }}</strong>
         <a class="btn btn-ghost btn-sm" href="{{ url_for('.controlo_presencas', d=next_d) }}">Próximo →</a>
       </div>
-      <form method="get" style="display:flex;gap:.3rem">
-        <input type="date" name="d" value="{{ dt_iso }}" style="width:auto">
+      <form method="get" class="date-nav-form">
+        <input type="date" name="d" id="presencas_data" value="{{ dt_iso }}" class="w-auto">
         <button class="btn btn-primary btn-sm">Ir</button>
       </form>
     </div>
   </div>
 
   <!-- Pesquisa rápida por NI -->
-  <div class="card" style="border-top:3px solid var(--primary)">
+  <div class="card card-accent-primary">
     <div class="card-title">🔍 Pesquisa rápida por NI</div>
-    <div class="alert alert-info" style="margin-bottom:.8rem;font-size:.82rem">
+    <div class="alert alert-info mb-lg text-sm">
       💡 Introduz o NI do aluno (ex: <strong>222</strong>) para consultar o estado de presença e refeições. Podes depois dar entrada ou saída diretamente.
     </div>
-    <form method="post" style="display:flex;gap:.5rem;flex-wrap:wrap">
+    <form method="post" class="d-flex gap-md flex-wrap">
       {{ csrf_input() }}
       <input type="hidden" name="acao" value="consultar">
-      <input type="text" name="ni" value="{{ ni_q }}" placeholder="NI do aluno (ex: 222)"
-        style="flex:1;min-width:140px;font-size:1.05rem;font-weight:700;letter-spacing:.05em"
+      <input type="text" name="ni" id="ni" value="{{ ni_q }}" placeholder="NI do aluno (ex: 222)"
+        class="ni-input"
         autofocus autocomplete="off">
-      <button class="btn btn-primary" style="font-size:1rem">🔍 Consultar</button>
+      <button class="btn btn-primary btn-search">🔍 Consultar</button>
     </form>
   </div>
 
@@ -43,42 +43,42 @@
   {% set ausente = resultado.ausente %}
   {% set ni_val = resultado.ni %}
   {% set lic_info = resultado.licenca %}
-  <div class="card" style="border-left:4px solid {{ 'var(--danger)' if ausente else 'var(--ok)' }}">
-    <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:.5rem">
+  <div class="card {{ 'card-border-danger' if ausente else 'card-border-ok' }}">
+    <div class="presence-result">
       <div>
-        <div style="font-size:1.15rem;font-weight:800">{{ al.Nome_completo }}</div>
+        <div class="text-xl fw-extra">{{ al.Nome_completo }}</div>
         <div class="text-muted small">NI: <strong>{{ al.NI }}</strong> &nbsp;|&nbsp; {{ al.ano }}º Ano &nbsp;|&nbsp; NII: {{ al.NII }}</div>
         {% if lic_info.tipo == "antes_jantar" %}
-        <div style="margin-top:.4rem">
+        <div class="mt-sm">
           <span class="badge badge-info">🌅 Licença antes do jantar</span>
           {% if lic_info.hora_saida %} <span class="text-muted small">Saiu: {{ lic_info.hora_saida }}</span>{% endif %}
           {% if lic_info.hora_entrada %} <span class="text-muted small">Entrou: {{ lic_info.hora_entrada }}</span>{% endif %}
         </div>
         {% elif lic_info.tipo == "apos_jantar" %}
-        <div style="margin-top:.4rem">
+        <div class="mt-sm">
           <span class="badge badge-muted">🌙 Licença após o jantar</span>
           {% if lic_info.hora_saida %} <span class="text-muted small">Saiu: {{ lic_info.hora_saida }}</span>{% endif %}
           {% if lic_info.hora_entrada %} <span class="text-muted small">Entrou: {{ lic_info.hora_entrada }}</span>{% endif %}
         </div>
         {% endif %}
       </div>
-      <div style="background:{{ '#fdecea' if ausente else '#d5f5e3' }};padding:.4rem .9rem;border-radius:20px;font-weight:800;font-size:1rem">{{ "🔴 AUSENTE" if ausente else "🟢 PRESENTE" }}</div>
+      <div class="presence-status {{ 'presence-absent' if ausente else 'presence-present' }}">{{ "🔴 AUSENTE" if ausente else "🟢 PRESENTE" }}</div>
     </div>
-    <hr style="margin:.7rem 0">
-    <div class="card-title" style="font-size:.82rem;margin-bottom:.5rem">🍽️ Refeições em {{ dt_fmt }}</div>
-    <div style="display:flex;gap:.4rem;flex-wrap:wrap">
+    <hr class="mt-md mb-md">
+    <div class="card-title text-sm mb-sm">🍽️ Refeições em {{ dt_fmt }}</div>
+    <div class="d-flex gap-sm flex-wrap">
       {% for val, label, tipo in ref_chips %}
       {% if val %}
-      <span style="background:#eafaf1;border:1.5px solid #a9dfbf;border-radius:7px;padding:.25rem .55rem;font-size:.8rem;font-weight:700">{{ label }} {{ tipo if tipo else "✓" }}</span>
+      <span class="ref-chip-ok">{{ label }} {{ tipo if tipo else "✓" }}</span>
       {% else %}
-      <span style="background:#fdecea;border:1.5px solid #f1948a;border-radius:7px;padding:.25rem .55rem;font-size:.8rem;color:var(--muted)">{{ label }} ✗</span>
+      <span class="ref-chip-no">{{ label }} ✗</span>
       {% endif %}
       {% endfor %}
       {% if ref.jantar_sai_unidade %}
-      <span style="background:#fef9e7;border:1.5px solid #f9e79f;border-radius:7px;padding:.25rem .55rem;font-size:.8rem">🚪 Sai</span>
+      <span class="ref-chip-sai">🚪 Sai</span>
       {% endif %}
     </div>
-    <div style="display:flex;gap:.5rem;flex-wrap:wrap;margin-top:.8rem">
+    <div class="d-flex gap-md flex-wrap mt-lg">
       {% if ausente %}
       <form method="post">
         {{ csrf_input() }}
@@ -87,7 +87,7 @@
         <button class="btn btn-ok">✅ Dar Entrada (marcar presente)</button>
       </form>
       {% else %}
-      <form method="post" onsubmit="return confirm('Confirmar saída de {{ al.Nome_completo }}?')">
+      <form method="post" data-confirm="Confirmar saída de {{ al.Nome_completo }}?">
         {{ csrf_input() }}
         <input type="hidden" name="acao" value="dar_saida">
         <input type="hidden" name="ni" value="{{ ni_val }}">
@@ -100,10 +100,10 @@
   {% endif %}
 
   <!-- Botão Licenças / Entradas-Saídas -->
-  <div class="card" style="border-top:3px solid var(--gold)">
+  <div class="card card-accent-warn">
     <div class="flex-between">
       <div>
-        <div class="card-title" style="margin-bottom:.2rem">🚪 Licenças e Entradas/Saídas</div>
+        <div class="card-title mb-xs">🚪 Licenças e Entradas/Saídas</div>
         <span class="text-muted small">Ver quem tem licença para hoje e registar entradas/saídas</span>
       </div>
       <a class="btn btn-gold" href="{{ url_for('.licencas_entradas_saidas', d=dt_iso) }}">Abrir painel</a>
@@ -115,19 +115,19 @@
     <div class="card-title">📊 Resumo geral — {{ dt_fmt }}</div>
     <div class="grid grid-3">
       {% for r in anos_resumo %}
-      <div class="stat-box" style="cursor:pointer" onclick="window.location='{{ url_for('.lista_alunos_ano', ano=r.ano, d=dt_iso) }}'">
-        <div class="stat-num">{{ r.presentes }} <small style="font-size:.6em;color:var(--muted)">/ {{ r.total }}</small></div>
+      <div class="stat-box cursor-pointer" data-href="{{ url_for('.lista_alunos_ano', ano=r.ano, d=dt_iso) }}">
+        <div class="stat-num">{{ r.presentes }} <small class="text-2xs text-muted">/ {{ r.total }}</small></div>
         <div class="stat-lbl">{{ ano_label(r.ano) }} — Presentes</div>
-        <div style="margin-top:.35rem;font-size:.75rem">
-          <span style="color:var(--warn)">✖ {{ r.ausentes }} ausentes</span> &nbsp;
-          <span style="color:var(--ok)">🍽 {{ r.com_ref }} c/ refeições</span>
+        <div class="mt-xs hint-sm">
+          <span class="text-warn">✖ {{ r.ausentes }} ausentes</span> &nbsp;
+          <span class="text-ok">🍽 {{ r.com_ref }} c/ refeições</span>
         </div>
       </div>
       {% else %}
       <div class="text-muted">Sem dados.</div>
       {% endfor %}
     </div>
-    <div style="margin-top:.6rem;font-size:.8rem;color:var(--muted)">Clica num ano para ver a lista completa.</div>
+    <div class="hint mt-md">Clica num ano para ver a lista completa.</div>
   </div>
 </div>
 {% endblock %}

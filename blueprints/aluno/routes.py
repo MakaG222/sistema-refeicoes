@@ -2,6 +2,7 @@
 
 import io
 import csv as _csv
+import logging
 from datetime import date, timedelta
 
 from flask import (
@@ -17,14 +18,26 @@ from flask import (
 
 import config as cfg
 from core.auth_db import user_id_by_nii
-from core.database import db
 from core.meals import (
     dias_operacionais_batch,
     get_menu_do_dia,
     refeicao_get,
+    refeicao_save,
     refeicoes_batch,
 )
-from core.absences import ausencias_batch, detencoes_batch, licencas_batch
+from core.absences import ausencias_batch, ausencias_batch_detalhadas, detencoes_batch, licencas_batch
+from core.users import (
+    delete_ausencia_propria,
+    delete_licenca,
+    get_aluno_ano_ni,
+    get_aluno_historico,
+    get_aluno_licenca,
+    get_aluno_profile_data,
+    get_aluno_stats,
+    get_ausencias_aluno,
+    update_aluno_contacts,
+    upsert_licenca,
+)
 from blueprints.aluno import aluno_bp
 from utils.auth import current_user, login_required
 from utils.business import (
@@ -56,6 +69,8 @@ from utils.validators import (
     _val_text,
 )
 
+log = logging.getLogger(__name__)
+
 
 @aluno_bp.route("/aluno/licenca-fds", methods=["POST"])
 @login_required
@@ -65,6 +80,10 @@ def aluno_licenca_fds():
     uid = user_id_by_nii(u["nii"])
     if not uid:
         flash("Conta de sistema — funcionalidade não disponível.", "error")
+        return redirect(url_for(".aluno_home"))
+
+    if not _check_rate_limit("_meal_ops"):
+        flash("Demasiadas alterações. Aguarda um minuto.", "warn")
         return redirect(url_for(".aluno_home"))
 
     sexta_str = request.form.get("sexta", "")
@@ -98,12 +117,7 @@ def aluno_licenca_fds():
         )
     else:
         # Verificar regras de licença para a sexta
-        with db() as conn:
-            aluno_row = conn.execute(
-                "SELECT ano, NI FROM utilizadores WHERE id=?", (uid,)
-            ).fetchone()
-        ano_aluno = int(aluno_row["ano"]) if aluno_row else 1
-        ni_aluno = aluno_row["NI"] if aluno_row else ""
+        ano_aluno, ni_aluno = get_aluno_ano_ni(uid)
 
         pode, motivo = _pode_marcar_licenca(uid, sexta, ano_aluno, ni_aluno)
         if not pode:
@@ -138,11 +152,13 @@ def aluno_home():
     if uid:
         ref_map, ref_defaults = refeicoes_batch(uid, hoje, d_ate)
         aus_set = ausencias_batch(uid, hoje, d_ate)
+        aus_det = ausencias_batch_detalhadas(uid, hoje, d_ate)
         det_set = detencoes_batch(uid, hoje, d_ate)
         lic_map = licencas_batch(uid, hoje, d_ate)
     else:
         ref_map, ref_defaults = {}, {}
         aus_set = set()
+        aus_det = {}
         det_set = set()
         lic_map = {}
 
@@ -164,9 +180,14 @@ def aluno_home():
         if uid and not detido_d and lic_tipo:
             lic_label = "Antes jantar" if lic_tipo == "antes_jantar" else "Após jantar"
 
-        # FDS button logic
+        # FDS button logic (sexta) + badge (sáb/dom)
         show_fds_btn = is_friday and uid and not is_off
         tem_licenca_fds = lic_map.get(d_iso) == "antes_jantar"
+        # Sat/Sun: check if the associated Friday has FDS license
+        fds_ativo = False
+        if is_weekend and uid:
+            sexta = d - timedelta(days=(d.weekday() - 4))
+            fds_ativo = lic_map.get(sexta.isoformat()) == "antes_jantar"
         show_fds_marcar = (
             show_fds_btn
             and ok_edit
@@ -184,6 +205,7 @@ def aluno_home():
             "r": r,
             "ok_edit": ok_edit,
             "ausente": ausente_d,
+            "ausencia_info": aus_det.get(d_iso),
             "detido": detido_d,
             "is_weekend": is_weekend,
             "is_off": is_off,
@@ -195,24 +217,14 @@ def aluno_home():
             "show_fds_btn": show_fds_btn and ok_edit and not detido_d and not ausente_d,
             "tem_licenca_fds": tem_licenca_fds,
             "show_fds_marcar": show_fds_marcar,
+            "fds_ativo": fds_ativo,
         }
         dias.append(dia)
 
     stats = None
     if uid:
         d0 = (hoje - timedelta(days=30)).isoformat()
-        with db() as conn:
-            rows = conn.execute(
-                "SELECT pequeno_almoco,lanche,almoco,jantar_tipo FROM refeicoes WHERE utilizador_id=? AND data>=?",
-                (uid, d0),
-            ).fetchall()
-        if rows:
-            stats = {
-                "pa": sum(1 for r in rows if r["pequeno_almoco"]),
-                "lanche": sum(1 for r in rows if r["lanche"]),
-                "almoco": sum(1 for r in rows if r["almoco"]),
-                "jantar": sum(1 for r in rows if r["jantar_tipo"]),
-            }
+        stats = get_aluno_stats(uid, d0)
 
     return render_template(
         "aluno/home.html",
@@ -224,6 +236,29 @@ def aluno_home():
         dias_antecedencia=cfg.DIAS_ANTECEDENCIA,
         stats=stats,
     )
+
+
+import threading as _threading
+import time as _time
+
+_rate_store: dict[str, list[float]] = {}
+_rate_lock = _threading.Lock()
+
+
+def _check_rate_limit(key: str, max_ops: int = 30, window: int = 60) -> bool:
+    """Rate limiter server-side por chave (uid+ação). Retorna True se dentro do limite."""
+    uid = session.get("user", {}).get("nii", "anon")
+    full_key = f"{uid}:{key}"
+    now = _time.time()
+    with _rate_lock:
+        ops = _rate_store.get(full_key, [])
+        ops = [t for t in ops if now - t < window]
+        if len(ops) >= max_ops:
+            _rate_store[full_key] = ops
+            return False
+        ops.append(now)
+        _rate_store[full_key] = ops
+    return True
 
 
 @aluno_bp.route("/aluno/editar/<d>", methods=["GET", "POST"])
@@ -251,62 +286,74 @@ def aluno_editar(d):
         return redirect(url_for(".aluno_home"))
 
     r = refeicao_get(uid, dt)
-    occ = _get_ocupacao_dia(dt)
     is_weekend = dt.weekday() >= 5
+
+    # Auto-criar refeições por defeito se não existir registo (Seg-Sex)
+    if not r.get("id") and not is_weekend:
+        from core.autofill import _default_refeicao_para_dia
+
+        defaults = _default_refeicao_para_dia(dt)
+        refeicao_save(uid, dt, defaults, alterado_por="sistema")
+        r = refeicao_get(uid, dt)
+
+    occ = _get_ocupacao_dia(dt)
     detido = _tem_detencao_ativa(uid, dt)
 
     # Dados do aluno para regras de licença
-    with db() as conn:
-        aluno_row = conn.execute(
-            "SELECT ano, NI FROM utilizadores WHERE id=?", (uid,)
-        ).fetchone()
-    ano_aluno = int(aluno_row["ano"]) if aluno_row else 1
-    ni_aluno = aluno_row["NI"] if aluno_row else ""
+    ano_aluno, ni_aluno = get_aluno_ano_ni(uid)
 
     # Licença existente para este dia
-    with db() as conn:
-        lic_row = conn.execute(
-            "SELECT tipo FROM licencas WHERE utilizador_id=? AND data=?",
-            (uid, dt.isoformat()),
-        ).fetchone()
-    licenca_atual = lic_row["tipo"] if lic_row else ""
+    licenca_atual = get_aluno_licenca(uid, dt.isoformat())
 
     pode_lic, motivo_lic = _pode_marcar_licenca(uid, dt, ano_aluno, ni_aluno)
 
     if request.method == "POST":
+        # Aluno detido não pode alterar refeições
+        if detido:
+            flash(
+                "Estás detido neste dia — as refeições estão bloqueadas e não podem ser alteradas.",
+                "error",
+            )
+            return redirect(url_for(".aluno_home"))
+        if not _check_rate_limit("_meal_ops"):
+            flash("Demasiadas alterações. Aguarda um minuto.", "warn")
+            return redirect(url_for(".aluno_home"))
         pa = 1 if request.form.get("pa") in ("1", "on") else 0
         lanche = 1 if request.form.get("lanche") in ("1", "on") else 0
         alm = _val_refeicao(request.form.get("almoco"))
         jan = _val_refeicao(request.form.get("jantar"))
         sai = 0 if detido else (1 if request.form.get("sai") else 0)
+        alm_estufa = 1 if (alm and request.form.get("almoco_estufa") == "1") else 0
+        jan_estufa = 1 if (jan and request.form.get("jantar_estufa") == "1") else 0
 
         # Processar licença (antes_jantar / apos_jantar / vazio)
         licenca_tipo = request.form.get("licenca", "")
-        with db() as conn:
-            if licenca_tipo in ("antes_jantar", "apos_jantar"):
-                pode, motivo = _pode_marcar_licenca(uid, dt, ano_aluno, ni_aluno)
-                if pode:
-                    conn.execute(
-                        """INSERT INTO licencas(utilizador_id, data, tipo)
-                        VALUES(?,?,?)
-                        ON CONFLICT(utilizador_id, data) DO UPDATE SET tipo=excluded.tipo""",
-                        (uid, dt.isoformat(), licenca_tipo),
-                    )
-                    if licenca_tipo == "antes_jantar":
-                        jan = ""
-                        sai = 1
-                    else:
-                        sai = 1
+        if licenca_tipo in ("antes_jantar", "apos_jantar"):
+            pode, motivo = _pode_marcar_licenca(uid, dt, ano_aluno, ni_aluno)
+            if pode:
+                upsert_licenca(uid, dt.isoformat(), licenca_tipo)
+                if licenca_tipo == "antes_jantar":
+                    jan = ""
+                    sai = 1
                 else:
-                    flash(motivo, "warn")
+                    sai = 1
             else:
-                conn.execute(
-                    "DELETE FROM licencas WHERE utilizador_id=? AND data=?",
-                    (uid, dt.isoformat()),
-                )
-            conn.commit()
+                flash(motivo, "warn")
+        else:
+            delete_licenca(uid, dt.isoformat())
 
-        if _refeicao_set(uid, dt, pa, lanche, alm, jan, sai, alterado_por=u["nii"]):
+        if _refeicao_set(
+            uid,
+            dt,
+            pa,
+            lanche,
+            alm,
+            jan,
+            sai,
+            alterado_por=u["nii"],
+            alm_estufa=alm_estufa,
+            jan_estufa=jan_estufa,
+        ):
             flash("Refeições atualizadas!", "ok")
         else:
             flash("Erro ao guardar.", "error")
@@ -318,6 +365,8 @@ def aluno_editar(d):
     alm_val = r.get("almoco") or ""
     jan_val = r.get("jantar_tipo") or ""
     jan_blocked = licenca_atual == "antes_jantar"
+    alm_estufa = r.get("almoco_estufa", 0)
+    jan_estufa = r.get("jantar_estufa", 0)
 
     # Ementa do dia
     menu = get_menu_do_dia(dt)
@@ -344,6 +393,8 @@ def aluno_editar(d):
         alm_val=alm_val,
         jan_val=jan_val,
         jan_blocked=jan_blocked,
+        alm_estufa=alm_estufa,
+        jan_estufa=jan_estufa,
         licenca_atual=licenca_atual,
         pode_lic=pode_lic,
         motivo_lic=motivo_lic,
@@ -366,12 +417,23 @@ def aluno_ausencias():
         return redirect(url_for(".aluno_home"))
 
     if request.method == "POST":
+        if not _check_rate_limit("_meal_ops"):
+            flash("Demasiadas alterações. Aguarda um minuto.", "warn")
+            return redirect(url_for(".aluno_ausencias"))
         acao = request.form.get("acao", "")
         if acao == "criar":
             de = request.form.get("de", "")
             ate = request.form.get("ate", "")
             motivo = _val_text(request.form.get("motivo", ""))[:500]
-            ok, err = _registar_ausencia(uid, de, ate, motivo, u["nii"])
+            hora_inicio = request.form.get("hora_inicio", "").strip() or None
+            hora_fim = request.form.get("hora_fim", "").strip() or None
+            estufa_almoco = request.form.get("estufa_almoco") == "1"
+            estufa_jantar = request.form.get("estufa_jantar") == "1"
+            ok, err = _registar_ausencia(
+                uid, de, ate, motivo, u["nii"],
+                hora_inicio=hora_inicio, hora_fim=hora_fim,
+                estufa_almoco=estufa_almoco, estufa_jantar=estufa_jantar,
+            )
             flash(
                 "Ausência registada com sucesso!" if ok else (err or "Erro."),
                 "ok" if ok else "error",
@@ -381,10 +443,18 @@ def aluno_ausencias():
             de = request.form.get("de", "")
             ate = request.form.get("ate", "")
             motivo = _val_text(request.form.get("motivo", ""))[:500]
+            hora_inicio = request.form.get("hora_inicio", "").strip() or None
+            hora_fim = request.form.get("hora_fim", "").strip() or None
+            estufa_almoco = request.form.get("estufa_almoco") == "1"
+            estufa_jantar = request.form.get("estufa_jantar") == "1"
             if aid is None:
                 flash("ID inválido.", "error")
             else:
-                ok, err = _editar_ausencia(aid, uid, de, ate, motivo)
+                ok, err = _editar_ausencia(
+                    aid, uid, de, ate, motivo,
+                    hora_inicio=hora_inicio, hora_fim=hora_fim,
+                    estufa_almoco=estufa_almoco, estufa_jantar=estufa_jantar,
+                )
                 flash(
                     "Ausência atualizada!" if ok else (err or "Erro."),
                     "ok" if ok else "error",
@@ -392,23 +462,11 @@ def aluno_ausencias():
         elif acao == "remover":
             aid = _val_int_id(request.form.get("id", ""))
             if aid is not None:
-                with db() as conn:
-                    conn.execute(
-                        "DELETE FROM ausencias WHERE id=? AND utilizador_id=?",
-                        (aid, uid),
-                    )
-                    conn.commit()
+                delete_ausencia_propria(aid, uid)
                 flash("Ausência removida.", "ok")
         return redirect(url_for(".aluno_ausencias"))
 
-    with db() as conn:
-        rows = [
-            dict(r)
-            for r in conn.execute(
-                "SELECT id,ausente_de,ausente_ate,motivo FROM ausencias WHERE utilizador_id=? ORDER BY ausente_de DESC",
-                (uid,),
-            ).fetchall()
-        ]
+    rows = get_ausencias_aluno(uid)
 
     hoje = date.today().isoformat()
     edit_id = request.args.get("edit", "")
@@ -420,10 +478,16 @@ def aluno_ausencias():
         form_de = edit_row["ausente_de"]
         form_ate = edit_row["ausente_ate"]
         form_motivo = edit_row["motivo"] or ""
+        form_hora_inicio = edit_row.get("hora_inicio") or ""
+        form_hora_fim = edit_row.get("hora_fim") or ""
+        form_estufa_almoco = bool(edit_row.get("estufa_almoco"))
+        form_estufa_jantar = bool(edit_row.get("estufa_jantar"))
     else:
         form_title = "➕ Nova ausência"
         form_action = "criar"
         form_de = form_ate = form_motivo = ""
+        form_hora_inicio = form_hora_fim = ""
+        form_estufa_almoco = form_estufa_jantar = False
 
     return render_template(
         "aluno/ausencias.html",
@@ -435,6 +499,10 @@ def aluno_ausencias():
         form_de=form_de,
         form_ate=form_ate,
         form_motivo=form_motivo,
+        form_hora_inicio=form_hora_inicio,
+        form_hora_fim=form_hora_fim,
+        form_estufa_almoco=form_estufa_almoco,
+        form_estufa_jantar=form_estufa_jantar,
     )
 
 
@@ -446,12 +514,7 @@ def aluno_historico():
     hoje = date.today()
     rows = []
     if uid:
-        with db() as conn:
-            rows = conn.execute(
-                """SELECT data,pequeno_almoco,lanche,almoco,jantar_tipo,jantar_sai_unidade
-              FROM refeicoes WHERE utilizador_id=? AND data>=? ORDER BY data DESC""",
-                (uid, (hoje - timedelta(days=30)).isoformat()),
-            ).fetchall()
+        rows = get_aluno_historico(uid, (hoje - timedelta(days=30)).isoformat())
 
     return render_template("aluno/historico.html", rows=rows)
 
@@ -468,14 +531,18 @@ def exportar_historico_aluno():
     hoje = date.today()
     rows = []
     if uid:
-        with db() as conn:
-            rows = conn.execute(
-                """SELECT data,pequeno_almoco,lanche,almoco,jantar_tipo,jantar_sai_unidade
-              FROM refeicoes WHERE utilizador_id=? AND data>=? ORDER BY data DESC""",
-                (uid, (hoje - timedelta(days=30)).isoformat()),
-            ).fetchall()
+        rows = get_aluno_historico(uid, (hoje - timedelta(days=30)).isoformat())
 
-    headers = ["Data", "PA", "Lanche", "Almoço", "Jantar", "Sai Unidade"]
+    headers = [
+        "Data",
+        "PA",
+        "Lanche",
+        "Almoço",
+        "♨️ Alm",
+        "Jantar",
+        "Sai Unidade",
+        "♨️ Jan",
+    ]
 
     def make_row(r):
         return [
@@ -483,8 +550,10 @@ def exportar_historico_aluno():
             "Sim" if r["pequeno_almoco"] else "Não",
             "Sim" if r["lanche"] else "Não",
             r["almoco"] or "—",
+            "Sim" if r["almoco_estufa"] else "Não",
             r["jantar_tipo"] or "—",
             "Sim" if r["jantar_sai_unidade"] else "Não",
+            "Sim" if r["jantar_estufa"] else "Não",
         ]
 
     nome_ficheiro = f"historico_{u['nii']}_{hoje.isoformat()}"
@@ -536,6 +605,8 @@ def exportar_historico_aluno():
             )
         except ImportError:
             fmt = "csv"
+        except Exception:
+            fmt = "csv"
 
     buf = io.StringIO()
     writer = _csv.writer(buf, delimiter=";")
@@ -558,10 +629,8 @@ def aluno_password():
     u = current_user()
     if request.method == "POST":
         # Rate limiting: máx 10 tentativas por 5 minutos
-        import time as _t
-
         pw_attempts = session.get("_pw_attempts", [])
-        now = _t.time()
+        now = _time.time()
         pw_attempts = [t for t in pw_attempts if now - t < 300]
         if len(pw_attempts) >= 10:
             flash("Demasiadas tentativas. Aguarda uns minutos.", "error")
@@ -613,13 +682,12 @@ def aluno_perfil():
         flash("Conta de sistema — funcionalidade não disponível.", "error")
         return redirect(url_for(".aluno_home"))
 
-    with db() as conn:
-        row = dict(
-            conn.execute(
-                "SELECT NII, NI, Nome_completo, ano, email, telemovel FROM utilizadores WHERE id=?",
-                (uid,),
-            ).fetchone()
-        )
+    from core.users import get_user_by_nii_fields
+
+    row = get_user_by_nii_fields(u["nii"], "NII,NI,Nome_completo,ano,email,telemovel")
+    if not row:
+        flash("Erro ao carregar perfil.", "error")
+        return redirect(url_for(".aluno_home"))
 
     if request.method == "POST":
         email_n = _val_email(request.form.get("email", ""))
@@ -631,12 +699,7 @@ def aluno_perfil():
             flash("Telemóvel inválido.", "error")
             return redirect(url_for(".aluno_perfil"))
         try:
-            with db() as conn:
-                conn.execute(
-                    "UPDATE utilizadores SET email=?, telemovel=? WHERE id=?",
-                    (email_n, telef_n, uid),
-                )
-                conn.commit()
+            update_aluno_contacts(uid, email_n, telef_n)
             _audit(
                 current_user().get("nii", "?"),
                 "aluno_perfil_update",
@@ -645,22 +708,15 @@ def aluno_perfil():
             flash("Perfil atualizado com sucesso!", "ok")
             return redirect(url_for(".aluno_perfil"))
         except Exception as ex:
+            log.exception("aluno_perfil: erro ao atualizar contactos")
             flash(f"Erro: {ex}", "error")
 
     hoje = date.today()
-    with db() as conn:
-        total_ref = conn.execute(
-            "SELECT COUNT(*) c FROM refeicoes WHERE utilizador_id=?", (uid,)
-        ).fetchone()["c"]
-        ausencias_ativas = conn.execute(
-            """SELECT COUNT(*) c FROM ausencias WHERE utilizador_id=?
-               AND ausente_de<=? AND ausente_ate>=?""",
-            (uid, hoje.isoformat(), hoje.isoformat()),
-        ).fetchone()["c"]
+    profile = get_aluno_profile_data(uid, hoje.isoformat())
 
     return render_template(
         "aluno/perfil.html",
         aluno=row,
-        total_ref=total_ref,
-        ausencias_ativas=ausencias_ativas,
+        total_ref=profile["total_ref"],
+        ausencias_ativas=profile["ausencias_ativas"],
     )

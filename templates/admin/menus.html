@@ -2,27 +2,27 @@
 {% block content %}
 <div class="container">
   <div class="page-header">{{ back_btn(back_url) }}<div class="page-title">🍽️ Menus & Capacidade</div></div>
-  <div class="card" style="max-width:640px">
+  <div class="card max-w-lg">
     <form method="post">
       {{ csrf_input() }}
-      <div class="form-group"><label>Data</label><input type="date" name="data" value="{{ dt.isoformat() }}" required></div>
-      <div class="card-title" style="margin:.7rem 0 .55rem">Ementa</div>
+      <div class="form-group"><label for="data">Data</label><input type="date" name="data" id="data" value="{{ dt.isoformat() }}" required></div>
+      <div class="card-title mt-md mb-sm">Ementa</div>
       <div class="grid grid-2">
-        <div class="form-group"><label>☕ Pequeno Almoço</label><input type="text" name="pequeno_almoco" value="{{ menu.pequeno_almoco or '' if menu else '' }}"></div>
-        <div class="form-group"><label>🥐 Lanche</label><input type="text" name="lanche" value="{{ menu.lanche or '' if menu else '' }}"></div>
-        <div class="form-group"><label>🍽️ Almoço Normal</label><input type="text" name="almoco_normal" value="{{ menu.almoco_normal or '' if menu else '' }}"></div>
-        <div class="form-group"><label>🥗 Almoço Vegetariano</label><input type="text" name="almoco_veg" value="{{ menu.almoco_veg or '' if menu else '' }}"></div>
-        <div class="form-group"><label>🥙 Almoço Dieta</label><input type="text" name="almoco_dieta" value="{{ menu.almoco_dieta or '' if menu else '' }}"></div>
-        <div class="form-group"><label>🌙 Jantar Normal</label><input type="text" name="jantar_normal" value="{{ menu.jantar_normal or '' if menu else '' }}"></div>
-        <div class="form-group"><label>🌿 Jantar Vegetariano</label><input type="text" name="jantar_veg" value="{{ menu.jantar_veg or '' if menu else '' }}"></div>
-        <div class="form-group"><label>🥗 Jantar Dieta</label><input type="text" name="jantar_dieta" value="{{ menu.jantar_dieta or '' if menu else '' }}"></div>
+        <div class="form-group"><label for="pequeno_almoco">☕ Pequeno Almoço</label><input type="text" name="pequeno_almoco" id="pequeno_almoco" value="{{ menu.pequeno_almoco or '' if menu else '' }}"></div>
+        <div class="form-group"><label for="lanche">🥐 Lanche</label><input type="text" name="lanche" id="lanche" value="{{ menu.lanche or '' if menu else '' }}"></div>
+        <div class="form-group"><label for="almoco_normal">🍽️ Almoço Normal</label><input type="text" name="almoco_normal" id="almoco_normal" value="{{ menu.almoco_normal or '' if menu else '' }}"></div>
+        <div class="form-group"><label for="almoco_veg">🥗 Almoço Vegetariano</label><input type="text" name="almoco_veg" id="almoco_veg" value="{{ menu.almoco_veg or '' if menu else '' }}"></div>
+        <div class="form-group"><label for="almoco_dieta">🥙 Almoço Dieta</label><input type="text" name="almoco_dieta" id="almoco_dieta" value="{{ menu.almoco_dieta or '' if menu else '' }}"></div>
+        <div class="form-group"><label for="jantar_normal">🌙 Jantar Normal</label><input type="text" name="jantar_normal" id="jantar_normal" value="{{ menu.jantar_normal or '' if menu else '' }}"></div>
+        <div class="form-group"><label for="jantar_veg">🌿 Jantar Vegetariano</label><input type="text" name="jantar_veg" id="jantar_veg" value="{{ menu.jantar_veg or '' if menu else '' }}"></div>
+        <div class="form-group"><label for="jantar_dieta">🥗 Jantar Dieta</label><input type="text" name="jantar_dieta" id="jantar_dieta" value="{{ menu.jantar_dieta or '' if menu else '' }}"></div>
       </div>
-      <div class="card-title" style="margin:.7rem 0 .55rem">Capacidades <span class="text-muted small">(-1 ou vazio = sem limite)</span></div>
+      <div class="card-title mt-md mb-sm">Capacidades <span class="text-muted small">(-1 ou vazio = sem limite)</span></div>
       <div class="grid grid-2">
-        <div class="form-group"><label>PA</label><input type="number" name="cap_pequeno_almoco" value="{{ caps.get('Pequeno Almoço', '') }}"></div>
-        <div class="form-group"><label>Lanche</label><input type="number" name="cap_lanche" value="{{ caps.get('Lanche', '') }}"></div>
-        <div class="form-group"><label>Almoço</label><input type="number" name="cap_almoco" value="{{ caps.get('Almoço', '') }}"></div>
-        <div class="form-group"><label>Jantar</label><input type="number" name="cap_jantar" value="{{ caps.get('Jantar', '') }}"></div>
+        <div class="form-group"><label for="cap_pequeno_almoco">PA</label><input type="number" name="cap_pequeno_almoco" id="cap_pequeno_almoco" value="{{ caps.get('Pequeno Almoço', '') }}"></div>
+        <div class="form-group"><label for="cap_lanche">Lanche</label><input type="number" name="cap_lanche" id="cap_lanche" value="{{ caps.get('Lanche', '') }}"></div>
+        <div class="form-group"><label for="cap_almoco">Almoço</label><input type="number" name="cap_almoco" id="cap_almoco" value="{{ caps.get('Almoço', '') }}"></div>
+        <div class="form-group"><label for="cap_jantar">Jantar</label><input type="number" name="cap_jantar" id="cap_jantar" value="{{ caps.get('Jantar', '') }}"></div>
       </div>
       <hr>
       <div class="gap-btn"><button class="btn btn-ok">💾 Guardar</button><a class="btn btn-ghost" href="{{ back_url }}">Cancelar</a></div>

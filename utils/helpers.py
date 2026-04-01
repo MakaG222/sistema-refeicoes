@@ -34,7 +34,7 @@ def csrf_input() -> Markup:
     """Gera input hidden com token CSRF."""
     t = session.get("_csrf_token") or secrets.token_urlsafe(32)
     session["_csrf_token"] = t
-    return Markup(f'<input type="hidden" name="csrf_token" value="{t}">')
+    return Markup(f'<input type="hidden" name="csrf_token" value="{t}">')  # nosec B704
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -88,6 +88,8 @@ def _refeicao_set(
     jan: str | None,
     sai: int,
     alterado_por: str = "sistema",
+    alm_estufa: int = 0,
+    jan_estufa: int = 0,
 ) -> bool:
     """Guarda uma refeição completa."""
     r = {
@@ -96,23 +98,25 @@ def _refeicao_set(
         "almoco": alm or None,
         "jantar_tipo": jan or None,
         "jantar_sai_unidade": sai,
+        "almoco_estufa": alm_estufa,
+        "jantar_estufa": jan_estufa,
     }
     return refeicao_save(uid, dt, r, alterado_por=alterado_por)
 
 
 def _back_btn(href: str, label: str = "Voltar") -> Markup:
     """Botão de voltar HTML."""
-    return Markup(f'<a class="back-btn" href="{href}">\u2190 {label}</a>')
+    return Markup(f'<a class="back-btn" href="{href}">\u2190 {label}</a>')  # nosec B704
 
 
 def _bar_html(val: int, cap: int | None) -> Markup:
     """Barra de ocupação HTML."""
     if cap is None or cap <= 0:
-        return Markup(f'<div class="occ-label">{val} (sem limite)</div>')
+        return Markup(f'<div class="occ-label">{val} (sem limite)</div>')  # nosec B704
     pct = min(100, int(round(100 * val / cap)))
-    color = "#1e8449" if pct < 80 else ("#d68910" if pct < 95 else "#c0392b")
-    return Markup(
-        f'<div class="occ-bar"><span style="width:{pct}%;background:{color}"></span></div>'
+    cls = "occ-ok" if pct < 80 else ("occ-warn" if pct < 95 else "occ-danger")
+    return Markup(  # nosec B704 — val/cap/pct are integers, cls is hardcoded
+        f'<div class="occ-bar"><span class="{cls}" data-pct="{pct}"></span></div>'
         f'<div class="occ-label">{val} / {cap} ({pct}%)</div>'
     )
 
@@ -130,7 +134,7 @@ def _prazo_label(d: date) -> Markup:
         if h <= 0:
             return Markup('<span class="prazo-lock">\U0001f512 Prazo expirado</span>')
         if h <= 24:
-            return Markup(
+            return Markup(  # nosec B704
                 f'<span class="prazo-warn">\u26a0\ufe0f Prazo em {int(h)}h</span>'
             )
     return Markup('<span class="prazo-lock">\U0001f512 Prazo expirado</span>')
@@ -142,7 +146,13 @@ def _prazo_label(d: date) -> Markup:
 
 
 def _audit(actor: str, action: str, detail: str = "") -> None:
-    """Regista uma entrada de auditoria na tabela admin_audit_log."""
+    """Regista uma entrada de auditoria na tabela admin_audit_log + log estruturado."""
+    from flask import g
+
+    rid = getattr(g, "request_id", "-") if g else "-"
+    current_app.logger.info(
+        "action=%s actor=%s detail=%s rid=%s", action, actor, detail, rid
+    )
     try:
         with db() as conn:
             conn.execute(

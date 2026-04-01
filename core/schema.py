@@ -44,6 +44,8 @@ CREATE TABLE IF NOT EXISTS refeicoes (
   almoco             TEXT CHECK(almoco IN ('Normal','Vegetariano','Dieta')),
   jantar_tipo        TEXT CHECK(jantar_tipo IN ('Normal','Vegetariano','Dieta')),
   jantar_sai_unidade BOOLEAN DEFAULT 0,
+  almoco_estufa      BOOLEAN DEFAULT 0,
+  jantar_estufa      BOOLEAN DEFAULT 0,
   UNIQUE(utilizador_id, data)
 );
 
@@ -69,6 +71,10 @@ CREATE TABLE IF NOT EXISTS ausencias (
   utilizador_id INTEGER NOT NULL REFERENCES utilizadores(id) ON DELETE CASCADE,
   ausente_de   TEXT NOT NULL,
   ausente_ate  TEXT NOT NULL,
+  hora_inicio  TEXT,  -- HH:MM (NULL = dia inteiro)
+  hora_fim     TEXT,  -- HH:MM (NULL = dia inteiro)
+  estufa_almoco INTEGER DEFAULT 0,  -- guardar almoço na estufa durante ausência
+  estufa_jantar INTEGER DEFAULT 0,  -- guardar jantar na estufa durante ausência
   motivo       TEXT,
   criado_em    TEXT NOT NULL DEFAULT (datetime('now','localtime')),
   criado_por   TEXT
@@ -173,6 +179,10 @@ CREATE INDEX IF NOT EXISTS idx_ausencias_uid_datas ON ausencias(utilizador_id, a
 CREATE INDEX IF NOT EXISTS idx_detencoes_uid_datas ON detencoes(utilizador_id, detido_de, detido_ate);
 CREATE INDEX IF NOT EXISTS idx_licencas_uid_data ON licencas(utilizador_id, data);
 CREATE INDEX IF NOT EXISTS idx_cal_op_data ON calendario_operacional(data);
+CREATE INDEX IF NOT EXISTS idx_rlog_uid_data ON refeicoes_log(utilizador_id, data_refeicao);
+CREATE INDEX IF NOT EXISTS idx_audit_ts ON admin_audit_log(ts);
+CREATE INDEX IF NOT EXISTS idx_audit_actor ON admin_audit_log(actor);
+CREATE INDEX IF NOT EXISTS idx_capex_data_ref ON capacidade_excessos(data, refeicao);
 
 CREATE VIRTUAL TABLE IF NOT EXISTS utilizadores_fts USING fts5(
   Nome_completo,
@@ -193,6 +203,12 @@ AFTER UPDATE ON utilizadores BEGIN
   INSERT INTO utilizadores_fts(rowid, Nome_completo) VALUES (NEW.id, NEW.Nome_completo);
 END;
 
+-- Limpar refeicoes_log quando utilizador é removido (simula FK CASCADE)
+CREATE TRIGGER IF NOT EXISTS rlog_cleanup_on_user_delete
+AFTER DELETE ON utilizadores BEGIN
+  DELETE FROM refeicoes_log WHERE utilizador_id = OLD.id;
+END;
+
 CREATE TRIGGER IF NOT EXISTS refeicoes_chk_values
 BEFORE INSERT ON refeicoes
 BEGIN
@@ -201,6 +217,8 @@ BEGIN
       WHEN NEW.pequeno_almoco NOT IN (0,1) THEN RAISE(ABORT,'pequeno_almoco inválido')
       WHEN NEW.lanche NOT IN (0,1) THEN RAISE(ABORT,'lanche inválido')
       WHEN NEW.jantar_sai_unidade NOT IN (0,1) THEN RAISE(ABORT,'jantar_sai_unidade inválido')
+      WHEN NEW.almoco_estufa NOT IN (0,1) THEN RAISE(ABORT,'almoco_estufa inválido')
+      WHEN NEW.jantar_estufa NOT IN (0,1) THEN RAISE(ABORT,'jantar_estufa inválido')
       WHEN NEW.almoco IS NOT NULL AND NEW.almoco NOT IN ('Normal','Vegetariano','Dieta') THEN RAISE(ABORT,'almoco inválido')
       WHEN NEW.jantar_tipo IS NOT NULL AND NEW.jantar_tipo NOT IN ('Normal','Vegetariano','Dieta') THEN RAISE(ABORT,'jantar_tipo inválido')
     END;
@@ -213,6 +231,8 @@ BEGIN
       WHEN NEW.pequeno_almoco NOT IN (0,1) THEN RAISE(ABORT,'pequeno_almoco inválido')
       WHEN NEW.lanche NOT IN (0,1) THEN RAISE(ABORT,'lanche inválido')
       WHEN NEW.jantar_sai_unidade NOT IN (0,1) THEN RAISE(ABORT,'jantar_sai_unidade inválido')
+      WHEN NEW.almoco_estufa NOT IN (0,1) THEN RAISE(ABORT,'almoco_estufa inválido')
+      WHEN NEW.jantar_estufa NOT IN (0,1) THEN RAISE(ABORT,'jantar_estufa inválido')
       WHEN NEW.almoco IS NOT NULL AND NEW.almoco NOT IN ('Normal','Vegetariano','Dieta') THEN RAISE(ABORT,'almoco inválido')
       WHEN NEW.jantar_tipo IS NOT NULL AND NEW.jantar_tipo NOT IN ('Normal','Vegetariano','Dieta') THEN RAISE(ABORT,'jantar_tipo inválido')
     END;

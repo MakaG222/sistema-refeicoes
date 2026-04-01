@@ -4,20 +4,20 @@
   <div class="page-header">{{ back_btn(url_for('.admin_home')) }}<div class="page-title">🔐 Auditoria de Ações</div></div>
   <div class="card">
     <div class="card-title">🔍 Filtros
-      <span class="badge badge-muted" style="margin-left:.5rem;font-size:.72rem">{{ total }} entradas</span>
+      <span class="badge badge-muted ml-md text-xs">{{ total }} entradas</span>
     </div>
-    <form method="get" style="display:flex;gap:.5rem;flex-wrap:wrap;align-items:flex-end">
-      <div class="form-group" style="margin:0;min-width:160px;flex:1">
-        <label style="font-size:.77rem">👤 Actor (NII)</label>
-        <input type="text" name="actor" value="{{ q_actor }}" placeholder="NII...">
+    <form method="get" class="filter-form">
+      <div class="form-group filter-group min-w-sm flex-1">
+        <label class="filter-label" for="actor">👤 Actor (NII)</label>
+        <input type="text" name="actor" id="actor" value="{{ q_actor }}" placeholder="NII...">
       </div>
-      <div class="form-group" style="margin:0;min-width:160px;flex:1">
-        <label style="font-size:.77rem">📌 Ação</label>
-        <input type="text" name="action" value="{{ q_action }}" placeholder="ex: login, criar_utilizador...">
+      <div class="form-group filter-group min-w-sm flex-1">
+        <label class="filter-label" for="action">📌 Ação</label>
+        <input type="text" name="action" id="action" value="{{ q_action }}" placeholder="ex: login, criar_utilizador...">
       </div>
-      <div class="form-group" style="margin:0">
-        <label style="font-size:.77rem">Máx.</label>
-        <select name="limite" style="width:auto">
+      <div class="form-group filter-group">
+        <label class="filter-label" for="limite">Máx.</label>
+        <select name="limite" id="limite" class="w-auto">
           {% for n in [100, 200, 500, 1000, 2000, 5000] %}
           <option value="{{ n }}" {{ "selected" if limite|string == n|string }}>{{ n }}</option>
           {% endfor %}
@@ -25,6 +25,7 @@
       </div>
       <button class="btn btn-primary btn-sm">🔍 Filtrar</button>
       <a class="btn btn-ghost btn-sm" href="{{ url_for('.admin_audit') }}">✕ Limpar</a>
+      <a class="btn btn-ghost btn-sm" href="{{ url_for('.admin_audit_export', actor=q_actor, action=q_action) }}">⬇ CSV</a>
     </form>
   </div>
   <div class="card">
@@ -34,13 +35,13 @@
         <tbody>
           {% for r in rows %}
           <tr>
-            <td class="small text-muted" style="white-space:nowrap">{{ (r.ts or "")[:16] }}</td>
+            <td class="small text-muted nowrap">{{ (r.ts or "")[:16] }}</td>
             <td><strong>{{ r.actor }}</strong></td>
             <td>{{ ACTION_ICONS.get(r.action, "📌") }} {{ r.action }}</td>
             <td class="small text-muted">{{ r.detail or "—" }}</td>
           </tr>
           {% else %}
-          <tr><td colspan="4" class="text-muted center" style="padding:2rem">Sem registos.</td></tr>
+          <tr><td colspan="4" class="text-muted center empty-cell-lg">Sem registos.</td></tr>
           {% endfor %}
         </tbody>
       </table>

@@ -49,3 +49,24 @@ _RE_ALNUM = re.compile(r"^[A-Za-z0-9_]+$")
 _MAX_NOME = 200
 _MAX_TEXT = 500
 _MAX_DATE_RANGE = 366
+
+# ── Segurança / login ────────────────────────────────────────────────────
+LOGIN_BLOCK_MINUTES: int = 15
+"""Tempo de bloqueio de conta após falhas consecutivas."""
+LOGIN_MAX_FAILURES: int = 5
+"""Tentativas falhadas antes de bloquear conta."""
+IP_RATE_LIMIT_WINDOW: int = 15
+"""Janela (minutos) para contar falhas por IP."""
+IP_RATE_LIMIT_MAX: int = 20
+"""Máximo de falhas por IP antes de bloquear."""
+MAX_PASSWORD_LEN: int = 256
+"""Comprimento máximo de password aceite."""
+
+# ── Mensagens padronizadas ────────────────────────────────────────────────
+MSG_NAO_ENCONTRADO = "Registo não encontrado."
+MSG_ID_INVALIDO = "Identificador inválido."
+MSG_ERRO_INTERNO = "Erro interno. Tenta novamente."
+MSG_SUCESSO_CRIAR = "Registo criado com sucesso."
+MSG_SUCESSO_EDITAR = "Dados atualizados."
+MSG_SUCESSO_ELIMINAR = "Registo eliminado."
+MSG_NAO_AUTORIZADO = "Não autorizado."

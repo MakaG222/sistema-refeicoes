@@ -1,25 +1,25 @@
 {% extends "base.html" %}
 {% block content %}
-    <div class="login-wrap">
+    <div class="login-wrap" role="main" aria-label="Autenticação">
       <div class="login-box">
-        <div class="login-header" style="flex-direction:column;text-align:center">
-          <img src="/static/logo_escola_naval.jpg" style="height:100px;width:auto;margin-bottom:.5rem" alt="Escola Naval">
+        <div class="login-header login-header-col">
+          <img src="/static/logo_escola_naval.jpg" class="login-logo" alt="Brasão da Escola Naval Portuguesa">
           <div class="login-title">Escola Naval</div>
         </div>
         {% if error %}
-        <div class="alert alert-error">{{ error }}</div>
+        <div class="alert alert-error" role="alert">{{ error }}</div>
         {% endif %}
-        <form method="post">
+        <form method="post" aria-label="Formulário de login">
           {{ csrf_input() }}
           <div class="form-group">
-            <label>NII</label>
-            <input type="text" name="nii" maxlength="32" autofocus autocomplete="username" required placeholder="O teu NII (ex: 24123)">
+            <label for="nii-input">NII</label>
+            <input id="nii-input" type="text" name="nii" maxlength="32" autofocus autocomplete="username" required placeholder="O teu NII (ex: 24123)" aria-required="true">
           </div>
           <div class="form-group">
-            <label>Password</label>
-            <input type="password" name="pw" maxlength="256" autocomplete="current-password" required placeholder="&#x2022;&#x2022;&#x2022;&#x2022;&#x2022;&#x2022;&#x2022;&#x2022;">
+            <label for="pw-input">Password</label>
+            <input id="pw-input" type="password" name="pw" maxlength="256" autocomplete="current-password" required placeholder="&#x2022;&#x2022;&#x2022;&#x2022;&#x2022;&#x2022;&#x2022;&#x2022;" aria-required="true">
           </div>
-          <button type="submit" class="btn btn-primary" style="width:100%;justify-content:center;padding:.72rem;font-size:.95rem;margin-top:.2rem">
+          <button type="submit" class="btn btn-primary login-btn" aria-label="Iniciar sessão">
             Entrar
           </button>
         </form>

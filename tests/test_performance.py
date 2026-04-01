@@ -141,6 +141,6 @@ class TestSessionTimeout:
         with client.session_transaction() as sess:
             assert sess.permanent is True
 
-    def test_session_lifetime_is_3_min(self, app):
-        """PERMANENT_SESSION_LIFETIME deve ser 180 segundos."""
-        assert app.config["PERMANENT_SESSION_LIFETIME"] == 180
+    def test_session_lifetime_is_10_min(self, app):
+        """PERMANENT_SESSION_LIFETIME deve ser 600 segundos (10 min)."""
+        assert app.config["PERMANENT_SESSION_LIFETIME"] == 600

@@ -32,14 +32,21 @@
             <div class="week-card {{ "weekend-active" if dia.is_weekend else "" }}">
               <div class="week-dow {{ "weekend" if dia.is_weekend else "" }}">{{ dia.abrev }}</div>
               <div class="week-date">{{ dia.date_full }}</div>
+              {% if dia.fds_ativo %}
+              <span class="meal-chip chip-licenca">🏖️ Licença FDS</span>
+              {% endif %}
               {% if dia.ausente %}
-              <span class="meal-chip chip-type" style="background:#fef3cd;color:#856404;margin-bottom:.3rem;display:block">⚓ Ausente</span>
+              {% if dia.ausencia_info and dia.ausencia_info.parcial %}
+              <span class="meal-chip chip-ausente">⚓ Ausente {{ dia.ausencia_info.hora_inicio }}–{{ dia.ausencia_info.hora_fim }}</span>
+              {% else %}
+              <span class="meal-chip chip-ausente">⚓ Ausente</span>
+              {% endif %}
               {% endif %}
               {% if dia.detido %}
-              <span class="meal-chip chip-type" style="background:#fdecea;color:#7a1c1c;margin-bottom:.3rem;display:block">🚫 Detido</span>
+              <span class="meal-chip chip-detido">🚫 Detido</span>
               {% endif %}
               {% if dia.lic_label %}
-              <span class="meal-chip chip-type" style="background:#d4efdf;color:#1e8449;margin-bottom:.3rem;display:block">🚪 {{ dia.lic_label }}</span>
+              <span class="meal-chip chip-licenca">🚪 {{ dia.lic_label }}</span>
               {% endif %}
               <div class="week-meals">
                 {% if dia.r.get("pequeno_almoco") %}
@@ -67,29 +74,29 @@
               </div>{{ prazo_label(dia.date_obj)|safe }}
               {% if dia.show_fds_btn %}
                 {% if dia.tem_licenca_fds %}
-                <form method="post" action="{{ url_for(".aluno_licenca_fds") }}" style="margin-top:.4rem">
+                <form method="post" action="{{ url_for(".aluno_licenca_fds") }}" class="mt-sm">
                   {{ csrf_input() }}
                   <input type="hidden" name="sexta" value="{{ dia.d_iso }}">
                   <input type="hidden" name="acao_fds" value="cancelar">
-                  <button class="btn btn-danger btn-sm" style="width:100%;font-size:.7rem"
-                    onclick="return confirm('Cancelar licença de fim de semana?')">
+                  <button class="btn btn-danger btn-sm btn-full"
+                    data-confirm="Cancelar licença de fim de semana?">
                     🔄 Cancelar licença FDS
                   </button>
                 </form>
                 {% elif dia.show_fds_marcar %}
-                <form method="post" action="{{ url_for(".aluno_licenca_fds") }}" style="margin-top:.4rem">
+                <form method="post" action="{{ url_for(".aluno_licenca_fds") }}" class="mt-sm">
                   {{ csrf_input() }}
                   <input type="hidden" name="sexta" value="{{ dia.d_iso }}">
                   <input type="hidden" name="acao_fds" value="marcar">
-                  <button class="btn btn-gold btn-sm" style="width:100%;font-size:.7rem"
-                    onclick="return confirm('Marcar licença de fim de semana?\nIsto vai:\n• Retirar o jantar de sexta\n• Apagar refeições de sábado e domingo')">
+                  <button class="btn btn-gold btn-sm btn-full"
+                    data-confirm="Marcar licença de fim de semana?&#10;Isto vai:&#10;• Retirar o jantar de sexta&#10;• Apagar refeições de sábado e domingo">
                     🏖️ Licença FDS
                   </button>
                 </form>
                 {% endif %}
               {% endif %}
               {% if dia.ok_edit and not dia.ausente %}
-              <a class="btn btn-primary btn-sm" style="margin-top:.38rem" href="{{ url_for(".aluno_editar", d=dia.d_iso) }}">✏️ Editar</a>
+              <a class="btn btn-primary btn-sm mt-xs" href="{{ url_for(".aluno_editar", d=dia.d_iso) }}">✏️ Editar</a>
               {% endif %}
             </div>
           {% endif %}

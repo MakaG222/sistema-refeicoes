@@ -22,11 +22,32 @@ import config as cfg
 from utils.helpers import _refeicao_set
 
 
+def _horarios_sobrepoe(h_inicio: str, h_fim: str, ref_inicio: str, ref_fim: str) -> bool:
+    """Verifica se o intervalo [h_inicio, h_fim] se sobrepõe com [ref_inicio, ref_fim]."""
+    return h_inicio < ref_fim and h_fim > ref_inicio
+
+
+def _refeicoes_afetadas(hora_inicio: str | None, hora_fim: str | None) -> dict[str, bool]:
+    """Determina quais refeições são afetadas por uma ausência com horários.
+
+    Se hora_inicio/hora_fim são None, todas as refeições são afetadas (dia inteiro).
+    """
+    if not hora_inicio or not hora_fim:
+        return {"pequeno_almoco": True, "almoco": True, "lanche": True, "jantar": True}
+
+    afetadas = {}
+    for ref, (r_ini, r_fim) in cfg.REFEICAO_HORARIOS.items():
+        afetadas[ref] = _horarios_sobrepoe(hora_inicio, hora_fim, r_ini, r_fim)
+    return afetadas
+
+
 # ── Ausências ────────────────────────────────────────────────────────────
 
 
 def _registar_ausencia(
-    uid: int, de: str, ate: str, motivo: str, criado_por: str
+    uid: int, de: str, ate: str, motivo: str, criado_por: str,
+    hora_inicio: str | None = None, hora_fim: str | None = None,
+    estufa_almoco: bool = False, estufa_jantar: bool = False,
 ) -> tuple[bool, str]:
     try:
         datetime.strptime(de, "%Y-%m-%d")
@@ -35,14 +56,73 @@ def _registar_ausencia(
         return False, "Data inválida."
     if de > ate:
         return False, "A data de início não pode ser posterior à data de fim."
+    # Validar horas se fornecidas
+    if hora_inicio or hora_fim:
+        if not (hora_inicio and hora_fim):
+            return False, "Hora de início e fim devem ser ambas preenchidas."
+        try:
+            datetime.strptime(hora_inicio, "%H:%M")
+            datetime.strptime(hora_fim, "%H:%M")
+        except ValueError:
+            return False, "Hora inválida (formato HH:MM)."
+        if hora_inicio >= hora_fim:
+            return False, "A hora de início deve ser anterior à hora de fim."
+
+    afetadas = _refeicoes_afetadas(hora_inicio, hora_fim)
+
     with db() as conn:
         conn.execute(
-            """INSERT INTO ausencias (utilizador_id,ausente_de,ausente_ate,motivo,criado_por)
-                        VALUES (?,?,?,?,?)""",
-            (uid, de, ate, motivo or None, criado_por),
+            """INSERT INTO ausencias
+               (utilizador_id,ausente_de,ausente_ate,hora_inicio,hora_fim,
+                estufa_almoco,estufa_jantar,motivo,criado_por)
+               VALUES (?,?,?,?,?,?,?,?,?)""",
+            (uid, de, ate, hora_inicio, hora_fim,
+             1 if estufa_almoco else 0, 1 if estufa_jantar else 0,
+             motivo or None, criado_por),
+        )
+        # Limpar refeições afetadas durante o período de ausência
+        _aplicar_ausencia_refeicoes(
+            conn, uid, de, ate, afetadas, estufa_almoco, estufa_jantar
+        )
+        # Cancelar licenças pendentes durante o período (preservar as que já têm saída registada)
+        conn.execute(
+            "DELETE FROM licencas WHERE utilizador_id=? AND data>=? AND data<=? AND hora_saida IS NULL",
+            (uid, de, ate),
         )
         conn.commit()
     return True, ""
+
+
+def _aplicar_ausencia_refeicoes(
+    conn, uid: int, de: str, ate: str,
+    afetadas: dict[str, bool],
+    estufa_almoco: bool = False,
+    estufa_jantar: bool = False,
+) -> None:
+    """Atualiza refeições conforme as refeições afetadas pela ausência."""
+    sets = []
+    if afetadas.get("pequeno_almoco"):
+        sets.append("pequeno_almoco=0")
+    if afetadas.get("lanche"):
+        sets.append("lanche=0")
+    if afetadas.get("almoco"):
+        if estufa_almoco:
+            sets.append("almoco_estufa=1")
+        else:
+            sets.append("almoco=NULL")
+            sets.append("almoco_estufa=0")
+    if afetadas.get("jantar"):
+        if estufa_jantar:
+            sets.append("jantar_estufa=1")
+        else:
+            sets.append("jantar_tipo=NULL")
+            sets.append("jantar_sai_unidade=0")
+            sets.append("jantar_estufa=0")
+    if sets:
+        conn.execute(
+            f"UPDATE refeicoes SET {', '.join(sets)} WHERE utilizador_id=? AND data>=? AND data<=?",
+            (uid, de, ate),
+        )
 
 
 def _remover_ausencia(aid: int) -> None:
@@ -52,7 +132,9 @@ def _remover_ausencia(aid: int) -> None:
 
 
 def _editar_ausencia(
-    aid: int, uid: int, de: str, ate: str, motivo: str
+    aid: int, uid: int, de: str, ate: str, motivo: str,
+    hora_inicio: str | None = None, hora_fim: str | None = None,
+    estufa_almoco: bool = False, estufa_jantar: bool = False,
 ) -> tuple[bool, str]:
     try:
         datetime.strptime(de, "%Y-%m-%d")
@@ -61,11 +143,24 @@ def _editar_ausencia(
         return False, "Data inválida."
     if de > ate:
         return False, "A data de início não pode ser posterior à data de fim."
+    if hora_inicio or hora_fim:
+        if not (hora_inicio and hora_fim):
+            return False, "Hora de início e fim devem ser ambas preenchidas."
+        try:
+            datetime.strptime(hora_inicio, "%H:%M")
+            datetime.strptime(hora_fim, "%H:%M")
+        except ValueError:
+            return False, "Hora inválida (formato HH:MM)."
+        if hora_inicio >= hora_fim:
+            return False, "A hora de início deve ser anterior à hora de fim."
     with db() as conn:
         conn.execute(
-            """UPDATE ausencias SET ausente_de=?,ausente_ate=?,motivo=?
-                        WHERE id=? AND utilizador_id=?""",
-            (de, ate, motivo or None, aid, uid),
+            """UPDATE ausencias SET ausente_de=?,ausente_ate=?,hora_inicio=?,hora_fim=?,
+               estufa_almoco=?,estufa_jantar=?,motivo=?
+               WHERE id=? AND utilizador_id=?""",
+            (de, ate, hora_inicio, hora_fim,
+             1 if estufa_almoco else 0, 1 if estufa_jantar else 0,
+             motivo or None, aid, uid),
         )
         conn.commit()
     return True, ""
@@ -106,14 +201,19 @@ def _auto_marcar_refeicoes_detido(
 ) -> None:
     """Auto-marca todas as refeições para dias de detenção se não estiverem marcadas."""
     try:
+        # Batch: buscar todos os dias que já têm almoço marcado
+        with db() as conn:
+            existentes = {
+                r["data"]
+                for r in conn.execute(
+                    "SELECT data FROM refeicoes WHERE utilizador_id=? AND data>=? AND data<=? AND almoco IS NOT NULL",
+                    (uid, d_de.isoformat(), d_ate.isoformat()),
+                ).fetchall()
+            }
+        # Marcar apenas os dias sem almoço
         d = d_de
         while d <= d_ate:
-            with db() as conn:
-                existe = conn.execute(
-                    "SELECT almoco FROM refeicoes WHERE utilizador_id=? AND data=?",
-                    (uid, d.isoformat()),
-                ).fetchone()
-            if not existe or not existe["almoco"]:
+            if d.isoformat() not in existentes:
                 _refeicao_set(
                     uid,
                     d,
@@ -135,39 +235,19 @@ def _auto_marcar_refeicoes_detido(
 def _regras_licenca(ano: int, ni: str) -> dict:
     """Devolve regras de licença para um aluno com base no ano e NI.
 
-    Regras:
-    - NI começa com '7' → pode sair todos os dias (exceção especial)
-    - 4º ano e acima → pode sair todos os dias
-    - 3º ano → sex/sab/dom + 3 dias úteis (seg-qui) por semana
-    - 2º ano → sex/sab/dom + 2 dias úteis (seg-qui) por semana
-    - 1º ano → sex/sab/dom + apenas quarta-feira
+    As regras são lidas de config.LICENCA_REGRAS_ANO (configurável).
+    Exceções: NI com prefixo '7' usa sempre o default (acesso total).
     """
-    if str(ni).startswith("7"):
-        return {
-            "max_dias_uteis": 4,
-            "dias_permitidos": [0, 1, 2, 3, 4, 5, 6],
-            "excepcao_ni7": True,
-        }
-    if ano >= 4:
-        return {
-            "max_dias_uteis": 4,
-            "dias_permitidos": [0, 1, 2, 3, 4, 5, 6],
-            "excepcao_ni7": False,
-        }
-    if ano == 3:
-        return {
-            "max_dias_uteis": 3,
-            "dias_permitidos": [0, 1, 2, 3, 4, 5, 6],
-            "excepcao_ni7": False,
-        }
-    if ano == 2:
-        return {
-            "max_dias_uteis": 2,
-            "dias_permitidos": [0, 1, 2, 3, 4, 5, 6],
-            "excepcao_ni7": False,
-        }
-    # 1º ano — só quarta (2) + fim de semana (4=sex, 5=sab, 6=dom)
-    return {"max_dias_uteis": 1, "dias_permitidos": [2, 4, 5, 6], "excepcao_ni7": False}
+    excepcao_ni7 = str(ni).startswith("7")
+    if excepcao_ni7 or ano >= 4 or ano not in cfg.LICENCA_REGRAS_ANO:
+        base = cfg.LICENCA_REGRAS_ANO_DEFAULT
+    else:
+        base = cfg.LICENCA_REGRAS_ANO[ano]
+    return {
+        "max_dias_uteis": base["max_dias_uteis"],
+        "dias_permitidos": list(base["dias_permitidos"]),
+        "excepcao_ni7": excepcao_ni7,
+    }
 
 
 def _licencas_semana_usadas(uid: int, d: date) -> int:
@@ -242,6 +322,13 @@ def _dia_editavel_aluno(d: date) -> tuple[bool, str]:
 # ── Licença FDS ──────────────────────────────────────────────────────────
 
 
+def _fds_deadline_passed(sexta: date) -> bool:
+    """Verifica se o prazo para marcar/cancelar licença FDS já passou (sexta 12h)."""
+    agora = datetime.now()
+    deadline = datetime(sexta.year, sexta.month, sexta.day, 12, 0, 0)
+    return agora >= deadline
+
+
 def _marcar_licenca_fds(uid: int, sexta: date, alterado_por: str) -> tuple[bool, str]:
     """
     Marca 'licença fim de semana' para um aluno:
@@ -249,6 +336,8 @@ def _marcar_licenca_fds(uid: int, sexta: date, alterado_por: str) -> tuple[bool,
     - Sábado e Domingo: apaga todas as refeições
     Retorna (sucesso: bool, mensagem: str)
     """
+    if _fds_deadline_passed(sexta):
+        return False, "Prazo expirado — licença FDS só pode ser marcada até sexta às 12h."
     try:
         # ── Sexta-feira: licença antes_jantar ──────────────────────────
         with db() as conn:
@@ -290,6 +379,8 @@ def _cancelar_licenca_fds(uid: int, sexta: date, alterado_por: str) -> tuple[boo
     - Remove a licença da sexta
     - Repõe jantar normal na sexta, retira sai_unidade
     """
+    if _fds_deadline_passed(sexta):
+        return False, "Prazo expirado — licença FDS só pode ser cancelada até sexta às 12h."
     try:
         # Remover licença da sexta
         with db() as conn:
@@ -329,7 +420,6 @@ def _alertas_painel(d_str: str, perfil: str) -> list[dict[str, str]]:
         return alertas
 
     hoje = date.today().isoformat()
-    amanha = (date.today() + timedelta(days=1)).isoformat()
 
     with db() as conn:
         # 1. Detenções que expiram hoje
@@ -363,33 +453,7 @@ def _alertas_painel(d_str: str, perfil: str) -> list[dict[str, str]]:
                 }
             )
 
-        # 3. Alunos ativos sem refeições para amanhã (dias úteis)
-        amanha_dt = date.today() + timedelta(days=1)
-        if amanha_dt.weekday() < 5:
-            sem_ref = conn.execute(
-                """SELECT COUNT(*) c FROM utilizadores u
-                   WHERE u.perfil='aluno' AND u.is_active=1
-                   AND NOT EXISTS (
-                       SELECT 1 FROM refeicoes r
-                       WHERE r.utilizador_id=u.id AND r.data=?
-                   )
-                   AND NOT EXISTS (
-                       SELECT 1 FROM ausencias a
-                       WHERE a.utilizador_id=u.id
-                       AND a.ausente_de<=? AND a.ausente_ate>=?
-                   )""",
-                (amanha, amanha, amanha),
-            ).fetchone()["c"]
-            if sem_ref:
-                alertas.append(
-                    {
-                        "icon": "📋",
-                        "msg": f"{sem_ref} aluno(s) sem refeições marcadas para amanhã.",
-                        "cat": "info",
-                    }
-                )
-
-        # 4. Ausências registadas hoje
+        # 3. Ausências registadas hoje
         novas_aus = conn.execute(
             """SELECT COUNT(*) c FROM ausencias
                WHERE date(criado_em)=?""",

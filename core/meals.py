@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
+import logging
 import sqlite3
 from datetime import date, datetime, timedelta
 from typing import Any
 
 from core.constants import PRAZO_LIMITE_HORAS
 from core.database import db
+
+log = logging.getLogger(__name__)
 
 
 def refeicao_editavel(d: date) -> tuple[bool, str]:
@@ -52,7 +55,7 @@ def get_totais_dia(di: str, ano: int | None = None) -> dict[str, int]:
 
         pa = (
             conn.execute(
-                f"SELECT COUNT(*) c FROM refeicoes r {_active}"
+                f"SELECT COUNT(*) c FROM refeicoes r {_active}"  # nosec B608
                 f" WHERE r.data=? {_ano_cond} AND r.pequeno_almoco=1",
                 params_base,
             ).fetchone()["c"]
@@ -60,35 +63,34 @@ def get_totais_dia(di: str, ano: int | None = None) -> dict[str, int]:
         )
         ln = (
             conn.execute(
-                f"SELECT COUNT(*) c FROM refeicoes r {_active}"
+                f"SELECT COUNT(*) c FROM refeicoes r {_active}"  # nosec B608
                 f" WHERE r.data=? {_ano_cond} AND r.lanche=1",
                 params_base,
             ).fetchone()["c"]
             or 0
         )
-        alm = conn.execute(
-            f"""
-            SELECT
-              SUM(CASE WHEN r.almoco='Normal'      THEN 1 ELSE 0 END) norm,
-              SUM(CASE WHEN r.almoco='Vegetariano' THEN 1 ELSE 0 END) veg,
-              SUM(CASE WHEN r.almoco='Dieta'       THEN 1 ELSE 0 END) dieta
-            FROM refeicoes r {_active}
-            WHERE r.data=? {_ano_cond}
-        """,
-            params_base,
-        ).fetchone()
-        jan = conn.execute(
-            f"""
-            SELECT
-              SUM(CASE WHEN r.jantar_tipo='Normal'      THEN 1 ELSE 0 END) norm,
-              SUM(CASE WHEN r.jantar_tipo='Vegetariano' THEN 1 ELSE 0 END) veg,
-              SUM(CASE WHEN r.jantar_tipo='Dieta'       THEN 1 ELSE 0 END) dieta,
-              SUM(COALESCE(r.jantar_sai_unidade, 0))                        sai
-            FROM refeicoes r {_active}
-            WHERE r.data=? {_ano_cond}
-        """,
-            params_base,
-        ).fetchone()
+        # _active and _ano_cond are hardcoded constants — safe to interpolate
+        _sql_alm = (
+            f"SELECT"  # nosec B608
+            f" SUM(CASE WHEN r.almoco='Normal' THEN 1 ELSE 0 END) norm,"
+            f" SUM(CASE WHEN r.almoco='Vegetariano' THEN 1 ELSE 0 END) veg,"
+            f" SUM(CASE WHEN r.almoco='Dieta' THEN 1 ELSE 0 END) dieta,"
+            f" SUM(COALESCE(r.almoco_estufa,0)) estufa"
+            f" FROM refeicoes r {_active}"
+            f" WHERE r.data=? {_ano_cond}"
+        )
+        alm = conn.execute(_sql_alm, params_base).fetchone()
+        _sql_jan = (
+            f"SELECT"  # nosec B608
+            f" SUM(CASE WHEN r.jantar_tipo='Normal' THEN 1 ELSE 0 END) norm,"
+            f" SUM(CASE WHEN r.jantar_tipo='Vegetariano' THEN 1 ELSE 0 END) veg,"
+            f" SUM(CASE WHEN r.jantar_tipo='Dieta' THEN 1 ELSE 0 END) dieta,"
+            f" SUM(COALESCE(r.jantar_sai_unidade,0)) sai,"
+            f" SUM(COALESCE(r.jantar_estufa,0)) estufa"
+            f" FROM refeicoes r {_active}"
+            f" WHERE r.data=? {_ano_cond}"
+        )
+        jan = conn.execute(_sql_jan, params_base).fetchone()
 
     return {
         "pa": pa,
@@ -96,10 +98,12 @@ def get_totais_dia(di: str, ano: int | None = None) -> dict[str, int]:
         "alm_norm": alm["norm"] or 0,
         "alm_veg": alm["veg"] or 0,
         "alm_dieta": alm["dieta"] or 0,
+        "alm_estufa": alm["estufa"] or 0,
         "jan_norm": jan["norm"] or 0,
         "jan_veg": jan["veg"] or 0,
         "jan_dieta": jan["dieta"] or 0,
         "jan_sai": jan["sai"] or 0,
+        "jan_estufa": jan["estufa"] or 0,
     }
 
 
@@ -118,24 +122,24 @@ def get_totais_periodo(
     params = (d_de, d_ate, ano) if ano is not None else (d_de, d_ate)
 
     with db() as conn:
-        rows = conn.execute(
-            f"""
-            SELECT r.data,
-              SUM(CASE WHEN r.pequeno_almoco=1 THEN 1 ELSE 0 END) pa,
-              SUM(CASE WHEN r.lanche=1 THEN 1 ELSE 0 END) lan,
-              SUM(CASE WHEN r.almoco='Normal'      THEN 1 ELSE 0 END) alm_norm,
-              SUM(CASE WHEN r.almoco='Vegetariano' THEN 1 ELSE 0 END) alm_veg,
-              SUM(CASE WHEN r.almoco='Dieta'       THEN 1 ELSE 0 END) alm_dieta,
-              SUM(CASE WHEN r.jantar_tipo='Normal'      THEN 1 ELSE 0 END) jan_norm,
-              SUM(CASE WHEN r.jantar_tipo='Vegetariano' THEN 1 ELSE 0 END) jan_veg,
-              SUM(CASE WHEN r.jantar_tipo='Dieta'       THEN 1 ELSE 0 END) jan_dieta,
-              SUM(COALESCE(r.jantar_sai_unidade, 0)) jan_sai
-            FROM refeicoes r {_active}
-            WHERE r.data>=? AND r.data<=? {_ano_cond}
-            GROUP BY r.data
-        """,
-            params,
-        ).fetchall()
+        _sql_periodo = (
+            f"SELECT r.data,"  # nosec B608
+            f" SUM(CASE WHEN r.pequeno_almoco=1 THEN 1 ELSE 0 END) pa,"
+            f" SUM(CASE WHEN r.lanche=1 THEN 1 ELSE 0 END) lan,"
+            f" SUM(CASE WHEN r.almoco='Normal' THEN 1 ELSE 0 END) alm_norm,"
+            f" SUM(CASE WHEN r.almoco='Vegetariano' THEN 1 ELSE 0 END) alm_veg,"
+            f" SUM(CASE WHEN r.almoco='Dieta' THEN 1 ELSE 0 END) alm_dieta,"
+            f" SUM(COALESCE(r.almoco_estufa,0)) alm_estufa,"
+            f" SUM(CASE WHEN r.jantar_tipo='Normal' THEN 1 ELSE 0 END) jan_norm,"
+            f" SUM(CASE WHEN r.jantar_tipo='Vegetariano' THEN 1 ELSE 0 END) jan_veg,"
+            f" SUM(CASE WHEN r.jantar_tipo='Dieta' THEN 1 ELSE 0 END) jan_dieta,"
+            f" SUM(COALESCE(r.jantar_sai_unidade,0)) jan_sai,"
+            f" SUM(COALESCE(r.jantar_estufa,0)) jan_estufa"
+            f" FROM refeicoes r {_active}"
+            f" WHERE r.data>=? AND r.data<=? {_ano_cond}"
+            f" GROUP BY r.data"
+        )
+        rows = conn.execute(_sql_periodo, params).fetchall()
 
     _empty = {
         "pa": 0,
@@ -143,10 +147,12 @@ def get_totais_periodo(
         "alm_norm": 0,
         "alm_veg": 0,
         "alm_dieta": 0,
+        "alm_estufa": 0,
         "jan_norm": 0,
         "jan_veg": 0,
         "jan_dieta": 0,
         "jan_sai": 0,
+        "jan_estufa": 0,
     }
     result = {}
     for r in rows:
@@ -156,10 +162,12 @@ def get_totais_periodo(
             "alm_norm": r["alm_norm"] or 0,
             "alm_veg": r["alm_veg"] or 0,
             "alm_dieta": r["alm_dieta"] or 0,
+            "alm_estufa": r["alm_estufa"] or 0,
             "jan_norm": r["jan_norm"] or 0,
             "jan_veg": r["jan_veg"] or 0,
             "jan_dieta": r["jan_dieta"] or 0,
             "jan_sai": r["jan_sai"] or 0,
+            "jan_estufa": r["jan_estufa"] or 0,
         }
     return result, _empty
 
@@ -221,6 +229,8 @@ def refeicao_get(uid: int, d: date) -> dict[str, Any]:
         "almoco": None,
         "jantar_tipo": None,
         "jantar_sai_unidade": 0,
+        "almoco_estufa": 0,
+        "jantar_estufa": 0,
     }
 
 
@@ -234,6 +244,8 @@ def refeicoes_batch(
         "almoco": None,
         "jantar_tipo": None,
         "jantar_sai_unidade": 0,
+        "almoco_estufa": 0,
+        "jantar_estufa": 0,
     }
     with db() as conn:
         rows = conn.execute(
@@ -271,14 +283,16 @@ def refeicao_save(
             conn.execute(
                 """
                 INSERT INTO refeicoes
-                  (utilizador_id, data, pequeno_almoco, lanche, almoco, jantar_tipo, jantar_sai_unidade)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
+                  (utilizador_id, data, pequeno_almoco, lanche, almoco, jantar_tipo, jantar_sai_unidade, almoco_estufa, jantar_estufa)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(utilizador_id, data) DO UPDATE SET
                     pequeno_almoco=excluded.pequeno_almoco,
                     lanche=excluded.lanche,
                     almoco=excluded.almoco,
                     jantar_tipo=excluded.jantar_tipo,
-                    jantar_sai_unidade=excluded.jantar_sai_unidade
+                    jantar_sai_unidade=excluded.jantar_sai_unidade,
+                    almoco_estufa=excluded.almoco_estufa,
+                    jantar_estufa=excluded.jantar_estufa
             """,
                 (
                     uid,
@@ -288,6 +302,8 @@ def refeicao_save(
                     r.get("almoco"),
                     r.get("jantar_tipo"),
                     r.get("jantar_sai_unidade", 0),
+                    r.get("almoco_estufa", 0),
+                    r.get("jantar_estufa", 0),
                 ),
             )
 
@@ -297,6 +313,8 @@ def refeicao_save(
                 "almoco",
                 "jantar_tipo",
                 "jantar_sai_unidade",
+                "almoco_estufa",
+                "jantar_estufa",
             ]
             for campo in campos:
                 val_antes = (
@@ -341,6 +359,7 @@ def refeicao_exists(uid: int, d: date) -> bool:
             ).fetchone()
             return r is not None
     except Exception:
+        log.exception("refeicao_exists: erro ao verificar refeição uid=%s", uid)
         return False
 
 
@@ -376,10 +395,12 @@ _HEADERS_TOTAIS = [
     "Almoco_Normal",
     "Almoco_Vegetariano",
     "Almoco_Dieta",
+    "Almoco_Estufa",
     "Jantar_Normal",
     "Jantar_Vegetariano",
     "Jantar_Dieta",
     "Jantar_Saem_Unidade",
+    "Jantar_Estufa",
 ]
 _HEADERS_DISTRIBUICAO = [
     "ano",
@@ -389,8 +410,10 @@ _HEADERS_DISTRIBUICAO = [
     "pequeno_almoco",
     "lanche",
     "almoco",
+    "almoco_estufa",
     "jantar_tipo",
     "jantar_sai_unidade",
+    "jantar_estufa",
 ]
 
 
@@ -404,10 +427,12 @@ def _totais_para_csv_row(
         "Almoco_Normal": t["alm_norm"],
         "Almoco_Vegetariano": t["alm_veg"],
         "Almoco_Dieta": t["alm_dieta"],
+        "Almoco_Estufa": t.get("alm_estufa", 0),
         "Jantar_Normal": t["jan_norm"],
         "Jantar_Vegetariano": t["jan_veg"],
         "Jantar_Dieta": t["jan_dieta"],
         "Jantar_Saem_Unidade": t["jan_sai"],
+        "Jantar_Estufa": t.get("jan_estufa", 0),
     }
     if extra:
         row.update(extra)

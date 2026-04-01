@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import secrets
 from datetime import datetime
 from typing import Any
@@ -14,6 +15,8 @@ from core.autofill import autopreencher_refeicoes_semanais
 from core.database import db
 
 from blueprints.api import api_bp
+
+log = logging.getLogger(__name__)
 
 
 # ── Helpers de resposta padronizada ──────────────────────────────────────────
@@ -39,13 +42,13 @@ def _verify_cron_token() -> bool:
         return False
     token = auth[len("Bearer ") :]
     if not cfg.CRON_API_TOKEN:
-        # Sem token configurado: bloquear em produção, avisar fora
+        # Sem token configurado: bloquear em produção, avisar e exigir token "dev" fora
         if cfg.is_production:
             return False
         current_app.logger.warning(
-            "CRON_API_TOKEN não definido — endpoint de cron desprotegido!"
+            "CRON_API_TOKEN não definido — a aceitar token 'dev' como fallback."
         )
-        return True  # permite apenas fora de produção sem token
+        return secrets.compare_digest(token, "dev")
     return secrets.compare_digest(token, cfg.CRON_API_TOKEN)
 
 
@@ -80,6 +83,7 @@ def health():
             os.path.getsize(core.constants.BASE_DADOS) / (1024 * 1024), 1
         )
     except Exception:
+        log.exception("health: falha ao obter tamanho da BD")
         checks["db_size_mb"] = None
 
     # Backup age
@@ -96,6 +100,7 @@ def health():
         else:
             checks["backup"] = "no_backups"
     except Exception:
+        log.exception("health: falha ao verificar backup")
         checks["backup"] = "unknown"
 
     # Disk free space
@@ -108,7 +113,7 @@ def health():
         if free_mb < 100:
             checks["disk"] = "warn"
     except Exception:
-        pass
+        log.exception("health: falha ao verificar espaço em disco")
 
     latency_ms = round((_time.monotonic() - t0) * 1000, 1)
     checks["latency_ms"] = latency_ms
@@ -119,20 +124,24 @@ def health():
 
 @api_bp.route("/health/metrics")
 def health_metrics():
-    """Métricas básicas de request — contadores in-memory."""
-    from app import _metrics, _metrics_lock
+    """Métricas básicas de request — contadores in-memory + per-route."""
+    from core.middleware import get_metrics, get_route_metrics
 
-    with _metrics_lock:
-        count = _metrics["request_count"]
-        return _api_ok(
-            {
-                "request_count": count,
-                "error_count": _metrics["error_count"],
-                "avg_latency_ms": round(
-                    _metrics["total_latency_ms"] / max(count, 1), 1
-                ),
-            }
-        )
+    m = get_metrics()
+    count = m["request_count"]
+    route_m = get_route_metrics()
+    # Top 10 rotas por contagem
+    top_routes = dict(
+        sorted(route_m.items(), key=lambda x: x[1]["count"], reverse=True)[:10]
+    )
+    return _api_ok(
+        {
+            "request_count": count,
+            "error_count": m["error_count"],
+            "avg_latency_ms": round(m["total_latency_ms"] / max(count, 1), 1),
+            "routes": top_routes,
+        }
+    )
 
 
 @api_bp.route("/api/backup-cron", methods=["POST"])

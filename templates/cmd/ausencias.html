@@ -15,30 +15,74 @@
       {{ csrf_input() }}
       <div class="grid grid-2">
         <div class="form-group">
-          <label>NII do aluno</label>
-          <input type="text" name="nii" maxlength="32" required placeholder="NII" {% if alunos_ano %}list="alunos_list"{% endif %}>
+          <label for="nii">NII do aluno</label>
+          <input type="text" name="nii" id="nii" maxlength="32" required placeholder="NII" {% if alunos_ano %}list="alunos_list"{% endif %}>
           {% if alunos_ano %}
-          <div class="text-muted small" style="margin-top:.25rem">Escreve para ver sugestões de alunos do teu ano</div>
+          <div class="text-muted small mt-xs">Escreve para ver sugestões de alunos do teu ano</div>
           {% endif %}
         </div>
-        <div class="form-group"><label>Motivo (opcional)</label><input type="text" name="motivo" maxlength="500" placeholder="Ex: deslocação, exercício..."></div>
-        <div class="form-group"><label>De</label><input type="date" name="de" required value="{{ hoje }}"></div>
-        <div class="form-group"><label>Até</label><input type="date" name="ate" required value="{{ hoje }}"></div>
+        <div class="form-group"><label for="motivo">Motivo (opcional)</label><input type="text" name="motivo" id="motivo" maxlength="500" placeholder="Ex: deslocação, exercício..."></div>
+        <div class="form-group"><label for="de">De</label><input type="date" name="de" id="de" required value="{{ hoje }}"></div>
+        <div class="form-group"><label for="ate">Até</label><input type="date" name="ate" id="ate" required value="{{ hoje }}"></div>
+        <div class="form-group"><label for="hora_inicio">Hora início <span class="text-muted small">(opcional)</span></label><input type="time" name="hora_inicio" id="hora_inicio"></div>
+        <div class="form-group"><label for="hora_fim">Hora fim <span class="text-muted small">(opcional)</span></label><input type="time" name="hora_fim" id="hora_fim"></div>
+      </div>
+      <div class="grid grid-2 mb-md">
+        <label class="form-check"><input type="checkbox" name="estufa_almoco" value="1"> Guardar almoço na estufa</label>
+        <label class="form-check"><input type="checkbox" name="estufa_jantar" value="1"> Guardar jantar na estufa</label>
       </div>
       <button class="btn btn-ok">Registar ausência</button>
     </form>
+    {% if alunos_ano %}
+    <hr>
+    <div class="card-title">Registar ausência em massa</div>
+    <form method="post">
+      {{ csrf_input() }}
+      <input type="hidden" name="acao" value="bulk_ausencia">
+      <div class="grid grid-2 mb-md">
+        <div class="form-group"><label for="bulk_de">De</label><input type="date" name="de" id="bulk_de" required value="{{ hoje }}"></div>
+        <div class="form-group"><label for="bulk_ate">Até</label><input type="date" name="ate" id="bulk_ate" required value="{{ hoje }}"></div>
+        <div class="form-group"><label for="bulk_motivo">Motivo (opcional)</label><input type="text" name="motivo" id="bulk_motivo" maxlength="500" placeholder="Ex: exercício, saída de campo..."></div>
+      </div>
+      <div class="table-wrap" style="max-height:300px;overflow-y:auto">
+        <table>
+          <thead><tr><th><input type="checkbox" id="bulk_all"></th><th>NI</th><th>Nome</th></tr></thead>
+          <tbody>
+            {% for a in alunos_ano %}
+            <tr>
+              <td><input type="checkbox" name="niis" value="{{ a.NII }}"></td>
+              <td>{{ a.NI }}</td>
+              <td>{{ a.Nome_completo }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      <button class="btn btn-ok mt-md">Registar ausências selecionadas</button>
+    </form>
+    <script>document.getElementById('bulk_all').addEventListener('change',function(){document.querySelectorAll('input[name=niis]').forEach(function(c){c.checked=this.checked}.bind(this))});</script>
+    {% endif %}
   </div>
   <div class="card">
     <div class="card-title">Ausências registadas</div>
     <div class="table-wrap">
       <table>
-        <thead><tr><th>Aluno</th><th>De</th><th>Até</th><th>Motivo</th><th>Estado</th><th>Ações</th></tr></thead>
+        <thead><tr><th>Aluno</th><th>De</th><th>Até</th><th>Horário</th><th>Motivo</th><th>Estado</th><th>Ações</th></tr></thead>
         <tbody>
           {% for r in rows %}
           <tr>
             <td><strong>{{ r.Nome_completo }}</strong><br><span class="text-muted small">{{ r.NII }} · {{ r.ano }}º ano</span></td>
             <td>{{ r.ausente_de }}</td>
             <td>{{ r.ausente_ate }}</td>
+            <td>
+              {% if r.hora_inicio and r.hora_fim %}
+              {{ r.hora_inicio }}–{{ r.hora_fim }}
+              {% if r.estufa_almoco %}<br><span class="badge badge-info">♨️ Alm</span>{% endif %}
+              {% if r.estufa_jantar %}<br><span class="badge badge-info">♨️ Jan</span>{% endif %}
+              {% else %}
+              <span class="text-muted">Dia inteiro</span>
+              {% endif %}
+            </td>
             <td>{{ r.motivo or "—" }}</td>
             <td>
               {% if r.ausente_de <= hoje and hoje <= r.ausente_ate %}
@@ -48,7 +92,7 @@
               {% endif %}
             </td>
             <td>
-              <form method="post" style="display:inline">
+              <form method="post" class="form-inline">
                 {{ csrf_input() }}
                 <input type="hidden" name="acao" value="remover">
                 <input type="hidden" name="id" value="{{ r.id }}">
@@ -57,7 +101,7 @@
             </td>
           </tr>
           {% else %}
-          <tr><td colspan="6" class="text-muted center" style="padding:1.5rem">Sem ausências.</td></tr>
+          <tr><td colspan="7" class="text-muted center empty-cell">Sem ausências.</td></tr>
           {% endfor %}
         </tbody>
       </table>

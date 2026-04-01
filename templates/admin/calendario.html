@@ -4,26 +4,26 @@
   <div class="page-header">{{ back_btn(back_url) }}<div class="page-title">📅 Calendário Operacional</div></div>
   <div class="card">
     <div class="card-title">Adicionar / atualizar período</div>
-    <div class="alert alert-info" style="margin-bottom:.8rem">
+    <div class="alert alert-info mb-lg">
       💡 Para um único dia, preenche apenas a <strong>Data de início</strong> (ou coloca a mesma data nos dois campos).
       Para um período, preenche ambas as datas — todos os dias do intervalo serão atualizados.
     </div>
     <form method="post">
       {{ csrf_input() }}
       <input type="hidden" name="acao" value="adicionar">
-      <div class="grid grid-2" style="max-width:520px">
-        <div class="form-group"><label>📅 Data de início</label><input type="date" name="dia_de" required value="{{ hoje.isoformat() }}"></div>
-        <div class="form-group"><label>📅 Data de fim <span class="text-muted small">(inclusive)</span></label><input type="date" name="dia_ate" value="{{ hoje.isoformat() }}"></div>
+      <div class="grid grid-2 max-w-sm">
+        <div class="form-group"><label for="dia_de">📅 Data de início</label><input type="date" name="dia_de" id="dia_de" required value="{{ hoje.isoformat() }}"></div>
+        <div class="form-group"><label for="dia_ate">📅 Data de fim <span class="text-muted small">(inclusive)</span></label><input type="date" name="dia_ate" id="dia_ate" value="{{ hoje.isoformat() }}"></div>
       </div>
-      <div class="grid grid-2" style="max-width:520px">
-        <div class="form-group"><label>Tipo</label>
-          <select name="tipo">
+      <div class="grid grid-2 max-w-sm">
+        <div class="form-group"><label for="tipo">Tipo</label>
+          <select name="tipo" id="tipo">
             {% for t in TIPOS %}
             <option value="{{ t }}">{{ ICONES.get(t, '') }} {{ t }}</option>
             {% endfor %}
           </select>
         </div>
-        <div class="form-group"><label>Nota</label><input type="text" name="nota" placeholder="ex: Natal, Exercício..."></div>
+        <div class="form-group"><label for="nota">Nota</label><input type="text" name="nota" id="nota" placeholder="ex: Natal, Exercício..."></div>
       </div>
       <button class="btn btn-ok">💾 Guardar</button>
     </form>
@@ -40,11 +40,11 @@
             <td>{{ ICONES.get(r.tipo, '⚪') }} {{ r.tipo }}</td>
             <td>{{ r.nota or "—" }}</td>
             <td>
-              <form method="post" style="display:inline">{{ csrf_input() }}<input type="hidden" name="acao" value="remover"><input type="hidden" name="dia" value="{{ r.data }}"><button class="btn btn-danger btn-sm">🗑</button></form>
+              <form method="post" class="form-inline">{{ csrf_input() }}<input type="hidden" name="acao" value="remover"><input type="hidden" name="dia" value="{{ r.data }}"><button class="btn btn-danger btn-sm">🗑</button></form>
             </td>
           </tr>
           {% else %}
-          <tr><td colspan="4" class="text-muted center" style="padding:1.5rem">Sem entradas.</td></tr>
+          <tr><td colspan="4" class="text-muted center empty-cell">Sem entradas.</td></tr>
           {% endfor %}
         </tbody>
       </table>

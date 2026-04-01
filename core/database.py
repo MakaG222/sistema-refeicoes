@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import logging
 import sqlite3
+
+log = logging.getLogger(__name__)
 
 import core.constants
 from core.schema import SCHEMA_SQL
@@ -59,7 +62,7 @@ def wal_checkpoint() -> None:
         conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
         conn.close()
     except Exception:
-        pass
+        log.exception("wal_checkpoint: falha ao executar checkpoint")
 
 
 def sqlite_quick_check() -> bool:
@@ -68,6 +71,7 @@ def sqlite_quick_check() -> bool:
             row = conn.execute("PRAGMA quick_check").fetchone()
             return bool(row and row[0] == "ok")
     except Exception:
+        log.exception("sqlite_quick_check: falha na verificação")
         return False
 
 

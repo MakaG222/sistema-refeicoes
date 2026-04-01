@@ -8,7 +8,7 @@
       <div class="alert alert-info">
         📌 Com uma ausência ativa as tuas refeições não são contabilizadas e não podes editar refeições para esse período.
       </div>
-      <div class="card" style="max-width:520px">
+      <div class="card max-w-sm">
         <div class="card-title">{{ form_title }}</div>
         <form method="post">
           {{ csrf_input() }}
@@ -18,17 +18,40 @@
           {% endif %}
           <div class="grid grid-2">
             <div class="form-group">
-              <label>De</label>
-              <input type="date" name="de" value="{{ form_de }}" required min="{{ hoje }}">
+              <label for="aus_de">De</label>
+              <input type="date" name="de" id="aus_de" value="{{ form_de }}" required min="{{ hoje }}">
             </div>
             <div class="form-group">
-              <label>Até</label>
-              <input type="date" name="ate" value="{{ form_ate }}" required min="{{ hoje }}">
+              <label for="aus_ate">Até</label>
+              <input type="date" name="ate" id="aus_ate" value="{{ form_ate }}" required min="{{ hoje }}">
             </div>
           </div>
+          <div class="grid grid-2">
+            <div class="form-group">
+              <label for="aus_hora_ini">Hora início <span class="text-muted small">(opcional)</span></label>
+              <input type="time" name="hora_inicio" id="aus_hora_ini" value="{{ form_hora_inicio }}">
+            </div>
+            <div class="form-group">
+              <label for="aus_hora_fim">Hora fim <span class="text-muted small">(opcional)</span></label>
+              <input type="time" name="hora_fim" id="aus_hora_fim" value="{{ form_hora_fim }}">
+            </div>
+          </div>
+          <div class="alert alert-info text-sm mb-md">
+            💡 Sem horas = dia inteiro. Com horas, só as refeições no período são afetadas.
+          </div>
           <div class="form-group">
-            <label>Motivo (opcional)</label>
-            <input type="text" name="motivo" maxlength="500" value="{{ form_motivo }}" placeholder="Ex: deslocação, exercício, visita...">
+            <label for="aus_motivo">Motivo (opcional)</label>
+            <input type="text" name="motivo" id="aus_motivo" maxlength="500" value="{{ form_motivo }}" placeholder="Ex: deslocação, exercício, visita...">
+          </div>
+          <div class="grid grid-2">
+            <label class="form-check">
+              <input type="checkbox" name="estufa_almoco" value="1" {{ "checked" if form_estufa_almoco }}>
+              Guardar almoço na estufa
+            </label>
+            <label class="form-check">
+              <input type="checkbox" name="estufa_jantar" value="1" {{ "checked" if form_estufa_jantar }}>
+              Guardar jantar na estufa
+            </label>
           </div>
           <div class="gap-btn">
             <button class="btn btn-ok">{{ "Atualizar" if edit_row else "Registar ausência" }}</button>
@@ -42,7 +65,7 @@
         <div class="card-title">Histórico de ausências</div>
         <div class="table-wrap">
           <table>
-            <thead><tr><th>De</th><th>Até</th><th>Motivo</th><th>Estado</th><th>Ações</th></tr></thead>
+            <thead><tr><th>De</th><th>Até</th><th>Horário</th><th>Motivo</th><th>Estado</th><th>Ações</th></tr></thead>
             <tbody>
               {% for r in rows %}
               {% set is_atual = r.ausente_de <= hoje <= r.ausente_ate %}
@@ -51,6 +74,15 @@
               <tr>
                 <td>{{ r.ausente_de }}</td>
                 <td>{{ r.ausente_ate }}</td>
+                <td>
+                  {% if r.hora_inicio and r.hora_fim %}
+                  {{ r.hora_inicio }}–{{ r.hora_fim }}
+                  {% if r.estufa_almoco %}<br><span class="badge badge-info">♨️ Alm estufa</span>{% endif %}
+                  {% if r.estufa_jantar %}<br><span class="badge badge-info">♨️ Jan estufa</span>{% endif %}
+                  {% else %}
+                  <span class="text-muted">Dia inteiro</span>
+                  {% endif %}
+                </td>
                 <td>{{ r.motivo or "—" }}</td>
                 <td>
                   {% if is_atual %}
@@ -65,18 +97,18 @@
                   <div class="gap-btn">
                     {% if pode %}
                     <a class="btn btn-ghost btn-sm" href="{{ url_for(".aluno_ausencias") }}?edit={{ r.id }}">✏️</a>
-                    <form method="post" style="display:inline">
+                    <form method="post" class="form-inline">
                       {{ csrf_input() }}
                       <input type="hidden" name="acao" value="remover">
                       <input type="hidden" name="id" value="{{ r.id }}">
-                      <button class="btn btn-danger btn-sm" onclick="return confirm('Remover ausência?')">🗑</button>
+                      <button class="btn btn-danger btn-sm" data-confirm="Remover ausência?">🗑</button>
                     </form>
                     {% endif %}
                   </div>
                 </td>
               </tr>
               {% else %}
-              <tr><td colspan="5" class="text-muted" style="padding:1.5rem;text-align:center">Sem ausências registadas.</td></tr>
+              <tr><td colspan="6" class="text-muted center empty-cell">Sem ausências registadas.</td></tr>
               {% endfor %}
             </tbody>
           </table>

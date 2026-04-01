@@ -2,9 +2,9 @@
 {% block content %}
 {% macro delta(curr, prev) %}
 {% set d = curr - prev %}
-{% if d > 0 %}<span style="color:#1e8449">↑{{ d }}</span>
-{% elif d < 0 %}<span style="color:#c0392b">↓{{ d|abs }}</span>
-{% else %}<span style="color:#6c757d">=</span>{% endif %}
+{% if d > 0 %}<span class="delta-up">↑{{ d }}</span>
+{% elif d < 0 %}<span class="delta-down">↓{{ d|abs }}</span>
+{% else %}<span class="delta-zero">=</span>{% endif %}
 {% endmacro %}
 
 <div class="container">
@@ -12,21 +12,21 @@
     {{ back_btn(back_url) }}
     <div class="page-title">📊 Dashboard Semanal</div>
   </div>
-  <div class="card" style="padding:.85rem 1.1rem;margin-bottom:.75rem">
+  <div class="card card-flush">
     <div class="flex-between">
       <div class="flex">
         <a class="btn btn-ghost btn-sm" href="{{ url_for('.dashboard_semanal', d0=prev_w) }}">← Semana anterior</a>
         <strong>{{ d0.strftime("%d/%m/%Y") }} — {{ d1.strftime("%d/%m/%Y") }}</strong>
         <a class="btn btn-ghost btn-sm" href="{{ url_for('.dashboard_semanal', d0=next_w) }}">Semana seguinte →</a>
       </div>
-      <form method="get" style="display:flex;gap:.3rem">
-        <input type="date" name="d0" value="{{ d0_str }}" style="width:auto">
+      <form method="get" class="date-nav-form">
+        <input type="date" name="d0" value="{{ d0_str }}" class="w-auto">
         <button class="btn btn-primary btn-sm">Ir</button>
       </form>
     </div>
   </div>
 
-  <div class="grid grid-4" style="margin-bottom:.85rem">
+  <div class="grid grid-4 mb-lg">
     <div class="stat-box"><div class="stat-num">{{ totais_semana.pa }}</div><div class="stat-lbl">PA semana</div></div>
     <div class="stat-box"><div class="stat-num">{{ totais_semana.alm_total }}</div><div class="stat-lbl">Almoços semana</div></div>
     <div class="stat-box"><div class="stat-num">{{ totais_semana.jan_total }}</div><div class="stat-lbl">Jantares semana</div></div>
@@ -36,58 +36,57 @@
   {# ── Gráfico Almoços ── #}
   <div class="card">
     <div class="card-title">🍽️ Almoços por dia
-      <span style="margin-left:.6rem;display:inline-flex;gap:.6rem">
-        {% for lb, cor in [('Normal', '#1e8449'), ('Veg.', '#2471a3'), ('Dieta', '#d68910')] %}
-        <span style="display:inline-flex;align-items:center;gap:.3rem;font-size:.72rem">
-          <span style="width:.65rem;height:.65rem;background:{{ cor }};border-radius:2px;display:inline-block"></span>{{ lb }}</span>
-        {% endfor %}
+      <span class="chart-legend">
+        <span class="chart-legend-item"><span class="legend-dot-sm chart-bar-norm"></span>Normal</span>
+        <span class="chart-legend-item"><span class="legend-dot-sm chart-bar-veg"></span>Veg.</span>
+        <span class="chart-legend-item"><span class="legend-dot-sm chart-bar-dieta"></span>Dieta</span>
       </span>
     </div>
-    <div style="display:flex;gap:.3rem;align-items:flex-end;padding:.3rem 0">
+    <div class="chart-row">
       {% for d in dias %}
-      <div style="display:flex;flex-direction:column;align-items:center;flex:1;background:{{ d.col_bg }};padding:.4rem .2rem;border-radius:6px">
-        <div style="width:100%;height:80px;display:flex;flex-direction:column;justify-content:flex-end;align-items:center">
-          <span style="font-size:.68rem;font-weight:800;color:#1a2533;margin-bottom:.1rem">{{ d.alm or '–' }}</span>
-          <div style="width:70%;display:flex;flex-direction:column;border-radius:4px 4px 0 0;overflow:hidden">
-            {% if d.pd %}<div style="height:{{ d.pd }}px;background:#d68910"></div>{% endif %}
-            {% if d.pv %}<div style="height:{{ d.pv }}px;background:#2471a3"></div>{% endif %}
-            {% if d.pn %}<div style="height:{{ d.pn }}px;background:#1e8449"></div>{% endif %}
+      <div class="chart-col {{ d.col_cls }}">
+        <div class="chart-area">
+          <span class="chart-val">{{ d.alm or '–' }}</span>
+          <div class="chart-bar-wrap">
+            {% if d.pd %}<div class="chart-bar-dieta" data-h="{{ d.pd }}"></div>{% endif %}
+            {% if d.pv %}<div class="chart-bar-veg" data-h="{{ d.pv }}"></div>{% endif %}
+            {% if d.pn %}<div class="chart-bar-norm" data-h="{{ d.pn }}"></div>{% endif %}
           </div>
         </div>
-        <div style="font-size:.68rem;font-weight:800;color:{{ d.dow_col }};margin-top:.2rem">{{ d.dow }}</div>
-        <div style="font-size:.62rem;color:#6c757d">{{ d.data_fmt }}</div>
+        <div class="chart-dow {{ d.dow_cls }}">{{ d.dow }}</div>
+        <div class="chart-date">{{ d.data_fmt }}</div>
       </div>
       {% endfor %}
     </div>
-    <div style="border-top:2px solid #e9ecef;margin-top:.3rem"></div>
+    <div class="chart-divider"></div>
   </div>
 
   {# ── Gráficos Jantares + PA ── #}
   <div class="grid grid-2">
     <div class="card">
       <div class="card-title">🌙 Jantares por dia</div>
-      <div style="display:flex;gap:.3rem;align-items:flex-end;padding:.3rem 0">
+      <div class="chart-row">
         {% for d in dias %}
-        <div style="display:flex;flex-direction:column;align-items:center;flex:1;background:{{ d.col_bg }};padding:.4rem .2rem;border-radius:6px">
-          <div style="width:100%;height:80px;display:flex;flex-direction:column;justify-content:flex-end;align-items:center">
-            <span style="font-size:.68rem;font-weight:800;color:#1a2533;margin-bottom:.1rem">{{ d.jan or '–' }}</span>
-            <div style="width:70%;height:{{ [0, d.pj]|max }}px;background:#1a5276;border-radius:4px 4px 0 0"></div>
+        <div class="chart-col {{ d.col_cls }}">
+          <div class="chart-area">
+            <span class="chart-val">{{ d.jan or '–' }}</span>
+            <div class="chart-bar-single chart-bar-jantar" data-h="{{ [0, d.pj]|max }}"></div>
           </div>
-          <div style="font-size:.68rem;font-weight:800;color:{{ d.dow_col }};margin-top:.2rem">{{ d.dow }}</div>
+          <div class="chart-dow {{ d.dow_cls }}">{{ d.dow }}</div>
         </div>
         {% endfor %}
       </div>
     </div>
     <div class="card">
       <div class="card-title">☕ Pequenos Almoços por dia</div>
-      <div style="display:flex;gap:.3rem;align-items:flex-end;padding:.3rem 0">
+      <div class="chart-row">
         {% for d in dias %}
-        <div style="display:flex;flex-direction:column;align-items:center;flex:1;background:{{ d.col_bg }};padding:.4rem .2rem;border-radius:6px">
-          <div style="width:100%;height:80px;display:flex;flex-direction:column;justify-content:flex-end;align-items:center">
-            <span style="font-size:.68rem;font-weight:800;color:#1a2533;margin-bottom:.1rem">{{ d.t.pa or '–' }}</span>
-            <div style="width:70%;height:{{ [0, d.pp]|max }}px;background:#c9a227;border-radius:4px 4px 0 0"></div>
+        <div class="chart-col {{ d.col_cls }}">
+          <div class="chart-area">
+            <span class="chart-val">{{ d.t.pa or '–' }}</span>
+            <div class="chart-bar-single chart-bar-pa" data-h="{{ [0, d.pp]|max }}"></div>
           </div>
-          <div style="font-size:.68rem;font-weight:800;color:{{ d.dow_col }};margin-top:.2rem">{{ d.dow }}</div>
+          <div class="chart-dow {{ d.dow_cls }}">{{ d.dow }}</div>
         </div>
         {% endfor %}
       </div>
@@ -99,50 +98,52 @@
     <div class="card-title">📋 Tabela detalhada</div>
     <div class="table-wrap">
       <table>
-        <thead><tr><th>Dia</th><th>PA</th><th>Lan</th><th>Alm N</th><th>Alm V</th><th>Alm D</th><th>Jan N</th><th>Jan V</th><th>Jan D</th>{% if perfil != 'cozinha' %}<th class="center">Sai</th>{% endif %}</tr></thead>
+        <thead><tr><th>Dia</th><th>PA</th><th>Lan</th><th>Alm N</th><th>Alm V</th><th>Alm D</th><th>♨️ Alm</th><th>Jan N</th><th>Jan V</th><th>Jan D</th>{% if perfil != 'cozinha' %}<th class="center">Sai</th>{% endif %}<th>♨️ Jan</th></tr></thead>
         <tbody>
           {% for d in dias %}
-          <tr style="background:{{ d.col_bg }}">
-            <td><strong style="color:{{ d.dow_col }}">{{ d.dow }}</strong> {{ d.data_fmt }}</td>
+          <tr class="{{ d.col_cls }}">
+            <td><strong class="{{ d.dow_cls }}">{{ d.dow }}</strong> {{ d.data_fmt }}</td>
             <td class="center">{{ d.t.pa }}</td><td class="center">{{ d.t.lan }}</td>
-            <td class="center">{{ d.t.alm_norm }}</td><td class="center">{{ d.t.alm_veg }}</td><td class="center">{{ d.t.alm_dieta }}</td>
+            <td class="center">{{ d.t.alm_norm }}</td><td class="center">{{ d.t.alm_veg }}</td><td class="center">{{ d.t.alm_dieta }}</td><td class="center text-estufa">{{ d.t.alm_estufa }}</td>
             <td class="center">{{ d.t.jan_norm }}</td><td class="center">{{ d.t.jan_veg }}</td><td class="center">{{ d.t.jan_dieta }}</td>
-            {% if perfil != 'cozinha' %}<td class="center">{{ d.t.jan_sai }}</td>{% endif %}
+            {% if perfil != 'cozinha' %}<td class="center">{{ d.t.jan_sai }}</td>{% endif %}<td class="center text-estufa">{{ d.t.jan_estufa }}</td>
           </tr>
           {% endfor %}
           {# Totais semana #}
-          <tr style="background:#f0f4f8;font-weight:700;border-top:2px solid #0a2d4e">
+          <tr class="row-summary">
             <td>Total semana</td>
             <td class="center">{{ totais_semana.pa }}</td><td class="center">{{ totais_semana.lan }}</td>
-            <td class="center">{{ totais_semana.alm_norm }}</td><td class="center">{{ totais_semana.alm_veg }}</td><td class="center">{{ totais_semana.alm_dieta }}</td>
+            <td class="center">{{ totais_semana.alm_norm }}</td><td class="center">{{ totais_semana.alm_veg }}</td><td class="center">{{ totais_semana.alm_dieta }}</td><td class="center text-estufa">{{ totais_semana.alm_estufa }}</td>
             <td class="center">{{ totais_semana.jan_norm }}</td><td class="center">{{ totais_semana.jan_veg }}</td><td class="center">{{ totais_semana.jan_dieta }}</td>
-            {% if perfil != 'cozinha' %}<td class="center"><strong>{{ totais_semana.jan_sai }}</strong></td>{% endif %}
+            {% if perfil != 'cozinha' %}<td class="center"><strong>{{ totais_semana.jan_sai }}</strong></td>{% endif %}<td class="center text-estufa">{{ totais_semana.jan_estufa }}</td>
           </tr>
           {# Semana anterior #}
-          <tr style="background:#fef9e7;font-size:.82rem">
+          <tr class="row-prev">
             <td>Semana anterior</td>
             <td class="center">{{ totais_prev.pa }}</td><td class="center">{{ totais_prev.lan }}</td>
-            <td class="center">{{ totais_prev.alm_norm }}</td><td class="center">{{ totais_prev.alm_veg }}</td><td class="center">{{ totais_prev.alm_dieta }}</td>
+            <td class="center">{{ totais_prev.alm_norm }}</td><td class="center">{{ totais_prev.alm_veg }}</td><td class="center">{{ totais_prev.alm_dieta }}</td><td class="center text-estufa">{{ totais_prev.alm_estufa }}</td>
             <td class="center">{{ totais_prev.jan_norm }}</td><td class="center">{{ totais_prev.jan_veg }}</td><td class="center">{{ totais_prev.jan_dieta }}</td>
-            {% if perfil != 'cozinha' %}<td class="center">{{ totais_prev.jan_sai }}</td>{% endif %}
+            {% if perfil != 'cozinha' %}<td class="center">{{ totais_prev.jan_sai }}</td>{% endif %}<td class="center text-estufa">{{ totais_prev.jan_estufa }}</td>
           </tr>
           {# Variação #}
-          <tr style="background:#fff;font-size:.82rem">
+          <tr class="row-delta">
             <td>Variação</td>
             <td class="center">{{ delta(totais_semana.pa, totais_prev.pa) }}</td>
             <td class="center">{{ delta(totais_semana.lan, totais_prev.lan) }}</td>
             <td class="center">{{ delta(totais_semana.alm_norm, totais_prev.alm_norm) }}</td>
             <td class="center">{{ delta(totais_semana.alm_veg, totais_prev.alm_veg) }}</td>
             <td class="center">{{ delta(totais_semana.alm_dieta, totais_prev.alm_dieta) }}</td>
+            <td class="center text-estufa">{{ delta(totais_semana.alm_estufa, totais_prev.alm_estufa) }}</td>
             <td class="center">{{ delta(totais_semana.jan_norm, totais_prev.jan_norm) }}</td>
             <td class="center">{{ delta(totais_semana.jan_veg, totais_prev.jan_veg) }}</td>
             <td class="center">{{ delta(totais_semana.jan_dieta, totais_prev.jan_dieta) }}</td>
             {% if perfil != 'cozinha' %}<td class="center">{{ delta(totais_semana.jan_sai, totais_prev.jan_sai) }}</td>{% endif %}
+            <td class="center text-estufa">{{ delta(totais_semana.jan_estufa, totais_prev.jan_estufa) }}</td>
           </tr>
         </tbody>
       </table>
     </div>
-    <div class="gap-btn" style="margin-top:.8rem">
+    <div class="gap-btn mt-lg">
       <a class="btn btn-primary" href="{{ url_for('.exportar_relatorio', d0=d0_str, fmt='csv') }}">⬇ CSV</a>
       <a class="btn btn-primary" href="{{ url_for('.exportar_relatorio', d0=d0_str, fmt='xlsx') }}">⬇ Excel</a>
     </div>

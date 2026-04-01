@@ -1,5 +1,6 @@
 """Rotas do blueprint cmd."""
 
+import logging
 from datetime import date
 
 from flask import (
@@ -10,20 +11,32 @@ from flask import (
     url_for,
 )
 
+from core.absences import get_ausencias_cmd, remover_ausencia_autorizada
 from core.auth_db import user_by_nii
-from core.database import db
+from core.detencoes import (
+    cancelar_licencas_periodo,
+    criar_detencao,
+    get_alunos_para_selecao,
+    get_detencoes_lista,
+    remover_detencao,
+)
+from core.users import (
+    get_aluno_profile_data,
+    get_user_by_nii_fields,
+    update_aluno_data,
+)
 from blueprints.cmd import cmd_bp
 from utils.auth import current_user, role_required
 from utils.business import (
     _auto_marcar_refeicoes_detido,
     _registar_ausencia,
-    _remover_ausencia,
 )
 from utils.helpers import (
     _audit,
     _parse_date,
 )
 from utils.passwords import _reset_pw
+from utils.constants import MSG_ERRO_INTERNO, MSG_ID_INVALIDO, MSG_NAO_ENCONTRADO
 from utils.validators import (
     _val_email,
     _val_int_id,
@@ -32,6 +45,8 @@ from utils.validators import (
     _val_phone,
     _val_text,
 )
+
+log = logging.getLogger(__name__)
 
 
 @cmd_bp.route("/cmd/editar-aluno/<nii>", methods=["GET", "POST"])
@@ -44,17 +59,10 @@ def cmd_editar_aluno(nii):
     d_ret = request.args.get("d", date.today().isoformat())
 
     # Buscar o aluno
-    with db() as conn:
-        aluno = dict(
-            conn.execute(
-                "SELECT id,NII,NI,Nome_completo,ano,email,telemovel FROM utilizadores WHERE NII=?",
-                (nii,),
-            ).fetchone()
-            or {}
-        )
+    aluno = get_user_by_nii_fields(nii) or {}
 
     if not aluno:
-        flash("Aluno não encontrado.", "error")
+        flash(MSG_NAO_ENCONTRADO, "error")
         back_ano = aluno.get("ano", ano_cmd or 1) if aluno else (ano_cmd or 1)
         return redirect(url_for("operations.lista_alunos_ano", ano=back_ano, d=d_ret))
 
@@ -78,20 +86,16 @@ def cmd_editar_aluno(nii):
             flash("Telemóvel inválido.", "error")
         else:
             try:
-                with db() as conn:
-                    conn.execute(
-                        "UPDATE utilizadores SET Nome_completo=?,NI=?,email=?,telemovel=? WHERE NII=?",
-                        (nome_n, ni_n or None, email_n, telef_n, nii),
-                    )
-                    conn.commit()
+                update_aluno_data(nii, nome_n, ni_n, email_n, telef_n)
                 flash(f"Dados de {nome_n} actualizados.", "ok")
                 return redirect(
                     url_for(
                         "lista_alunos_ano", ano=ano_ret or aluno.get("ano", 1), d=d_ret
                     )
                 )
-            except Exception as ex:
-                flash(f"Erro: {ex}", "error")
+            except Exception:
+                log.exception("cmd_editar_aluno: erro ao atualizar dados")
+                flash(MSG_ERRO_INTERNO, "error")
 
     back_url = url_for("operations.lista_alunos_ano", ano=ano_ret, d=d_ret)
     return render_template(
@@ -113,19 +117,13 @@ def cmd_reset_password(nii):
     ano_ret = request.form.get("ano", str(ano_cmd) if ano_cmd else "1")
     d_ret = request.form.get("d", date.today().isoformat())
 
-    with db() as conn:
-        aluno = conn.execute(
-            "SELECT NII, Nome_completo, ano, perfil FROM utilizadores WHERE NII=?",
-            (nii,),
-        ).fetchone()
+    aluno = get_user_by_nii_fields(nii, "NII,Nome_completo,ano,perfil")
 
     if not aluno:
-        flash("Aluno não encontrado.", "error")
+        flash(MSG_NAO_ENCONTRADO, "error")
         return redirect(
             url_for("operations.lista_alunos_ano", ano=ano_cmd or 1, d=d_ret)
         )
-
-    aluno = dict(aluno)
 
     # Só pode resetar alunos (não admins/cmd/cozinha/oficialdia)
     if aluno.get("perfil") != "aluno":
@@ -167,16 +165,11 @@ def ver_perfil_aluno(nii):
     ano_ret = request.args.get("ano", "")
     d_ret = request.args.get("d", date.today().isoformat())
 
-    with db() as conn:
-        aluno = conn.execute(
-            "SELECT id,NII,NI,Nome_completo,ano,email,telemovel FROM utilizadores WHERE NII=?",
-            (nii,),
-        ).fetchone()
+    aluno = get_user_by_nii_fields(nii)
 
     if not aluno:
-        flash("Aluno não encontrado.", "error")
+        flash(MSG_NAO_ENCONTRADO, "error")
         return redirect(url_for("operations.painel_dia"))
-    aluno = dict(aluno)
 
     # CMD só pode ver alunos do seu ano
     if perfil == "cmd" and str(aluno.get("ano", 0)) != str(u.get("ano", "")):
@@ -191,30 +184,7 @@ def ver_perfil_aluno(nii):
 
     hoje = date.today()
     uid = aluno["id"]
-    with db() as conn:
-        total_ref = conn.execute(
-            "SELECT COUNT(*) c FROM refeicoes WHERE utilizador_id=?", (uid,)
-        ).fetchone()["c"]
-        ausencias_ativas = conn.execute(
-            """SELECT COUNT(*) c FROM ausencias WHERE utilizador_id=?
-               AND ausente_de<=? AND ausente_ate>=?""",
-            (uid, hoje.isoformat(), hoje.isoformat()),
-        ).fetchone()["c"]
-        aus_recentes = [
-            dict(r)
-            for r in conn.execute(
-                """SELECT ausente_de, ausente_ate, motivo FROM ausencias
-               WHERE utilizador_id=? ORDER BY ausente_de DESC LIMIT 5""",
-                (uid,),
-            ).fetchall()
-        ]
-        # Refeições de hoje
-        ref_hoje = conn.execute(
-            "SELECT * FROM refeicoes WHERE utilizador_id=? AND data=?",
-            (uid, hoje.isoformat()),
-        ).fetchone()
-
-    ref_hoje = dict(ref_hoje) if ref_hoje else {}
+    profile = get_aluno_profile_data(uid, hoje.isoformat())
 
     back_url = url_for(
         "operations.lista_alunos_ano", ano=ano_ret or aluno["ano"], d=d_ret
@@ -225,10 +195,12 @@ def ver_perfil_aluno(nii):
         back_url=back_url,
         ano_ret=ano_ret,
         d_ret=d_ret,
-        total_ref=total_ref,
-        ausencias_ativas=ausencias_ativas,
-        aus_recentes=aus_recentes,
-        ref_hoje=ref_hoje,
+        total_ref=profile["total_ref"],
+        ausencias_ativas=profile["ausencias_ativas"],
+        aus_recentes=profile["aus_recentes"],
+        ref_hoje=profile["ref_hoje"],
+        det_recentes=profile["det_recentes"],
+        detencoes_ativas=profile["detencoes_ativas"],
         hoje=hoje,
     )
 
@@ -250,37 +222,62 @@ def ausencias_cmd():
         if acao == "remover":
             aid = _val_int_id(request.form.get("id"))
             if aid is None:
-                flash("ID inválido.", "error")
+                flash(MSG_ID_INVALIDO, "error")
                 return redirect(url_for(".ausencias_cmd"))
-            # Validar que a ausência pertence ao ano do cmd
-            with db() as conn:
-                aus = conn.execute(
-                    """SELECT a.id FROM ausencias a
-                    JOIN utilizadores u ON u.id=a.utilizador_id
-                    WHERE a.id=? AND (u.ano=? OR ?=0)""",
-                    (aid, ano_cmd, perfil == "admin"),
-                ).fetchone()
-            if aus:
-                _remover_ausencia(aid)
+            if remover_ausencia_autorizada(aid, ano_cmd, perfil == "admin"):
                 flash("Ausência removida.", "ok")
             else:
-                flash("Não autorizado.", "error")
+                flash(MSG_NAO_ENCONTRADO, "error")
             return redirect(url_for(".ausencias_cmd"))
+        if acao == "bulk_ausencia":
+            niis = request.form.getlist("niis")
+            if not niis:
+                flash("Seleciona pelo menos um aluno.", "error")
+                return redirect(url_for(".ausencias_cmd"))
+            de = request.form.get("de", "")
+            ate = request.form.get("ate", "")
+            motivo = _val_text(request.form.get("motivo", ""))[:500]
+            count_ok = 0
+            erros = []
+            for nii_b in niis:
+                db_b = user_by_nii(nii_b.strip())
+                if not db_b:
+                    erros.append(f"{nii_b}: não encontrado")
+                    continue
+                if perfil == "cmd" and int(db_b.get("ano", 0)) != ano_cmd:
+                    erros.append(f"{db_b['Nome_completo']}: outro ano")
+                    continue
+                ok, err = _registar_ausencia(db_b["id"], de, ate, motivo, u["nii"])
+                if ok:
+                    count_ok += 1
+                else:
+                    erros.append(f"{db_b['Nome_completo']}: {err}")
+            flash(f"{count_ok}/{len(niis)} ausência(s) registada(s).", "ok" if count_ok else "error")
+            if erros:
+                flash("Falhas: " + "; ".join(erros[:5]), "warn")
+            return redirect(url_for(".ausencias_cmd"))
+
         nii = request.form.get("nii", "").strip()
         db_u = user_by_nii(nii)
         if not db_u:
-            flash("Utilizador não encontrado.", "error")
+            flash(MSG_NAO_ENCONTRADO, "error")
         elif perfil == "cmd" and int(db_u.get("ano", 0)) != ano_cmd:
             flash(
                 f"Só podes registar ausências para alunos do {ano_cmd}º ano.", "error"
             )
         else:
+            hora_inicio = request.form.get("hora_inicio", "").strip() or None
+            hora_fim = request.form.get("hora_fim", "").strip() or None
+            estufa_almoco = request.form.get("estufa_almoco") == "1"
+            estufa_jantar = request.form.get("estufa_jantar") == "1"
             ok, err = _registar_ausencia(
                 db_u["id"],
                 request.form.get("de", ""),
                 request.form.get("ate", ""),
                 _val_text(request.form.get("motivo", ""))[:500],
                 u["nii"],
+                hora_inicio=hora_inicio, hora_fim=hora_fim,
+                estufa_almoco=estufa_almoco, estufa_jantar=estufa_jantar,
             )
             flash(
                 f"Ausência registada para {db_u['Nome_completo']}."
@@ -290,44 +287,10 @@ def ausencias_cmd():
             )
         return redirect(url_for(".ausencias_cmd"))
 
-    with db() as conn:
-        if perfil == "cmd":
-            rows = [
-                dict(r)
-                for r in conn.execute(
-                    """SELECT a.id, u.NII, u.Nome_completo, u.NI, u.ano,
-                       a.ausente_de, a.ausente_ate, a.motivo
-                    FROM ausencias a JOIN utilizadores u ON u.id=a.utilizador_id
-                    WHERE u.perfil='aluno' AND u.ano=?
-                    ORDER BY a.ausente_de DESC""",
-                    (ano_cmd,),
-                ).fetchall()
-            ]
-        else:
-            rows = [
-                dict(r)
-                for r in conn.execute(
-                    """SELECT a.id, u.NII, u.Nome_completo, u.NI, u.ano,
-                       a.ausente_de, a.ausente_ate, a.motivo
-                    FROM ausencias a JOIN utilizadores u ON u.id=a.utilizador_id
-                    WHERE u.perfil='aluno'
-                    ORDER BY a.ausente_de DESC"""
-                ).fetchall()
-            ]
+    rows = get_ausencias_cmd(ano_cmd if perfil == "cmd" else None)
 
     # Alunos do ano para pesquisa rápida
-    with db() as conn:
-        alunos_ano = (
-            [
-                dict(r)
-                for r in conn.execute(
-                    "SELECT NII, NI, Nome_completo FROM utilizadores WHERE perfil='aluno' AND ano=? ORDER BY NI",
-                    (ano_cmd,),
-                ).fetchall()
-            ]
-            if perfil == "cmd"
-            else []
-        )
+    alunos_ano = get_alunos_para_selecao(ano_cmd, perfil) if perfil == "cmd" else []
 
     hoje = date.today().isoformat()
     titulo = (
@@ -369,21 +332,51 @@ def detencoes_cmd():
         if acao == "remover":
             did = _val_int_id(request.form.get("id", ""))
             if did is None:
-                flash("ID inválido.", "error")
+                flash(MSG_ID_INVALIDO, "error")
                 return redirect(url_for(".detencoes_cmd"))
-            with db() as conn:
-                ok = conn.execute(
-                    """SELECT d.id FROM detencoes d
-                    JOIN utilizadores uu ON uu.id=d.utilizador_id
-                    WHERE d.id=? AND (uu.ano=? OR ?=1)""",
-                    (did, ano_cmd, 1 if perfil == "admin" else 0),
-                ).fetchone()
+            if remover_detencao(did, ano_cmd, perfil == "admin"):
+                flash("Detenção removida.", "ok")
+            else:
+                flash("Não autorizado.", "error")
+            return redirect(url_for(".detencoes_cmd"))
+
+        if acao == "bulk_detencao":
+            niis = request.form.getlist("niis")
+            if not niis:
+                flash("Seleciona pelo menos um aluno.", "error")
+                return redirect(url_for(".detencoes_cmd"))
+            de = request.form.get("de", "").strip()
+            ate = request.form.get("ate", "").strip()
+            motivo = _val_text(request.form.get("motivo", ""))[:500]
+            try:
+                d1 = _parse_date(de)
+                d2 = _parse_date(ate)
+                if d2 < d1:
+                    flash("A data 'Até' tem de ser igual ou posterior à data 'De'.", "error")
+                    return redirect(url_for(".detencoes_cmd"))
+            except Exception:
+                flash("Datas inválidas.", "error")
+                return redirect(url_for(".detencoes_cmd"))
+            count_ok = 0
+            erros = []
+            for nii_b in niis:
+                db_b = user_by_nii(nii_b.strip())
+                if not db_b:
+                    erros.append(f"{nii_b}: não encontrado")
+                    continue
+                if perfil == "cmd" and int(db_b.get("ano", 0)) != ano_cmd:
+                    erros.append(f"{db_b['Nome_completo']}: outro ano")
+                    continue
+                ok, msg = criar_detencao(db_b["id"], d1, d2, motivo, u["nii"])
                 if ok:
-                    conn.execute("DELETE FROM detencoes WHERE id=?", (did,))
-                    conn.commit()
-                    flash("Detenção removida.", "ok")
+                    _auto_marcar_refeicoes_detido(db_b["id"], d1, d2, u["nii"])
+                    cancelar_licencas_periodo(db_b["id"], d1, d2)
+                    count_ok += 1
                 else:
-                    flash("Não autorizado.", "error")
+                    erros.append(f"{db_b['Nome_completo']}: {msg}")
+            flash(f"{count_ok}/{len(niis)} detenção(ões) registada(s).", "ok" if count_ok else "error")
+            if erros:
+                flash("Falhas: " + "; ".join(erros[:5]), "warn")
             return redirect(url_for(".detencoes_cmd"))
 
         # criar
@@ -394,7 +387,7 @@ def detencoes_cmd():
 
         db_u = user_by_nii(nii)
         if not db_u:
-            flash("Utilizador não encontrado.", "error")
+            flash(MSG_NAO_ENCONTRADO, "error")
             return redirect(url_for(".detencoes_cmd"))
 
         if perfil == "cmd" and int(db_u.get("ano", 0)) != ano_cmd:
@@ -412,27 +405,20 @@ def detencoes_cmd():
                 )
                 return redirect(url_for(".detencoes_cmd"))
         except Exception:
+            log.exception("detencoes_cmd: erro ao processar datas")
             flash("Datas inválidas.", "error")
             return redirect(url_for(".detencoes_cmd"))
 
-        with db() as conn:
-            conn.execute(
-                """INSERT INTO detencoes(utilizador_id, detido_de, detido_ate, motivo, criado_por)
-                            VALUES(?,?,?,?,?)""",
-                (db_u["id"], d1.isoformat(), d2.isoformat(), motivo or None, u["nii"]),
-            )
-            conn.commit()
+        ok, msg = criar_detencao(db_u["id"], d1, d2, motivo, u["nii"])
+        if not ok:
+            flash(msg, "error")
+            return redirect(url_for(".detencoes_cmd"))
 
         # Auto-marcar todas as refeições para os dias de detenção (se não estiverem marcadas)
         _auto_marcar_refeicoes_detido(db_u["id"], d1, d2, u["nii"])
 
         # Cancelar licenças existentes durante o período de detenção
-        with db() as conn:
-            conn.execute(
-                "DELETE FROM licencas WHERE utilizador_id=? AND data>=? AND data<=?",
-                (db_u["id"], d1.isoformat(), d2.isoformat()),
-            )
-            conn.commit()
+        cancelar_licencas_periodo(db_u["id"], d1, d2)
 
         flash(
             f"Detenção registada para {db_u['Nome_completo']}. Refeições auto-marcadas.",
@@ -440,51 +426,8 @@ def detencoes_cmd():
         )
         return redirect(url_for(".detencoes_cmd"))
 
-    with db() as conn:
-        if perfil == "cmd":
-            rows = [
-                dict(r)
-                for r in conn.execute(
-                    """SELECT d.id, uu.NII, uu.Nome_completo, uu.NI, uu.ano,
-                       d.detido_de, d.detido_ate, d.motivo
-                    FROM detencoes d
-                    JOIN utilizadores uu ON uu.id=d.utilizador_id
-                    WHERE uu.perfil='aluno' AND uu.ano=?
-                    ORDER BY d.detido_de DESC""",
-                    (ano_cmd,),
-                ).fetchall()
-            ]
-        else:
-            rows = [
-                dict(r)
-                for r in conn.execute(
-                    """SELECT d.id, uu.NII, uu.Nome_completo, uu.NI, uu.ano,
-                       d.detido_de, d.detido_ate, d.motivo
-                    FROM detencoes d
-                    JOIN utilizadores uu ON uu.id=d.utilizador_id
-                    WHERE uu.perfil='aluno'
-                    ORDER BY d.detido_de DESC"""
-                ).fetchall()
-            ]
-
-    with db() as conn:
-        if perfil == "cmd":
-            alunos_ano = [
-                dict(r)
-                for r in conn.execute(
-                    "SELECT NII, NI, Nome_completo FROM utilizadores WHERE perfil='aluno' AND ano=? ORDER BY NI",
-                    (ano_cmd,),
-                ).fetchall()
-            ]
-        elif perfil == "admin":
-            alunos_ano = [
-                dict(r)
-                for r in conn.execute(
-                    "SELECT NII, NI, Nome_completo FROM utilizadores WHERE perfil='aluno' ORDER BY ano, NI"
-                ).fetchall()
-            ]
-        else:
-            alunos_ano = []
+    rows = get_detencoes_lista(ano_cmd if perfil == "cmd" else None)
+    alunos_ano = get_alunos_para_selecao(ano_cmd, perfil)
 
     hoje = date.today().isoformat()
     titulo = (

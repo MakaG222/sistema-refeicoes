@@ -7,10 +7,16 @@
     <form method="post">
       {{ csrf_input() }}
       <div class="grid grid-2">
-        <div class="form-group"><label>NII do utilizador</label><input type="text" name="nii" maxlength="32" required placeholder="NII"></div>
-        <div class="form-group"><label>Motivo (opcional)</label><input type="text" name="motivo" maxlength="500" placeholder="Ex: deslocação, prova..."></div>
-        <div class="form-group"><label>De</label><input type="date" name="de" required></div>
-        <div class="form-group"><label>Até</label><input type="date" name="ate" required></div>
+        <div class="form-group"><label for="aus_nii">NII do utilizador</label><input type="text" name="nii" id="aus_nii" maxlength="32" required placeholder="NII"></div>
+        <div class="form-group"><label for="aus_motivo">Motivo (opcional)</label><input type="text" name="motivo" id="aus_motivo" maxlength="500" placeholder="Ex: deslocação, prova..."></div>
+        <div class="form-group"><label for="aus_de">De</label><input type="date" name="de" id="aus_de" required></div>
+        <div class="form-group"><label for="aus_ate">Até</label><input type="date" name="ate" id="aus_ate" required></div>
+        <div class="form-group"><label for="aus_hora_ini">Hora início <span class="text-muted small">(opcional)</span></label><input type="time" name="hora_inicio" id="aus_hora_ini"></div>
+        <div class="form-group"><label for="aus_hora_fim">Hora fim <span class="text-muted small">(opcional)</span></label><input type="time" name="hora_fim" id="aus_hora_fim"></div>
+      </div>
+      <div class="grid grid-2 mb-md">
+        <label class="form-check"><input type="checkbox" name="estufa_almoco" value="1"> Guardar almoço na estufa</label>
+        <label class="form-check"><input type="checkbox" name="estufa_jantar" value="1"> Guardar jantar na estufa</label>
       </div>
       <button class="btn btn-ok">Registar</button>
     </form>
@@ -19,12 +25,21 @@
     <div class="card-title">Lista de ausências</div>
     <div class="table-wrap">
       <table>
-        <thead><tr><th>Utilizador</th><th>De</th><th>Até</th><th>Motivo</th><th>Estado</th><th></th></tr></thead>
+        <thead><tr><th>Utilizador</th><th>De</th><th>Até</th><th>Horário</th><th>Motivo</th><th>Estado</th><th></th></tr></thead>
         <tbody>
           {% for r in rows %}
           <tr>
             <td><strong>{{ r.Nome_completo }}</strong><br><span class="text-muted small">{{ r.NII }} · {{ r.ano }}º ano</span></td>
             <td>{{ r.ausente_de }}</td><td>{{ r.ausente_ate }}</td>
+            <td>
+              {% if r.hora_inicio and r.hora_fim %}
+              {{ r.hora_inicio }}–{{ r.hora_fim }}
+              {% if r.estufa_almoco %}<br><span class="badge badge-info">♨️ Alm</span>{% endif %}
+              {% if r.estufa_jantar %}<br><span class="badge badge-info">♨️ Jan</span>{% endif %}
+              {% else %}
+              <span class="text-muted">Dia inteiro</span>
+              {% endif %}
+            </td>
             <td>{{ r.motivo or "—" }}</td>
             <td>
               {% if r.ausente_de <= hoje and hoje <= r.ausente_ate %}
@@ -34,7 +49,7 @@
               {% endif %}
             </td>
             <td>
-              <form method="post" style="display:inline">
+              <form method="post" class="form-inline">
                 {{ csrf_input() }}
                 <input type="hidden" name="acao" value="remover">
                 <input type="hidden" name="id" value="{{ r.id }}">
@@ -43,7 +58,7 @@
             </td>
           </tr>
           {% else %}
-          <tr><td colspan="6" class="text-muted center" style="padding:1.5rem">Sem ausências.</td></tr>
+          <tr><td colspan="7" class="text-muted center empty-cell">Sem ausências.</td></tr>
           {% endfor %}
         </tbody>
       </table>

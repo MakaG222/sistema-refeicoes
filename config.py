@@ -29,6 +29,29 @@ CRON_API_TOKEN: str = os.environ.get("CRON_API_TOKEN", "")
 DIAS_ANTECEDENCIA: int = int(os.environ.get("DIAS_ANTECEDENCIA", "15"))
 """Alunos podem marcar refeições até N dias à frente (inclui fins-de-semana)."""
 
+# ── Regras de licença por ano ────────────────────────────────────────────────
+# Cada entrada: (max_dias_uteis_seg_qui, dias_permitidos)
+# dias_permitidos: lista de weekday indexes (0=seg ... 6=dom)
+LICENCA_REGRAS_ANO: dict[int, dict] = {
+    1: {"max_dias_uteis": 1, "dias_permitidos": [2, 4, 5, 6]},       # só quarta + fds
+    2: {"max_dias_uteis": 2, "dias_permitidos": [0, 1, 2, 3, 4, 5, 6]},
+    3: {"max_dias_uteis": 3, "dias_permitidos": [0, 1, 2, 3, 4, 5, 6]},
+}
+LICENCA_REGRAS_ANO_DEFAULT: dict = {
+    "max_dias_uteis": 4, "dias_permitidos": [0, 1, 2, 3, 4, 5, 6],
+}
+"""4º ano e acima: todos os dias. NI com prefixo '7' também usa este default."""
+
+# ── Horários das refeições (para ausências inteligentes) ────────────────────
+# Formato: (hora_inicio, hora_fim) — a ausência afeta a refeição se houver
+# sobreposição com esta janela.
+REFEICAO_HORARIOS: dict[str, tuple[str, str]] = {
+    "pequeno_almoco": ("07:00", "09:30"),
+    "almoco": ("12:00", "14:00"),
+    "lanche": ("16:00", "17:30"),
+    "jantar": ("19:00", "21:00"),
+}
+
 # ── Servidor ─────────────────────────────────────────────────────────────────
 PORT: int = int(os.environ.get("PORT", "8080"))
 DEBUG: bool = os.environ.get("DEBUG", "false").lower() == "true"
@@ -43,7 +66,7 @@ class Config:
     SESSION_COOKIE_SAMESITE = "Lax"
     SESSION_COOKIE_SECURE = is_production  # HTTPS obrigatório em produção
     SESSION_PERMANENT = True  # controlada via PERMANENT_SESSION_LIFETIME
-    PERMANENT_SESSION_LIFETIME = 180  # 3 min de inatividade → sessão expira
+    PERMANENT_SESSION_LIFETIME = 600  # 10 min de inatividade → sessão expira
     PREFERRED_URL_SCHEME = "https" if is_production else "http"
 
     # JSON
@@ -60,23 +83,33 @@ def configure_logging(flask_app) -> None:
         """Formatter que produz uma linha JSON por log entry."""
 
         def format(self, record: logging.LogRecord) -> str:
+            rid = getattr(record, "request_id", "-")
             entry = {
                 "ts": self.formatTime(record, self.datefmt),
                 "level": record.levelname,
                 "logger": record.name,
                 "msg": record.getMessage(),
+                "rid": rid,
             }
             if record.exc_info and record.exc_info[0] is not None:
                 entry["exception"] = self.formatException(record.exc_info)
             return json.dumps(entry, ensure_ascii=False)
+
+    class DevFormatter(logging.Formatter):
+        """Formatter de dev que inclui request_id se disponível."""
+
+        def format(self, record: logging.LogRecord) -> str:
+            if not hasattr(record, "request_id"):
+                record.request_id = "-"  # type: ignore[attr-defined]
+            return super().format(record)
 
     handler = logging.StreamHandler(sys.stdout)
     if is_production:
         handler.setFormatter(JsonFormatter(datefmt="%Y-%m-%dT%H:%M:%S"))
     else:
         handler.setFormatter(
-            logging.Formatter(
-                "%(asctime)s %(levelname)s [%(name)s]: %(message)s",
+            DevFormatter(
+                "%(asctime)s %(levelname)s [%(name)s] [%(request_id)s]: %(message)s",
                 datefmt="%Y-%m-%d %H:%M:%S",
             )
         )
