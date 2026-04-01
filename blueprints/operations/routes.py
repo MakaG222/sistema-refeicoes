@@ -53,7 +53,7 @@ from utils.helpers import (
     _refeicao_set,
     esc,
 )
-from utils.validators import _val_refeicao
+from utils.validators import _val_int_id, _val_ni, _val_refeicao
 
 log = logging.getLogger(__name__)
 
@@ -72,9 +72,9 @@ def painel_dia():
             try:
                 ensure_daily_backup()
                 flash("Backup criado.", "ok")
-            except Exception as e:
+            except Exception:
                 log.exception("painel_dia: falha ao criar backup")
-                flash(f"Falha: {e}", "error")
+                flash("Falha ao criar backup. Consulta os logs.", "error")
         return redirect(url_for(".painel_dia", d=dt.isoformat()))
 
     ano_int = int(u["ano"]) if perfil == "cmd" and u.get("ano") else None
@@ -337,16 +337,20 @@ def lista_alunos_ano(ano):
     if request.method == "POST":
         acao = request.form.get("acao", "")
         uid_t = request.form.get("uid", "")
-        if acao == "marcar_ausente" and uid_t:
+        if not uid_t or not uid_t.isdigit():
+            flash("ID de utilizador inválido.", "error")
+            return redirect(url_for(".lista_alunos_ano", ano=ano, d=d_str))
+        uid_int = int(uid_t)
+        if acao == "marcar_ausente":
             _registar_ausencia(
-                int(uid_t),
+                uid_int,
                 dt.isoformat(),
                 dt.isoformat(),
                 f"Marcado por {u['nome']} ({perfil})",
                 u["nii"],
             )
-        elif acao == "marcar_presente" and uid_t:
-            marcar_presente(int(uid_t), dt.isoformat())
+        elif acao == "marcar_presente":
+            marcar_presente(uid_int, dt.isoformat())
         return redirect(url_for(".lista_alunos_ano", ano=ano, d=d_str))
 
     alunos = get_alunos_ano_com_estado(ano, dt)
@@ -621,14 +625,15 @@ def licencas_entradas_saidas():
 
     if request.method == "POST":
         acao = request.form.get("acao", "")
-        lic_id = request.form.get("lic_id", "")
+        lic_id = _val_int_id(request.form.get("lic_id", ""))
 
-        if acao in ("saida", "entrada", "limpar_saida", "limpar_entrada") and lic_id:
+        if not lic_id:
+            flash("ID de licença inválido.", "error")
+        elif acao in ("saida", "entrada", "limpar_saida", "limpar_entrada"):
             registar_hora_licenca(lic_id, acao)
-            if acao == "saida":
-                flash("✅ Saída registada.", "ok")
-            elif acao == "entrada":
-                flash("✅ Entrada registada.", "ok")
+            msgs = {"saida": "Saída registada.", "entrada": "Entrada registada.",
+                    "limpar_saida": "Saída limpa.", "limpar_entrada": "Entrada limpa."}
+            flash(f"✅ {msgs.get(acao, 'Ação concluída.')}", "ok")
 
         return redirect(url_for(".licencas_entradas_saidas", d=d_str))
 
@@ -678,7 +683,7 @@ def controlo_presencas():
 
     if request.method == "POST":
         acao = request.form.get("acao", "")
-        ni_q = request.form.get("ni", "").strip()
+        ni_q = _val_ni(request.form.get("ni", "")) or ""
 
         if acao == "consultar" and ni_q:
             resultado = get_presenca_consulta(ni_q, dt)

@@ -207,7 +207,10 @@ def admin_utilizadores():
                     current_app.logger.error("editar_contactos: %s", ex)
                     flash("Erro interno. Tenta novamente.", "error")
         elif acao == "reset_pw":
-            nii = request.form.get("nii", "")
+            nii = request.form.get("nii", "").strip()
+            if not nii:
+                flash("NII em falta.", "error")
+                return redirect(request.url)
             ok, msg = _reset_pw(nii)
             if ok:
                 _audit(
@@ -298,6 +301,8 @@ def admin_importar_csv():
                 flash("Ficheiro demasiado grande (máximo 5 MB).", "error")
                 return redirect(url_for(".admin_importar_csv"))
             raw = raw.decode("utf-8-sig", errors="replace")
+            if "\ufffd" in raw:
+                flash("Aviso: o ficheiro contém caracteres inválidos que foram substituídos.", "warn")
             linhas = list(csv.reader(io.StringIO(raw)))
             if len(linhas) > 10_000:
                 flash("Demasiadas linhas (máximo 10.000).", "error")

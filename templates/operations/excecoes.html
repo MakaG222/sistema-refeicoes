@@ -9,6 +9,7 @@
     <div class="card-title">Pesquisar utilizador</div>
     <form method="get" class="search-form">
       <input type="hidden" name="d" value="{{ d }}">
+      <label for="nii" class="sr-only">Pesquisar por NII</label>
       <input type="text" name="nii" id="nii" maxlength="32" placeholder="NII do utilizador" value="{{ nii_q }}" class="flex-1">
       <button class="btn btn-primary">Pesquisar</button>
     </form>

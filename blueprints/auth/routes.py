@@ -100,7 +100,10 @@ def login():
                         )
                         # Migração transparente: se ainda é plain-text, converter para hash
                         if not ph.startswith(("pbkdf2:", "scrypt:", "argon2:")):
-                            _migrate_password_hash(db_u["id"], pw)
+                            try:
+                                _migrate_password_hash(db_u["id"], pw)
+                            except Exception:
+                                current_app.logger.exception("Falha ao migrar hash de password para NII=%s", nii)
                     else:
                         reg_login(nii, 0, ip=_client_ip())
                         falhas = recent_failures(nii, 10)

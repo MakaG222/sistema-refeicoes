@@ -44,12 +44,12 @@
             <input type="text" name="motivo" id="aus_motivo" maxlength="500" value="{{ form_motivo }}" placeholder="Ex: deslocação, exercício, visita...">
           </div>
           <div class="grid grid-2">
-            <label class="form-check">
-              <input type="checkbox" name="estufa_almoco" value="1" {{ "checked" if form_estufa_almoco }}>
+            <label class="form-check" for="al_estufa_alm">
+              <input type="checkbox" id="al_estufa_alm" name="estufa_almoco" value="1" {{ "checked" if form_estufa_almoco }}>
               Guardar almoço na estufa
             </label>
-            <label class="form-check">
-              <input type="checkbox" name="estufa_jantar" value="1" {{ "checked" if form_estufa_jantar }}>
+            <label class="form-check" for="al_estufa_jan">
+              <input type="checkbox" id="al_estufa_jan" name="estufa_jantar" value="1" {{ "checked" if form_estufa_jantar }}>
               Guardar jantar na estufa
             </label>
           </div>
