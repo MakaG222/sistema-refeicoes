@@ -1,13 +1,17 @@
 """Funções de backup e restauro da base de dados."""
 
 import logging
+import os
+import shlex
 import shutil
 import sqlite3
+import subprocess  # nosec B404 — uso restrito a upload_offsite, sem shell.
 from datetime import datetime, timedelta
 from pathlib import Path
 
 import core.constants
 from core.constants import BACKUP_DIR, BACKUP_RETENCAO_DIAS
+from core.notifications import notify
 
 log = logging.getLogger(__name__)
 
@@ -18,8 +22,11 @@ log = logging.getLogger(__name__)
 def ensure_daily_backup() -> None:
     """Cria backup automático 1x por dia (nome inclui data).
 
-    Também limpa backups além do período de retenção.
+    Também limpa backups além do período de retenção e, se `BACKUP_UPLOAD_CMD`
+    estiver configurado, replica o backup para destino offsite.
     """
+    dest: Path | None = None
+    created = False
     try:
         ts_date = datetime.now().strftime("%Y%m%d")
         stem = Path(core.constants.BASE_DADOS).stem
@@ -27,14 +34,90 @@ def ensure_daily_backup() -> None:
         if not dest.exists() and Path(core.constants.BASE_DADOS).exists():
             shutil.copy2(core.constants.BASE_DADOS, dest)
             log.info("Backup diário criado: %s", dest)
+            created = True
     except Exception as e:
         log.warning("Falha a criar backup diário: %s", e)
+        notify(
+            "Backup diário falhou",
+            f"Não foi possível criar o backup diário local: {e}",
+            severity="error",
+        )
+
+    # Replicação offsite (best-effort): se criou novo e BACKUP_UPLOAD_CMD definido.
+    if created and dest is not None and os.getenv("BACKUP_UPLOAD_CMD", "").strip():
+        if not upload_offsite(str(dest)):
+            notify(
+                "Upload offsite falhou",
+                f"Backup local ok, mas replicação offsite falhou para {dest.name}.",
+                severity="warning",
+            )
 
     # Limpeza automática de backups antigos
     try:
         limpar_backups_antigos()
     except Exception as e:
         log.warning("Limpeza de backups falhou: %s", e)
+
+
+def upload_offsite(path: str) -> bool:
+    """Executa comando externo configurável para replicar backup offsite.
+
+    Lê o template de `BACKUP_UPLOAD_CMD` — o token `{path}` é substituído pelo
+    caminho do backup. O comando é executado sem shell (tokens via `shlex`),
+    evitando injecção de shell.
+
+    Exemplos:
+        BACKUP_UPLOAD_CMD='rclone copy {path} remote:backups/'
+        BACKUP_UPLOAD_CMD='aws s3 cp {path} s3://meu-bucket/backups/'
+        BACKUP_UPLOAD_CMD='rsync -a {path} backup-host:/srv/backups/'
+
+    Timeout configurável via `BACKUP_UPLOAD_TIMEOUT` (default 300s).
+
+    Returns:
+        True se o comando executou com sucesso (exit code 0), False caso contrário.
+        Se `BACKUP_UPLOAD_CMD` não estiver definido, retorna False sem logs.
+    """
+    tpl = os.getenv("BACKUP_UPLOAD_CMD", "").strip()
+    if not tpl:
+        return False
+    try:
+        args = [a.replace("{path}", path) for a in shlex.split(tpl)]
+        if not args:
+            log.warning("BACKUP_UPLOAD_CMD vazio após shlex.split — a ignorar.")
+            return False
+        try:
+            timeout = int(os.getenv("BACKUP_UPLOAD_TIMEOUT", "300"))
+        except ValueError:
+            timeout = 300
+        # Template vem de env var do operador; args foram passados por shlex.split
+        # (sem shell=True). A substituição de {path} é feita por valor, não por
+        # expansão de shell.
+        result = subprocess.run(  # noqa: S603  # nosec B603
+            args,
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+            check=False,
+        )
+        if result.returncode == 0:
+            log.info("Upload offsite ok: %s", path)
+            return True
+        log.warning(
+            "Upload offsite falhou (rc=%s) stdout=%r stderr=%r",
+            result.returncode,
+            (result.stdout or "")[-500:],
+            (result.stderr or "")[-500:],
+        )
+        return False
+    except subprocess.TimeoutExpired:
+        log.exception("Upload offsite expirou timeout")
+        return False
+    except FileNotFoundError:
+        log.exception("BACKUP_UPLOAD_CMD: executável não encontrado")
+        return False
+    except Exception:
+        log.exception("Upload offsite falhou para %s", path)
+        return False
 
 
 def limpar_backups_antigos() -> None:
