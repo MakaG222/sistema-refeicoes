@@ -68,7 +68,9 @@ class TestBatchLoading:
         ref_map, defaults = refeicoes_batch(uid, hoje, hoje + timedelta(days=2))
         assert len(ref_map) == 3
         assert ref_map[hoje.isoformat()]["almoco"] == "Normal"
-        assert defaults["pequeno_almoco"] == 0
+        assert defaults["pequeno_almoco"] == 1
+        assert defaults["almoco"] == "Normal"
+        assert defaults["jantar_tipo"] == "Normal"
 
     def test_dias_operacionais_batch(self, app):
         """Batch de dias operacionais carrega calendário."""

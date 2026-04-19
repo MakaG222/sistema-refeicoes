@@ -13,6 +13,51 @@ from core.database import db
 log = logging.getLogger(__name__)
 
 
+# SQL parcial partilhado entre queries de totais. `? IS NULL OR u.ano=?` permite
+# opcionalmente filtrar por ano sem construir a query em runtime — `ano` é
+# passado duas vezes (None para desativar o filtro).
+_SQL_ACTIVE_JOIN = (
+    "JOIN utilizadores u ON u.id=r.utilizador_id"
+    " AND u.is_active=1"
+    " AND NOT EXISTS ("
+    "SELECT 1 FROM ausencias a"
+    " WHERE a.utilizador_id=u.id"
+    " AND a.ausente_de<=r.data AND a.ausente_ate>=r.data)"
+)
+
+_SQL_TOTAIS_AGG = (
+    "SUM(CASE WHEN r.pequeno_almoco=1 THEN 1 ELSE 0 END) pa,"
+    " SUM(CASE WHEN r.lanche=1 THEN 1 ELSE 0 END) lan,"
+    " SUM(CASE WHEN r.almoco='Normal' THEN 1 ELSE 0 END) alm_norm,"
+    " SUM(CASE WHEN r.almoco='Vegetariano' THEN 1 ELSE 0 END) alm_veg,"
+    " SUM(CASE WHEN r.almoco='Dieta' THEN 1 ELSE 0 END) alm_dieta,"
+    " SUM(COALESCE(r.almoco_estufa,0)) alm_estufa,"
+    " SUM(CASE WHEN r.jantar_tipo='Normal' THEN 1 ELSE 0 END) jan_norm,"
+    " SUM(CASE WHEN r.jantar_tipo='Vegetariano' THEN 1 ELSE 0 END) jan_veg,"
+    " SUM(CASE WHEN r.jantar_tipo='Dieta' THEN 1 ELSE 0 END) jan_dieta,"
+    " SUM(COALESCE(r.jantar_sai_unidade,0)) jan_sai,"
+    " SUM(COALESCE(r.jantar_estufa,0)) jan_estufa"
+)
+
+_TOTAIS_KEYS = (
+    "pa",
+    "lan",
+    "alm_norm",
+    "alm_veg",
+    "alm_dieta",
+    "alm_estufa",
+    "jan_norm",
+    "jan_veg",
+    "jan_dieta",
+    "jan_sai",
+    "jan_estufa",
+)
+
+
+def _empty_totais() -> dict[str, int]:
+    return dict.fromkeys(_TOTAIS_KEYS, 0)
+
+
 def refeicao_editavel(d: date) -> tuple[bool, str]:
     """Devolve (True, '') se a data d ainda pode ser editada, ou (False, motivo)."""
     agora_dt = datetime.now()
@@ -40,136 +85,37 @@ def refeicao_editavel(d: date) -> tuple[bool, str]:
 
 
 def get_totais_dia(di: str, ano: int | None = None) -> dict[str, int]:
-    """Devolve totais de todas as refeições para uma data ISO (di)."""
-    _active = (
-        "JOIN utilizadores u ON u.id=r.utilizador_id"
-        " AND u.is_active=1"
-        " AND NOT EXISTS ("
-        "SELECT 1 FROM ausencias a"
-        " WHERE a.utilizador_id=u.id AND a.ausente_de<=r.data AND a.ausente_ate>=r.data)"
+    """Devolve totais de todas as refeições para uma data ISO (di) numa só query."""
+    sql = (
+        f"SELECT {_SQL_TOTAIS_AGG}"
+        f" FROM refeicoes r {_SQL_ACTIVE_JOIN}"
+        " WHERE r.data=? AND (? IS NULL OR u.ano=?)"
     )
-    _ano_cond = " AND u.ano=?" if ano is not None else ""
-
     with db() as conn:
-        params_base = (di, ano) if ano is not None else (di,)
+        row = conn.execute(sql, (di, ano, ano)).fetchone()
+    return _row_to_totais(row)
 
-        pa = (
-            conn.execute(
-                f"SELECT COUNT(*) c FROM refeicoes r {_active}"  # nosec B608
-                f" WHERE r.data=? {_ano_cond} AND r.pequeno_almoco=1",
-                params_base,
-            ).fetchone()["c"]
-            or 0
-        )
-        ln = (
-            conn.execute(
-                f"SELECT COUNT(*) c FROM refeicoes r {_active}"  # nosec B608
-                f" WHERE r.data=? {_ano_cond} AND r.lanche=1",
-                params_base,
-            ).fetchone()["c"]
-            or 0
-        )
-        # _active and _ano_cond are hardcoded constants — safe to interpolate
-        _sql_alm = (
-            f"SELECT"  # nosec B608
-            f" SUM(CASE WHEN r.almoco='Normal' THEN 1 ELSE 0 END) norm,"
-            f" SUM(CASE WHEN r.almoco='Vegetariano' THEN 1 ELSE 0 END) veg,"
-            f" SUM(CASE WHEN r.almoco='Dieta' THEN 1 ELSE 0 END) dieta,"
-            f" SUM(COALESCE(r.almoco_estufa,0)) estufa"
-            f" FROM refeicoes r {_active}"
-            f" WHERE r.data=? {_ano_cond}"
-        )
-        alm = conn.execute(_sql_alm, params_base).fetchone()
-        _sql_jan = (
-            f"SELECT"  # nosec B608
-            f" SUM(CASE WHEN r.jantar_tipo='Normal' THEN 1 ELSE 0 END) norm,"
-            f" SUM(CASE WHEN r.jantar_tipo='Vegetariano' THEN 1 ELSE 0 END) veg,"
-            f" SUM(CASE WHEN r.jantar_tipo='Dieta' THEN 1 ELSE 0 END) dieta,"
-            f" SUM(COALESCE(r.jantar_sai_unidade,0)) sai,"
-            f" SUM(COALESCE(r.jantar_estufa,0)) estufa"
-            f" FROM refeicoes r {_active}"
-            f" WHERE r.data=? {_ano_cond}"
-        )
-        jan = conn.execute(_sql_jan, params_base).fetchone()
 
-    return {
-        "pa": pa,
-        "lan": ln,
-        "alm_norm": alm["norm"] or 0,
-        "alm_veg": alm["veg"] or 0,
-        "alm_dieta": alm["dieta"] or 0,
-        "alm_estufa": alm["estufa"] or 0,
-        "jan_norm": jan["norm"] or 0,
-        "jan_veg": jan["veg"] or 0,
-        "jan_dieta": jan["dieta"] or 0,
-        "jan_sai": jan["sai"] or 0,
-        "jan_estufa": jan["estufa"] or 0,
-    }
+def _row_to_totais(row: sqlite3.Row | None) -> dict[str, int]:
+    if row is None:
+        return _empty_totais()
+    return {k: (row[k] or 0) for k in _TOTAIS_KEYS}
 
 
 def get_totais_periodo(
     d_de: str, d_ate: str, ano: int | None = None
 ) -> tuple[dict[str, dict[str, int]], dict[str, int]]:
     """Totais agrupados por dia para um intervalo. Devolve ({iso_date: dict}, empty_dict)."""
-    _active = (
-        "JOIN utilizadores u ON u.id=r.utilizador_id"
-        " AND u.is_active=1"
-        " AND NOT EXISTS ("
-        "SELECT 1 FROM ausencias a"
-        " WHERE a.utilizador_id=u.id AND a.ausente_de<=r.data AND a.ausente_ate>=r.data)"
+    sql = (
+        f"SELECT r.data, {_SQL_TOTAIS_AGG}"
+        f" FROM refeicoes r {_SQL_ACTIVE_JOIN}"
+        " WHERE r.data>=? AND r.data<=? AND (? IS NULL OR u.ano=?)"
+        " GROUP BY r.data"
     )
-    _ano_cond = " AND u.ano=?" if ano is not None else ""
-    params = (d_de, d_ate, ano) if ano is not None else (d_de, d_ate)
-
     with db() as conn:
-        _sql_periodo = (
-            f"SELECT r.data,"  # nosec B608
-            f" SUM(CASE WHEN r.pequeno_almoco=1 THEN 1 ELSE 0 END) pa,"
-            f" SUM(CASE WHEN r.lanche=1 THEN 1 ELSE 0 END) lan,"
-            f" SUM(CASE WHEN r.almoco='Normal' THEN 1 ELSE 0 END) alm_norm,"
-            f" SUM(CASE WHEN r.almoco='Vegetariano' THEN 1 ELSE 0 END) alm_veg,"
-            f" SUM(CASE WHEN r.almoco='Dieta' THEN 1 ELSE 0 END) alm_dieta,"
-            f" SUM(COALESCE(r.almoco_estufa,0)) alm_estufa,"
-            f" SUM(CASE WHEN r.jantar_tipo='Normal' THEN 1 ELSE 0 END) jan_norm,"
-            f" SUM(CASE WHEN r.jantar_tipo='Vegetariano' THEN 1 ELSE 0 END) jan_veg,"
-            f" SUM(CASE WHEN r.jantar_tipo='Dieta' THEN 1 ELSE 0 END) jan_dieta,"
-            f" SUM(COALESCE(r.jantar_sai_unidade,0)) jan_sai,"
-            f" SUM(COALESCE(r.jantar_estufa,0)) jan_estufa"
-            f" FROM refeicoes r {_active}"
-            f" WHERE r.data>=? AND r.data<=? {_ano_cond}"
-            f" GROUP BY r.data"
-        )
-        rows = conn.execute(_sql_periodo, params).fetchall()
-
-    _empty = {
-        "pa": 0,
-        "lan": 0,
-        "alm_norm": 0,
-        "alm_veg": 0,
-        "alm_dieta": 0,
-        "alm_estufa": 0,
-        "jan_norm": 0,
-        "jan_veg": 0,
-        "jan_dieta": 0,
-        "jan_sai": 0,
-        "jan_estufa": 0,
-    }
-    result = {}
-    for r in rows:
-        result[r["data"]] = {
-            "pa": r["pa"] or 0,
-            "lan": r["lan"] or 0,
-            "alm_norm": r["alm_norm"] or 0,
-            "alm_veg": r["alm_veg"] or 0,
-            "alm_dieta": r["alm_dieta"] or 0,
-            "alm_estufa": r["alm_estufa"] or 0,
-            "jan_norm": r["jan_norm"] or 0,
-            "jan_veg": r["jan_veg"] or 0,
-            "jan_dieta": r["jan_dieta"] or 0,
-            "jan_sai": r["jan_sai"] or 0,
-            "jan_estufa": r["jan_estufa"] or 0,
-        }
-    return result, _empty
+        rows = conn.execute(sql, (d_de, d_ate, ano, ano)).fetchall()
+    result = {r["data"]: _row_to_totais(r) for r in rows}
+    return result, _empty_totais()
 
 
 def get_ocupacao_capacidade(d: date) -> dict[str, tuple[int, int]]:
@@ -224,10 +170,10 @@ def refeicao_get(uid: int, d: date) -> dict[str, Any]:
         if r:
             return dict(r)
     return {
-        "pequeno_almoco": 0,
-        "lanche": 0,
-        "almoco": None,
-        "jantar_tipo": None,
+        "pequeno_almoco": 1,
+        "lanche": 1,
+        "almoco": "Normal",
+        "jantar_tipo": "Normal",
         "jantar_sai_unidade": 0,
         "almoco_estufa": 0,
         "jantar_estufa": 0,
@@ -239,10 +185,10 @@ def refeicoes_batch(
 ) -> tuple[dict[str, dict[str, Any]], dict[str, Any]]:
     """Carrega refeições de um aluno para um intervalo. Devolve ({iso_date: dict}, defaults)."""
     defaults = {
-        "pequeno_almoco": 0,
-        "lanche": 0,
-        "almoco": None,
-        "jantar_tipo": None,
+        "pequeno_almoco": 1,
+        "lanche": 1,
+        "almoco": "Normal",
+        "jantar_tipo": "Normal",
         "jantar_sai_unidade": 0,
         "almoco_estufa": 0,
         "jantar_estufa": 0,
@@ -252,96 +198,100 @@ def refeicoes_batch(
             "SELECT * FROM refeicoes WHERE utilizador_id=? AND data>=? AND data<=?",
             (uid, d_de.isoformat(), d_ate.isoformat()),
         ).fetchall()
-    result = {}
-    for r in rows:
-        result[r["data"]] = dict(r)
-    return result, defaults
+    return {r["data"]: dict(r) for r in rows}, defaults
+
+
+_CAMPOS_AUDIT = (
+    "pequeno_almoco",
+    "lanche",
+    "almoco",
+    "jantar_tipo",
+    "jantar_sai_unidade",
+    "almoco_estufa",
+    "jantar_estufa",
+)
 
 
 def refeicao_save(
     uid: int, d: date, r: dict[str, Any], alterado_por: str = "sistema"
 ) -> bool:
-    """Guarda refeição e regista no log de auditoria os campos que mudaram."""
+    """Guarda refeição e regista no log de auditoria os campos que mudaram.
+
+    A leitura do "antes" e o UPSERT correm numa transação `BEGIN IMMEDIATE` para
+    garantir que o log não vê um estado estale entre writers concorrentes.
+    """
+    dd = d.isoformat()
     try:
         with db() as conn:
-            anterior = conn.execute(
-                "SELECT * FROM refeicoes WHERE utilizador_id=? AND data=?",
-                (uid, d.isoformat()),
-            ).fetchone()
-            anterior = dict(anterior) if anterior else {}
+            started_tx = False
+            if not conn.in_transaction:
+                conn.execute("BEGIN IMMEDIATE")
+                started_tx = True
+            try:
+                anterior_row = conn.execute(
+                    "SELECT * FROM refeicoes WHERE utilizador_id=? AND data=?",
+                    (uid, dd),
+                ).fetchone()
+                anterior = dict(anterior_row) if anterior_row else {}
 
-            dd = d.isoformat()
-            det = conn.execute(
-                """SELECT 1 FROM detencoes
-                WHERE utilizador_id=? AND detido_de<=? AND detido_ate>=?
-                LIMIT 1""",
-                (uid, dd, dd),
-            ).fetchone()
-            if det:
-                r["jantar_sai_unidade"] = 0
+                det = conn.execute(
+                    "SELECT 1 FROM detencoes"
+                    " WHERE utilizador_id=? AND detido_de<=? AND detido_ate>=?"
+                    " LIMIT 1",
+                    (uid, dd, dd),
+                ).fetchone()
+                if det:
+                    r["jantar_sai_unidade"] = 0
 
-            conn.execute(
-                """
-                INSERT INTO refeicoes
-                  (utilizador_id, data, pequeno_almoco, lanche, almoco, jantar_tipo, jantar_sai_unidade, almoco_estufa, jantar_estufa)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-                ON CONFLICT(utilizador_id, data) DO UPDATE SET
-                    pequeno_almoco=excluded.pequeno_almoco,
-                    lanche=excluded.lanche,
-                    almoco=excluded.almoco,
-                    jantar_tipo=excluded.jantar_tipo,
-                    jantar_sai_unidade=excluded.jantar_sai_unidade,
-                    almoco_estufa=excluded.almoco_estufa,
-                    jantar_estufa=excluded.jantar_estufa
-            """,
-                (
-                    uid,
-                    d.isoformat(),
-                    r.get("pequeno_almoco", 0),
-                    r.get("lanche", 0),
-                    r.get("almoco"),
-                    r.get("jantar_tipo"),
-                    r.get("jantar_sai_unidade", 0),
-                    r.get("almoco_estufa", 0),
-                    r.get("jantar_estufa", 0),
-                ),
-            )
-
-            campos = [
-                "pequeno_almoco",
-                "lanche",
-                "almoco",
-                "jantar_tipo",
-                "jantar_sai_unidade",
-                "almoco_estufa",
-                "jantar_estufa",
-            ]
-            for campo in campos:
-                val_antes = (
-                    str(anterior.get(campo))
-                    if anterior.get(campo) is not None
-                    else None
+                conn.execute(
+                    """
+                    INSERT INTO refeicoes
+                      (utilizador_id, data, pequeno_almoco, lanche, almoco, jantar_tipo, jantar_sai_unidade, almoco_estufa, jantar_estufa)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ON CONFLICT(utilizador_id, data) DO UPDATE SET
+                        pequeno_almoco=excluded.pequeno_almoco,
+                        lanche=excluded.lanche,
+                        almoco=excluded.almoco,
+                        jantar_tipo=excluded.jantar_tipo,
+                        jantar_sai_unidade=excluded.jantar_sai_unidade,
+                        almoco_estufa=excluded.almoco_estufa,
+                        jantar_estufa=excluded.jantar_estufa
+                """,
+                    (
+                        uid,
+                        dd,
+                        r.get("pequeno_almoco", 0),
+                        r.get("lanche", 0),
+                        r.get("almoco"),
+                        r.get("jantar_tipo"),
+                        r.get("jantar_sai_unidade", 0),
+                        r.get("almoco_estufa", 0),
+                        r.get("jantar_estufa", 0),
+                    ),
                 )
-                val_depois = str(r.get(campo)) if r.get(campo) is not None else None
-                if val_antes != val_depois:
-                    conn.execute(
-                        """
-                        INSERT INTO refeicoes_log
-                          (utilizador_id, data_refeicao, campo, valor_antes, valor_depois, alterado_por)
-                        VALUES (?, ?, ?, ?, ?, ?)
-                    """,
-                        (
-                            uid,
-                            d.isoformat(),
-                            campo,
-                            val_antes,
-                            val_depois,
-                            alterado_por,
-                        ),
-                    )
 
-            conn.commit()
-            return True
+                for campo in _CAMPOS_AUDIT:
+                    val_antes = (
+                        str(anterior.get(campo))
+                        if anterior.get(campo) is not None
+                        else None
+                    )
+                    val_depois = str(r.get(campo)) if r.get(campo) is not None else None
+                    if val_antes != val_depois:
+                        conn.execute(
+                            "INSERT INTO refeicoes_log"
+                            " (utilizador_id, data_refeicao, campo, valor_antes, valor_depois, alterado_por)"
+                            " VALUES (?, ?, ?, ?, ?, ?)",
+                            (uid, dd, campo, val_antes, val_depois, alterado_por),
+                        )
+
+                if started_tx:
+                    conn.commit()
+                return True
+            except Exception:
+                if started_tx:
+                    conn.rollback()
+                raise
     except sqlite3.IntegrityError:
         log.exception("refeicao_save: rejeitado pela BD")
         return False
@@ -384,7 +334,7 @@ def dia_operacional(d: date) -> str:
 
 def dia_tem_refeicoes(d: date) -> bool:
     """Dias normais têm refeições; feriados e exercícios não."""
-    return dia_operacional(d) not in ("feriado", "exercicio", "fim_semana")
+    return dia_operacional(d) not in ("feriado", "exercicio")
 
 
 # Helpers para CSV export

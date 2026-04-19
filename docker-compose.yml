@@ -1,0 +1,25 @@
+# Orquestração local — `docker compose up --build`.
+# SECRET_KEY e CRON_API_TOKEN têm de vir de um .env (copiar de .env.example).
+services:
+  app:
+    build: .
+    image: sistema-refeicoes:local
+    ports:
+      - "8080:8080"
+    environment:
+      ENV: production
+      SECRET_KEY: ${SECRET_KEY:?SECRET_KEY obrigatória — define em .env}
+      CRON_API_TOKEN: ${CRON_API_TOKEN:?CRON_API_TOKEN obrigatório — define em .env}
+      DB_PATH: /data/sistema.db
+    volumes:
+      - sr-data:/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8080/health',timeout=3).status==200 else 1)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+
+volumes:
+  sr-data:

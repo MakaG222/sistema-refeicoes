@@ -121,13 +121,14 @@ class TestRefeicaoSave:
         assert got["jantar_sai_unidade"] == 1
 
     def test_get_nonexistent_returns_defaults(self, app):
-        """Refeição inexistente retorna zeros/None."""
+        """Refeição inexistente retorna defaults "tudo marcado" (Normal + PA + lanche)."""
         uid, _ = _setup_aluno(app)
         got = refeicao_get(uid, date(2099, 12, 31))
-        assert got["pequeno_almoco"] == 0
-        assert got["lanche"] == 0
-        assert got["almoco"] is None
-        assert got["jantar_tipo"] is None
+        assert got["pequeno_almoco"] == 1
+        assert got["lanche"] == 1
+        assert got["almoco"] == "Normal"
+        assert got["jantar_tipo"] == "Normal"
+        assert got["jantar_sai_unidade"] == 0
 
     def test_detention_blocks_sai_unidade(self, app):
         """Se aluno está detido, jantar_sai_unidade é forçado a 0."""

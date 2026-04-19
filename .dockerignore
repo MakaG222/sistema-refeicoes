@@ -1,0 +1,49 @@
+# Reflete .gitignore + exclui itens que não têm de entrar na imagem.
+.git
+.github
+.claude
+.vscode
+.idea
+
+# Ambientes Python
+__pycache__
+*.py[cod]
+*.pyo
+*.pyd
+*.egg-info
+.venv
+venv
+env
+
+# Testes / cobertura / tooling local
+tests
+.pytest_cache
+.coverage
+htmlcov
+.ruff_cache
+.mypy_cache
+.pre-commit-config.yaml
+pyproject.toml
+
+# Dados locais (a BD em produção vive no volume /data)
+*.db
+*.db-shm
+*.db-wal
+backups
+exportacoes
+logs
+*.log
+
+# Secrets / OS
+.env
+.env.*
+!.env.example
+credentials.json
+.DS_Store
+Thumbs.db
+
+# Docker meta
+Dockerfile
+.dockerignore
+docker-compose.yml
+README.md

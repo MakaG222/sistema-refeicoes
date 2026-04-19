@@ -12,76 +12,164 @@ from core.meals import (
     _is_friday,
     _is_weekday_mon_to_fri,
     dia_tem_refeicoes,
+    dias_operacionais_batch,
     refeicao_exists,
-    refeicao_get,
     refeicao_save,
+    refeicoes_batch,
+)
+
+log = logging.getLogger(__name__)
+
+_TIPOS_SEM_REFEICAO = frozenset({"feriado", "exercicio"})
+
+
+def _dia_tem_refeicoes_from_map(d: date, tipos: dict[str, str]) -> bool:
+    """Versão batch-aware de `dia_tem_refeicoes`: usa um dict pré-carregado."""
+    tipo = tipos.get(d.isoformat())
+    if tipo is None:
+        tipo = "fim_semana" if d.weekday() >= 5 else "normal"
+    return tipo not in _TIPOS_SEM_REFEICAO
+
+
+_CARRY_FIELDS = (
+    "pequeno_almoco",
+    "lanche",
+    "almoco",
+    "jantar_tipo",
+    "jantar_sai_unidade",
+    "almoco_estufa",
+    "jantar_estufa",
 )
 
 
-# Re-export para backward-compat
 def _default_refeicao_para_dia(d: date) -> dict[str, Any]:
-    """Marks meals Mon-Fri (PA, almoço, jantar), except Friday dinner. Lanche excluded."""
-    if not _is_weekday_mon_to_fri(d):
+    """Default por dia: tudo marcado em dias com refeições; tudo a zero caso contrário."""
+    if not dia_tem_refeicoes(d):
         return {
             "pequeno_almoco": 0,
             "lanche": 0,
             "almoco": None,
             "jantar_tipo": None,
             "jantar_sai_unidade": 0,
+            "almoco_estufa": 0,
+            "jantar_estufa": 0,
         }
-    base = {
+    return {
         "pequeno_almoco": 1,
-        "lanche": 0,
+        "lanche": 1,
         "almoco": "Normal",
         "jantar_tipo": "Normal",
         "jantar_sai_unidade": 0,
+        "almoco_estufa": 0,
+        "jantar_estufa": 0,
     }
-    if _is_friday(d):
-        base["jantar_tipo"] = None
-        base["jantar_sai_unidade"] = 0
-    return base
 
 
-def _carry_forward_from_last_week(
-    uid: int, d: date, base: dict[str, Any]
+def _default_refeicao_para_dia_precomputado(
+    d: date, tipos_dia: dict[str, str]
 ) -> dict[str, Any]:
-    prev = refeicao_get(uid, d - timedelta(days=7))
+    """Mesmo contrato que `_default_refeicao_para_dia` mas usa tipos já carregados."""
+    if not _dia_tem_refeicoes_from_map(d, tipos_dia):
+        return {
+            "pequeno_almoco": 0,
+            "lanche": 0,
+            "almoco": None,
+            "jantar_tipo": None,
+            "jantar_sai_unidade": 0,
+            "almoco_estufa": 0,
+            "jantar_estufa": 0,
+        }
+    return {
+        "pequeno_almoco": 1,
+        "lanche": 1,
+        "almoco": "Normal",
+        "jantar_tipo": "Normal",
+        "jantar_sai_unidade": 0,
+        "almoco_estufa": 0,
+        "jantar_estufa": 0,
+    }
+
+
+def _carry_forward(prev: dict[str, Any], base: dict[str, Any]) -> dict[str, Any]:
+    """Aplica valores da semana anterior sobre o default.
+
+    `jantar_sai_unidade` é sempre reposto a 0: licenças/saídas são pedidos pontuais
+    e não devem propagar automaticamente para a semana seguinte.
+    """
     out = dict(base)
-    for k in [
-        "pequeno_almoco",
-        "lanche",
-        "almoco",
-        "jantar_tipo",
-        "jantar_sai_unidade",
-        "almoco_estufa",
-        "jantar_estufa",
-    ]:
-        if k in prev and prev[k] is not None:
-            out[k] = prev[k]
-    if _is_friday(d):
-        out["jantar_tipo"] = None
-        out["jantar_sai_unidade"] = 0
+    for k in _CARRY_FIELDS:
+        v = prev.get(k)
+        if v is not None:
+            out[k] = v
+    out["jantar_sai_unidade"] = 0
     return out
 
 
 def autopreencher_refeicoes_semanais(dias_a_gerar: int = 14) -> None:
-    """Preenche automaticamente refeições para os próximos dias."""
+    """Preenche automaticamente refeições para os próximos `dias_a_gerar` dias.
+
+    Pré-carrega a janela equivalente da semana anterior por utilizador para evitar
+    N+1 queries; falhas de utilizadores individuais não interrompem o lote.
+    """
+    today = date.today()
+    prev_de = today - timedelta(days=7)
+    prev_ate = prev_de + timedelta(days=max(0, dias_a_gerar - 1))
+    window_ate = today + timedelta(days=max(0, dias_a_gerar - 1))
+
     try:
-        today = date.today()
         with db() as conn:
             users = [dict(r) for r in conn.execute("SELECT id FROM utilizadores")]
-        for u in users:
-            uid = u["id"]
-            for i in range(dias_a_gerar):
-                d = today + timedelta(days=i)
-                if not dia_tem_refeicoes(d):
-                    continue
+        tipos_dia = dias_operacionais_batch(today, window_ate)
+    except Exception:
+        log.exception("autopreencher_refeicoes_semanais: falha a obter contexto")
+        return
+
+    dias_com_refeicoes = [
+        today + timedelta(days=i)
+        for i in range(dias_a_gerar)
+        if _dia_tem_refeicoes_from_map(today + timedelta(days=i), tipos_dia)
+    ]
+
+    falhas: list[int] = []
+    for u in users:
+        uid = u["id"]
+        try:
+            prev_meals, _ = refeicoes_batch(uid, prev_de, prev_ate)
+            for d in dias_com_refeicoes:
                 if utilizador_ausente(uid, d):
                     continue
                 if refeicao_exists(uid, d):
                     continue
-                base = _default_refeicao_para_dia(d)
-                final = _carry_forward_from_last_week(uid, d, base)
+                base = _default_refeicao_para_dia_precomputado(d, tipos_dia)
+                prev_row = prev_meals.get((d - timedelta(days=7)).isoformat(), {})
+                final = _carry_forward(prev_row, base)
                 refeicao_save(uid, d, final, alterado_por="sistema")
-    except Exception as e:
-        logging.warning(f"autopreencher_refeicoes_semanais falhou: {e}")
+        except Exception:
+            falhas.append(uid)
+            log.exception("autopreencher: falha para uid=%s", uid)
+
+    if falhas:
+        log.error(
+            "autopreencher_refeicoes_semanais: %d utilizador(es) falharam: %s",
+            len(falhas),
+            falhas,
+        )
+
+
+# Backward-compat alias (assinatura antiga, mas redireciona para o helper novo)
+def _carry_forward_from_last_week(
+    uid: int, d: date, base: dict[str, Any]
+) -> dict[str, Any]:
+    from core.meals import refeicao_get
+
+    prev = refeicao_get(uid, d - timedelta(days=7))
+    return _carry_forward(prev, base)
+
+
+__all__ = [
+    "_default_refeicao_para_dia",
+    "_carry_forward_from_last_week",
+    "autopreencher_refeicoes_semanais",
+    "_is_friday",
+    "_is_weekday_mon_to_fri",
+]
