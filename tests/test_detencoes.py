@@ -47,16 +47,18 @@ class TestDetencaoFunctions:
         """Auto-marcação de refeições quando aluno é detido."""
         import app as app_module
 
+        from core.meals import refeicao_exists
+
         uid = create_aluno("T_DET_03", "703", "Detencao C", "1")
         d = _future_date(32)
 
-        # Confirmar que não tem refeições
-        got = refeicao_get(uid, d)
-        assert got["almoco"] is None
+        # Confirmar que não tem registo de refeição ainda
+        assert refeicao_exists(uid, d) is False
 
         # Auto-marcar
         app_module._auto_marcar_refeicoes_detido(uid, d, d)
 
+        assert refeicao_exists(uid, d) is True
         got = refeicao_get(uid, d)
         assert got["pequeno_almoco"] == 1
         assert got["lanche"] == 1

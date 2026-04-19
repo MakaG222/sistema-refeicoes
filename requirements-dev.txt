@@ -3,6 +3,8 @@
 
 ruff>=0.4,<1.0        # linter + formatter (substitui flake8, isort, pyupgrade)
 pip-audit>=2.7,<3.0   # auditoria de vulnerabilidades nas dependências
+bandit>=1.7,<2.0      # scanner de segurança do código (usado em CI e pre-commit)
+pre-commit>=3.7,<5.0  # hooks locais — ver .pre-commit-config.yaml
 pytest>=8.0,<9.0
 pytest-flask>=1.3,<2.0
 coverage>=7.0,<8.0

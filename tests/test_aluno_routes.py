@@ -277,15 +277,15 @@ class TestAlunoDefaultMeals:
         if resp.status_code == 302:
             return  # Prazo expirado — OK, não testável
 
-        # Agora deveria existir registo com defaults
+        # Agora deveria existir registo com defaults ("tudo marcado")
         r = refeicao_get(uid, d)
         assert r.get("pequeno_almoco") == 1
-        assert r.get("lanche") == 0  # Lanche não incluído por defeito
+        assert r.get("lanche") == 1
         assert r.get("almoco") == "Normal"
         assert r.get("jantar_tipo") == "Normal"
 
-    def test_editar_autocria_sexta_sem_jantar(self, app, client):
-        """Abrir editor numa sexta cria refeições sem jantar."""
+    def test_editar_autocria_sexta_com_jantar(self, app, client):
+        """Sexta-feira deixou de ter regra especial: jantar é marcado como Normal."""
         from core.meals import refeicao_get
         from core.auth_db import user_id_by_nii
 
@@ -302,7 +302,7 @@ class TestAlunoDefaultMeals:
         uid = user_id_by_nii("al_rt1")
         r = refeicao_get(uid, d)
         assert r.get("pequeno_almoco") == 1
-        assert r.get("jantar_tipo") is None  # Sem jantar à sexta
+        assert r.get("jantar_tipo") == "Normal"
 
     def test_editar_fds_nao_autocria(self, app, client):
         """Abrir editor num fim de semana NÃO cria refeições por defeito."""
