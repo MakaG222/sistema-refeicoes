@@ -17,6 +17,7 @@ from core.meals import (
     refeicao_save,
     refeicoes_batch,
 )
+from core.notifications import notify
 
 log = logging.getLogger(__name__)
 
@@ -120,8 +121,13 @@ def autopreencher_refeicoes_semanais(dias_a_gerar: int = 14) -> None:
         with db() as conn:
             users = [dict(r) for r in conn.execute("SELECT id FROM utilizadores")]
         tipos_dia = dias_operacionais_batch(today, window_ate)
-    except Exception:
+    except Exception as e:
         log.exception("autopreencher_refeicoes_semanais: falha a obter contexto")
+        notify(
+            "Autopreenchimento falhou",
+            f"Não foi possível carregar contexto (utilizadores/dias): {e}",
+            severity="error",
+        )
         return
 
     dias_com_refeicoes = [
@@ -153,6 +159,12 @@ def autopreencher_refeicoes_semanais(dias_a_gerar: int = 14) -> None:
             "autopreencher_refeicoes_semanais: %d utilizador(es) falharam: %s",
             len(falhas),
             falhas,
+        )
+        notify(
+            "Autopreenchimento: falhas parciais",
+            f"{len(falhas)} utilizador(es) falharam: {falhas[:20]}"
+            + (" …" if len(falhas) > 20 else ""),
+            severity="warning",
         )
 
 
