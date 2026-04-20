@@ -1,0 +1,141 @@
+/* ── Theme overrides (dark mode) ──────────────────────────────────── */
+/* Estratégia: `app.css` mantém as suas vars light como default.
+   Este ficheiro adiciona dark mode via:
+     1. `[data-theme="dark"]` — override explícito via toggle (prioridade mais alta)
+     2. `@media (prefers-color-scheme: dark)` — só aplica quando NÃO há
+        override explícito `[data-theme]` definido (usa `:where()` para 0 specificity).
+   CSP-safe: só CSS, sem JS aqui. O toggle vive em `static/js/theme.js`. */
+
+/* ── 1. Dark mode por override explícito ──────────────────────────── */
+:root[data-theme="dark"]{
+  --bg:#0f1720;
+  --card:#1a2332;
+  --text:#e5ecf4;
+  --border:#2a3a52;
+  --muted:#8a9bb4;
+  --shadow:0 2px 10px rgba(0,0,0,.45);
+}
+
+/* ── 2. Dark mode via preferência OS (só se toggle ausente) ───────── */
+@media (prefers-color-scheme: dark){
+  :where(:root:not([data-theme="light"]):not([data-theme="dark"])){
+    --bg:#0f1720;
+    --card:#1a2332;
+    --text:#e5ecf4;
+    --border:#2a3a52;
+    --muted:#8a9bb4;
+    --shadow:0 2px 10px rgba(0,0,0,.45);
+  }
+}
+
+/* ── Ajustes para elementos com cor hardcoded que ficam ilegíveis ─── */
+/* Aplica-se quer em `[data-theme="dark"]` explicito quer em preferência OS
+   (quando o toggle não forçou light). Usamos :where() para 0 specificity. */
+
+:root[data-theme="dark"] .stat-box,
+:root[data-theme="dark"] .week-card,
+:root[data-theme="dark"] .action-card,
+:root[data-theme="dark"] .year-tab{
+  background:var(--card);color:var(--text);
+}
+:root[data-theme="dark"] tr:hover td{background:rgba(255,255,255,.04)}
+:root[data-theme="dark"] input,
+:root[data-theme="dark"] select,
+:root[data-theme="dark"] textarea{
+  background:#0f1720;color:var(--text);border-color:var(--border);
+}
+:root[data-theme="dark"] .btn-ghost{background:var(--card);color:var(--text)}
+:root[data-theme="dark"] .bg-white{background:var(--card)}
+:root[data-theme="dark"] .bg-subtle,
+:root[data-theme="dark"] .bg-off,
+:root[data-theme="dark"] .bg-highlight{background:#121a26}
+:root[data-theme="dark"] .week-card.day-off,
+:root[data-theme="dark"] .row-off{background:#121a26}
+:root[data-theme="dark"] .text-dark{color:var(--text)}
+:root[data-theme="dark"] .alert-ok{background:rgba(30,132,73,.18)}
+:root[data-theme="dark"] .alert-error{background:rgba(192,57,43,.18)}
+:root[data-theme="dark"] .alert-warn{background:rgba(214,137,16,.18)}
+:root[data-theme="dark"] .alert-info{background:rgba(36,113,163,.18)}
+:root[data-theme="dark"] .toast{background:var(--card);color:var(--text)}
+
+@media (prefers-color-scheme: dark){
+  :where(:root:not([data-theme="light"]):not([data-theme="dark"])) .stat-box,
+  :where(:root:not([data-theme="light"]):not([data-theme="dark"])) .week-card,
+  :where(:root:not([data-theme="light"]):not([data-theme="dark"])) .action-card,
+  :where(:root:not([data-theme="light"]):not([data-theme="dark"])) .year-tab,
+  :where(:root:not([data-theme="light"]):not([data-theme="dark"])) .bg-white,
+  :where(:root:not([data-theme="light"]):not([data-theme="dark"])) .toast{
+    background:var(--card);color:var(--text);
+  }
+  :where(:root:not([data-theme="light"]):not([data-theme="dark"])) input,
+  :where(:root:not([data-theme="light"]):not([data-theme="dark"])) select,
+  :where(:root:not([data-theme="light"]):not([data-theme="dark"])) textarea{
+    background:#0f1720;color:var(--text);border-color:var(--border);
+  }
+  :where(:root:not([data-theme="light"]):not([data-theme="dark"])) tr:hover td{
+    background:rgba(255,255,255,.04);
+  }
+  :where(:root:not([data-theme="light"]):not([data-theme="dark"])) .bg-subtle,
+  :where(:root:not([data-theme="light"]):not([data-theme="dark"])) .bg-off,
+  :where(:root:not([data-theme="light"]):not([data-theme="dark"])) .bg-highlight,
+  :where(:root:not([data-theme="light"]):not([data-theme="dark"])) .week-card.day-off,
+  :where(:root:not([data-theme="light"]):not([data-theme="dark"])) .row-off{
+    background:#121a26;
+  }
+  :where(:root:not([data-theme="light"]):not([data-theme="dark"])) .text-dark{color:var(--text)}
+}
+
+/* ── Skip-link (acessibilidade) ───────────────────────────────────── */
+.skip-link{
+  position:absolute;top:0;left:0;padding:.5rem 1rem;
+  background:var(--primary);color:#fff;font-weight:700;
+  border-radius:0 0 8px 0;z-index:10001;
+  transform:translateY(-110%);transition:transform .15s;
+}
+.skip-link:focus{transform:translateY(0);outline:2px solid var(--gold);outline-offset:-4px}
+
+/* ── Empty state ──────────────────────────────────────────────────── */
+.empty-state{
+  display:flex;flex-direction:column;align-items:center;justify-content:center;
+  gap:.35rem;padding:1.6rem 1rem;text-align:center;color:var(--muted);
+}
+.empty-state-icon{font-size:2.4rem;opacity:.65;line-height:1}
+.empty-state-title{font-size:.95rem;font-weight:700;color:var(--text)}
+.empty-state-hint{font-size:.82rem;max-width:42ch}
+.empty-state-cta{margin-top:.55rem}
+
+/* ── Shortcuts help dialog ────────────────────────────────────────── */
+.shortcuts-dialog{
+  border:none;border-radius:14px;padding:0;
+  max-width:min(92vw,460px);width:100%;
+  background:var(--card);color:var(--text);
+  box-shadow:0 16px 60px rgba(0,0,0,.35);
+}
+.shortcuts-dialog::backdrop{background:rgba(0,0,0,.45)}
+.shortcuts-content{padding:1.35rem 1.5rem}
+.shortcuts-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:.85rem}
+.shortcuts-title{font-size:1.05rem;font-weight:800;color:var(--primary);margin:0}
+.shortcuts-close{
+  background:transparent;border:none;cursor:pointer;font-size:1.5rem;line-height:1;
+  color:var(--muted);width:2rem;height:2rem;border-radius:6px;
+}
+.shortcuts-close:hover{background:rgba(0,0,0,.05);color:var(--text)}
+.shortcuts-list{display:grid;grid-template-columns:auto 1fr;gap:.55rem 1rem;margin:0}
+.shortcuts-list dt{font-size:.85rem;display:flex;gap:.25rem;align-items:center}
+.shortcuts-list dd{font-size:.87rem;margin:0;color:var(--muted)}
+.shortcuts-list kbd{
+  background:var(--bg,#f0f4f8);border:1px solid var(--border);
+  border-radius:5px;padding:.12rem .45rem;font-size:.78rem;
+  font-family:ui-monospace,SFMono-Regular,Menlo,monospace;
+  box-shadow:0 1px 0 var(--border);
+}
+.shortcuts-footer{margin-top:1rem;text-align:right}
+
+/* ── Toggle de tema ───────────────────────────────────────────────── */
+.theme-toggle{
+  background:rgba(255,255,255,.15);border:none;cursor:pointer;
+  color:#fff;padding:.38rem .6rem;border-radius:8px;
+  font-size:1rem;line-height:1;transition:.15s;
+}
+.theme-toggle:hover{background:rgba(255,255,255,.25)}
+.theme-toggle:focus-visible{outline:2px solid var(--gold);outline-offset:1px}

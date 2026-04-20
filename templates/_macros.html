@@ -1,0 +1,30 @@
+{# ─────────────────────────────────────────────────────────────────────
+   Macros reutilizáveis — importar com:
+     {% import "_macros.html" as ui %}
+   ──────────────────────────────────────────────────────────────────── #}
+
+{#
+   empty_state(icon, title, hint, cta_url=None, cta_text=None)
+   Empty state amigável para listagens vazias. Usar dentro de `<td colspan>` ou
+   em qualquer `<div>` quando a coleção está vazia. CSP-safe (só HTML semântico).
+#}
+{% macro empty_state(icon, title, hint, cta_url=None, cta_text=None) %}
+  <div class="empty-state" role="status">
+    <div class="empty-state-icon" aria-hidden="true">{{ icon }}</div>
+    <div class="empty-state-title">{{ title }}</div>
+    {% if hint %}<div class="empty-state-hint">{{ hint }}</div>{% endif %}
+    {% if cta_url and cta_text %}
+      <a class="btn btn-primary btn-sm empty-state-cta" href="{{ cta_url }}">{{ cta_text }}</a>
+    {% endif %}
+  </div>
+{% endmacro %}
+
+{#
+   empty_row(colspan, icon, title, hint='', cta_url=None, cta_text=None)
+   Mesmo mas dentro de uma `<tr>` — útil para tabelas.
+#}
+{% macro empty_row(colspan, icon, title, hint='', cta_url=None, cta_text=None) %}
+  <tr><td colspan="{{ colspan }}" class="empty-cell-lg">
+    {{ empty_state(icon, title, hint, cta_url, cta_text) }}
+  </td></tr>
+{% endmacro %}

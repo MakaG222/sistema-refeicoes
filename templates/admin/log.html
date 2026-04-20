@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% import "_macros.html" as ui %}
 {% block content %}
 <div class="container">
   <div class="page-header">{{ back_btn(url_for('.admin_home')) }}<div class="page-title">📜 Log de Alterações</div></div>
@@ -77,7 +78,7 @@
             <td class="small text-muted">{{ r.alterado_por or "—" }}</td>
           </tr>
           {% else %}
-          <tr><td colspan="7" class="text-muted center empty-cell-lg">Sem registos com estes filtros.</td></tr>
+          {{ ui.empty_row(7, "📜", "Sem alterações com estes filtros", "Tenta alargar o intervalo de datas ou limpar a pesquisa por nome/campo.") }}
           {% endfor %}
         </tbody>
       </table>

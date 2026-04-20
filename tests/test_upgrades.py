@@ -455,3 +455,176 @@ class TestCheckinKiosk:
         )
         # Deve redirecionar (302 → 200) sem erros de servidor
         assert resp.status_code < 500
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# PR A — UX & Acessibilidade (v1.1.0)
+# ═══════════════════════════════════════════════════════════════════════════
+
+
+class TestToasts:
+    """Toast system CSP-safe via `render_flash_toasts` helper."""
+
+    def test_render_vazio_quando_sem_flashes(self, app):
+        from utils.helpers import render_flash_toasts
+
+        with app.test_request_context():
+            out = render_flash_toasts()
+            assert str(out) == ""
+
+    def test_emite_script_json_por_flash(self, app):
+        from flask import flash
+
+        from utils.helpers import render_flash_toasts
+
+        with app.test_request_context():
+            flash("Olá mundo", "ok")
+            out = str(render_flash_toasts())
+            # Deve ser um <script type="application/json" data-toast>
+            assert 'type="application/json"' in out
+            assert "data-toast" in out
+            assert '"Olá mundo"' in out or "Olá mundo" in out
+            assert '"level":"ok"' in out
+
+    def test_mapeia_categorias_legacy(self, app):
+        """`success`→`ok`, `danger`→`error`, `warning`→`warn`."""
+        from flask import flash
+
+        from utils.helpers import render_flash_toasts
+
+        with app.test_request_context():
+            flash("A", "success")
+            flash("B", "danger")
+            flash("C", "warning")
+            flash("D", "desconhecido")
+            out = str(render_flash_toasts())
+            assert '"level":"ok"' in out
+            assert '"level":"error"' in out
+            assert '"level":"warn"' in out
+            # Categoria desconhecida cai em 'info'
+            assert '"level":"info"' in out
+
+    def test_payload_escapa_fechamento_script(self, app):
+        """O json.dumps escapa `</` — impossível fechar o <script>."""
+        from flask import flash
+
+        from utils.helpers import render_flash_toasts
+
+        with app.test_request_context():
+            flash("texto </script> malicioso", "error")
+            out = str(render_flash_toasts())
+            # O fecho literal não pode aparecer dentro do payload JSON
+            assert "</script> malicioso" not in out
+            # Mas deve aparecer escapado
+            assert "<\\/script>" in out or "\\u003c/script\\u003e" in out.lower()
+
+
+class TestDarkMode:
+    """Dark mode via CSS vars + toggle persistido em localStorage."""
+
+    def test_base_carrega_theme_css_e_js(self, app, client):
+        """Qualquer página autenticada serve theme.css e theme.js."""
+        from tests.conftest import login_as
+
+        create_aluno("dm_user", "DM001", "Dark Mode User", ano="1")
+        login_as(client, "dm_user")
+        resp = client.get("/aluno/home")
+        assert resp.status_code < 500
+        body = resp.data.decode("utf-8")
+        assert "/static/css/theme.css" in body
+        assert "/static/js/theme.js" in body
+
+    def test_toggle_button_no_nav_quando_autenticado(self, app, client):
+        from tests.conftest import login_as
+
+        create_aluno("dm_user2", "DM002", "Dark Mode User2", ano="1")
+        login_as(client, "dm_user2")
+        resp = client.get("/aluno/home")
+        body = resp.data.decode("utf-8")
+        assert "data-theme-toggle" in body
+        assert 'aria-label="Alternar modo de cor"' in body
+
+    def test_static_theme_js_responde_200(self, app, client):
+        resp = client.get("/static/js/theme.js")
+        assert resp.status_code == 200
+        body = resp.data.decode("utf-8")
+        assert "data-theme" in body
+        assert "localStorage" in body
+
+
+class TestEmptyStates:
+    """Macro `empty_state` renderizada quando não há dados."""
+
+    def test_historico_vazio_mostra_empty_state(self, app, client):
+        from tests.conftest import login_as
+
+        create_aluno("hist_empty", "HIST01", "Hist Empty", ano="1")
+        login_as(client, "hist_empty")
+        resp = client.get("/aluno/historico")
+        assert resp.status_code == 200
+        body = resp.data.decode("utf-8")
+        assert "empty-state" in body
+        assert "Sem registos" in body
+
+    def test_utilizadores_vazio_filtra_para_mostrar_empty(self, app, client):
+        """Filtro que garante 0 utilizadores → empty state."""
+        from tests.conftest import login_as
+
+        login_as(client, "admin", "admin123")
+        # Query impossível
+        resp = client.get("/admin/utilizadores?q=__impossible_xyz_nomatch__")
+        assert resp.status_code == 200
+        body = resp.data.decode("utf-8")
+        assert "empty-state" in body
+
+
+class TestAccessibility:
+    """Skip-link, aria-pressed nos toggles, aria-checked nos pills."""
+
+    def test_skip_link_presente_no_base(self, app, client):
+        from tests.conftest import login_as
+
+        create_aluno("sk_user", "SK001", "Skip User", ano="1")
+        login_as(client, "sk_user")
+        resp = client.get("/aluno/home")
+        body = resp.data.decode("utf-8")
+        # skip-link é o primeiro elemento focusável e aponta para #content
+        assert 'class="skip-link"' in body
+        assert 'href="#content"' in body
+
+    def test_meal_editor_tem_aria_pressed_nos_toggles(self, app, client):
+        from tests.conftest import login_as
+
+        create_aluno("ed_user", "ED001", "Edit User", ano="1")
+        login_as(client, "ed_user")
+        # Abrir dia editável (rota é /aluno/editar/<d>)
+        d = (date.today() + timedelta(days=3)).isoformat()
+        resp = client.get(f"/aluno/editar/{d}")
+        assert resp.status_code == 200
+        body = resp.data.decode("utf-8")
+        assert "aria-pressed=" in body
+        assert "aria-checked=" in body
+        assert 'role="radiogroup"' in body
+
+
+class TestShortcuts:
+    """Atalhos de teclado e overlay de ajuda."""
+
+    def test_shortcuts_dialog_incluido_no_base(self, app, client):
+        from tests.conftest import login_as
+
+        create_aluno("sc_user", "SC001", "Shortcuts User", ano="1")
+        login_as(client, "sc_user")
+        resp = client.get("/aluno/home")
+        body = resp.data.decode("utf-8")
+        assert 'id="shortcuts-help"' in body
+        assert "<dialog" in body
+
+    def test_static_shortcuts_js_responde_200(self, app, client):
+        resp = client.get("/static/js/shortcuts.js")
+        assert resp.status_code == 200
+        body = resp.data.decode("utf-8")
+        # Deve cobrir os 3 atalhos principais
+        assert "Ctrl" in body or "ctrlKey" in body
+        assert "metaKey" in body
+        assert "Escape" in body
