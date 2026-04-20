@@ -212,8 +212,13 @@ class TestRegistarAusenciaComHorarios:
         d = _future_date(60)
 
         ok, err = app_module._registar_ausencia(
-            uid, d.isoformat(), d.isoformat(), "Consulta", "teste",
-            hora_inicio="10:00", hora_fim="14:00",
+            uid,
+            d.isoformat(),
+            d.isoformat(),
+            "Consulta",
+            "teste",
+            hora_inicio="10:00",
+            hora_fim="14:00",
         )
         assert ok is True
         assert err == ""
@@ -234,8 +239,13 @@ class TestRegistarAusenciaComHorarios:
         d = _future_date(61)
 
         ok, err = app_module._registar_ausencia(
-            uid, d.isoformat(), d.isoformat(), "", "teste",
-            hora_inicio="25:00", hora_fim="14:00",
+            uid,
+            d.isoformat(),
+            d.isoformat(),
+            "",
+            "teste",
+            hora_inicio="25:00",
+            hora_fim="14:00",
         )
         assert ok is False
         assert "Hora inválida" in err
@@ -247,8 +257,13 @@ class TestRegistarAusenciaComHorarios:
         d = _future_date(62)
 
         ok, err = app_module._registar_ausencia(
-            uid, d.isoformat(), d.isoformat(), "", "teste",
-            hora_inicio="10:00", hora_fim=None,
+            uid,
+            d.isoformat(),
+            d.isoformat(),
+            "",
+            "teste",
+            hora_inicio="10:00",
+            hora_fim=None,
         )
         assert ok is False
         assert "ambas" in err.lower()
@@ -260,8 +275,13 @@ class TestRegistarAusenciaComHorarios:
         d = _future_date(63)
 
         ok, err = app_module._registar_ausencia(
-            uid, d.isoformat(), d.isoformat(), "", "teste",
-            hora_inicio="15:00", hora_fim="10:00",
+            uid,
+            d.isoformat(),
+            d.isoformat(),
+            "",
+            "teste",
+            hora_inicio="15:00",
+            hora_fim="10:00",
         )
         assert ok is False
         assert "anterior" in err.lower()
@@ -274,15 +294,27 @@ class TestRegistarAusenciaComHorarios:
         uid = create_aluno("T_AUS_H05", "655", "Estufa A", "1")
         d = _future_date(64)
 
-        refeicao_save(uid, d, {
-            "pequeno_almoco": 1, "lanche": 0,
-            "almoco": "Normal", "jantar_tipo": "Normal",
-            "jantar_sai_unidade": 0,
-        }, alterado_por="teste")
+        refeicao_save(
+            uid,
+            d,
+            {
+                "pequeno_almoco": 1,
+                "lanche": 0,
+                "almoco": "Normal",
+                "jantar_tipo": "Normal",
+                "jantar_sai_unidade": 0,
+            },
+            alterado_por="teste",
+        )
 
         ok, _ = app_module._registar_ausencia(
-            uid, d.isoformat(), d.isoformat(), "Consulta", "teste",
-            hora_inicio="10:00", hora_fim="14:00",
+            uid,
+            d.isoformat(),
+            d.isoformat(),
+            "Consulta",
+            "teste",
+            hora_inicio="10:00",
+            hora_fim="14:00",
             estufa_almoco=True,
         )
         assert ok is True
@@ -300,15 +332,27 @@ class TestRegistarAusenciaComHorarios:
         uid = create_aluno("T_AUS_H06", "656", "Parcial E", "1")
         d = _future_date(65)
 
-        refeicao_save(uid, d, {
-            "pequeno_almoco": 1, "lanche": 1,
-            "almoco": "Vegetariano", "jantar_tipo": "Normal",
-            "jantar_sai_unidade": 0,
-        }, alterado_por="teste")
+        refeicao_save(
+            uid,
+            d,
+            {
+                "pequeno_almoco": 1,
+                "lanche": 1,
+                "almoco": "Vegetariano",
+                "jantar_tipo": "Normal",
+                "jantar_sai_unidade": 0,
+            },
+            alterado_por="teste",
+        )
 
         ok, _ = app_module._registar_ausencia(
-            uid, d.isoformat(), d.isoformat(), "", "teste",
-            hora_inicio="10:00", hora_fim="14:00",
+            uid,
+            d.isoformat(),
+            d.isoformat(),
+            "",
+            "teste",
+            hora_inicio="10:00",
+            hora_fim="14:00",
         )
         assert ok is True
 
@@ -332,9 +376,15 @@ class TestRegistarAusenciaComHorarios:
             ).fetchone()["id"]
 
         ok, err = app_module._editar_ausencia(
-            aid, uid, d.isoformat(), d.isoformat(), "Motivo editado",
-            hora_inicio="08:00", hora_fim="12:00",
-            estufa_almoco=False, estufa_jantar=True,
+            aid,
+            uid,
+            d.isoformat(),
+            d.isoformat(),
+            "Motivo editado",
+            hora_inicio="08:00",
+            hora_fim="12:00",
+            estufa_almoco=False,
+            estufa_jantar=True,
         )
         assert ok is True
 
@@ -400,7 +450,10 @@ class TestMigracaoAusenciaHorarios:
 
         with db() as conn:
             _add_ausencia_horarios(conn)
-            cols = [r["name"] for r in conn.execute("PRAGMA table_info(ausencias)").fetchall()]
+            cols = [
+                r["name"]
+                for r in conn.execute("PRAGMA table_info(ausencias)").fetchall()
+            ]
         assert "hora_inicio" in cols
         assert "hora_fim" in cols
         assert "estufa_almoco" in cols

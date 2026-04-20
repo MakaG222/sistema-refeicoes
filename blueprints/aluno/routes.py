@@ -25,7 +25,12 @@ from core.meals import (
     refeicao_save,
     refeicoes_batch,
 )
-from core.absences import ausencias_batch, ausencias_batch_detalhadas, detencoes_batch, licencas_batch
+from core.absences import (
+    ausencias_batch,
+    ausencias_batch_detalhadas,
+    detencoes_batch,
+    licencas_batch,
+)
 from core.users import (
     delete_ausencia_propria,
     delete_licenca,
@@ -259,7 +264,9 @@ def _check_rate_limit(key: str, max_ops: int = 30, window: int = 60) -> bool:
         # Garbage collection periódica — limpar entradas expiradas
         if now - _rate_last_gc > _RATE_GC_INTERVAL:
             _rate_last_gc = now
-            expired = [k for k, v in _rate_store.items() if not v or now - v[-1] > window]
+            expired = [
+                k for k, v in _rate_store.items() if not v or now - v[-1] > window
+            ]
             for k in expired:
                 del _rate_store[k]
 
@@ -442,9 +449,15 @@ def aluno_ausencias():
             estufa_almoco = request.form.get("estufa_almoco") == "1"
             estufa_jantar = request.form.get("estufa_jantar") == "1"
             ok, err = _registar_ausencia(
-                uid, de, ate, motivo, u["nii"],
-                hora_inicio=hora_inicio, hora_fim=hora_fim,
-                estufa_almoco=estufa_almoco, estufa_jantar=estufa_jantar,
+                uid,
+                de,
+                ate,
+                motivo,
+                u["nii"],
+                hora_inicio=hora_inicio,
+                hora_fim=hora_fim,
+                estufa_almoco=estufa_almoco,
+                estufa_jantar=estufa_jantar,
             )
             flash(
                 "Ausência registada com sucesso!" if ok else (err or "Erro."),
@@ -463,9 +476,15 @@ def aluno_ausencias():
                 flash("ID inválido.", "error")
             else:
                 ok, err = _editar_ausencia(
-                    aid, uid, de, ate, motivo,
-                    hora_inicio=hora_inicio, hora_fim=hora_fim,
-                    estufa_almoco=estufa_almoco, estufa_jantar=estufa_jantar,
+                    aid,
+                    uid,
+                    de,
+                    ate,
+                    motivo,
+                    hora_inicio=hora_inicio,
+                    hora_fim=hora_fim,
+                    estufa_almoco=estufa_almoco,
+                    estufa_jantar=estufa_jantar,
                 )
                 flash(
                     "Ausência atualizada!" if ok else (err or "Erro."),
@@ -635,6 +654,28 @@ def exportar_historico_aluno():
     )
 
 
+@aluno_bp.route("/aluno/qr")
+@login_required
+def aluno_qr():
+    """Serve o QR code do aluno autenticado (SVG).
+
+    O payload codificado é `NII:<nii>` — basta ler no kiosk para identificar
+    o aluno e registar a presença.
+    """
+    from core.qr import build_payload, qr_svg_bytes
+
+    u = current_user()
+    payload = build_payload(u["nii"])
+    svg = qr_svg_bytes(payload)
+    return Response(
+        svg,
+        headers={
+            "Content-Type": "image/svg+xml; charset=utf-8",
+            "Cache-Control": "private, max-age=3600",
+        },
+    )
+
+
 @aluno_bp.route("/aluno/password", methods=["GET", "POST"])
 @login_required
 def aluno_password():
@@ -694,9 +735,11 @@ def aluno_perfil():
         flash("Conta de sistema — funcionalidade não disponível.", "error")
         return redirect(url_for(".aluno_home"))
 
-    from core.users import get_user_by_nii_fields
+    from core.users import get_user_by_nii_fields, update_dieta_padrao
 
-    row = get_user_by_nii_fields(u["nii"], "NII,NI,Nome_completo,ano,email,telemovel")
+    row = get_user_by_nii_fields(
+        u["nii"], "NII,NI,Nome_completo,ano,email,telemovel,dieta_padrao"
+    )
     if not row:
         flash("Erro ao carregar perfil.", "error")
         return redirect(url_for(".aluno_home"))
@@ -710,8 +753,19 @@ def aluno_perfil():
         if telef_n is False:
             flash("Telemóvel inválido.", "error")
             return redirect(url_for(".aluno_perfil"))
+        dieta_in = (request.form.get("dieta_padrao") or "").strip()
+        if dieta_in not in {"Normal", "Vegetariano", "Dieta"}:
+            flash("Dieta inválida.", "error")
+            return redirect(url_for(".aluno_perfil"))
         try:
             update_aluno_contacts(uid, email_n, telef_n)
+            if dieta_in != (row.get("dieta_padrao") or "Normal"):
+                update_dieta_padrao(uid, dieta_in)
+                _audit(
+                    current_user().get("nii", "?"),
+                    "aluno_dieta_update",
+                    f"uid={uid} dieta={dieta_in}",
+                )
             _audit(
                 current_user().get("nii", "?"),
                 "aluno_perfil_update",

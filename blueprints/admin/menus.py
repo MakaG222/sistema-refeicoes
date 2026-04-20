@@ -55,7 +55,9 @@ def admin_menus():
                     pass
 
         u = current_user()
-        _audit(u.get("nii", "?"), "menu_save", f"data={d_save} por {u.get('nome', '?')}")
+        _audit(
+            u.get("nii", "?"), "menu_save", f"data={d_save} por {u.get('nome', '?')}"
+        )
         flash("Menu e capacidades guardados.", "ok")
         return redirect(url_for(".admin_menus", d=d_save))
 

@@ -32,11 +32,34 @@
               <label for="telemovel">📱 Telemóvel</label>
               <input type="tel" name="telemovel" id="telemovel" value="{{ aluno.get("telemovel") or "" }}" placeholder="+351XXXXXXXXX">
             </div>
+            {% set dieta_atual = aluno.get("dieta_padrao") or "Normal" %}
+            <div class="form-group">
+              <label for="dieta_padrao">🥗 Dieta padrão</label>
+              <select name="dieta_padrao" id="dieta_padrao">
+                <option value="Normal" {% if dieta_atual == "Normal" %}selected{% endif %}>Normal</option>
+                <option value="Vegetariano" {% if dieta_atual == "Vegetariano" %}selected{% endif %}>Vegetariano</option>
+                <option value="Dieta" {% if dieta_atual == "Dieta" %}selected{% endif %}>Dieta</option>
+              </select>
+              <small class="text-muted">Aplicada automaticamente nas novas refeições; podes sempre editar cada dia individualmente.</small>
+            </div>
             <div class="gap-btn">
-              <button class="btn btn-ok">💾 Guardar contactos</button>
+              <button class="btn btn-ok">💾 Guardar perfil</button>
               <a class="btn btn-ghost" href="{{ url_for(".aluno_home") }}">Cancelar</a>
             </div>
           </form>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-title">📱 O meu QR</div>
+        <p class="text-muted" style="font-size:.85rem">
+          Usa este QR no quiosque de check-in do refeitório. Podes imprimir,
+          guardar no telemóvel ou mostrar no ecrã — ele codifica o teu NII.
+        </p>
+        <div style="text-align:center;margin:1rem 0">
+          <img src="{{ url_for(".aluno_qr") }}" alt="QR do aluno {{ aluno.NII }}" style="max-width:220px;height:auto;border:1px solid #ccc;background:#fff;padding:.25rem">
+        </div>
+        <div class="gap-btn" style="justify-content:center">
+          <a class="btn btn-ghost btn-sm" href="{{ url_for(".aluno_qr") }}" download="qr-{{ aluno.NII }}.svg">⬇ Descarregar SVG</a>
         </div>
       </div>
       <div class="card">

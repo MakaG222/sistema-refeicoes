@@ -105,6 +105,24 @@ def _add_ausencia_horarios(conn: sqlite3.Connection) -> None:
         conn.execute("ALTER TABLE ausencias ADD COLUMN estufa_jantar INTEGER DEFAULT 0")
 
 
+def _add_dieta_padrao(conn: sqlite3.Connection) -> None:
+    """Adiciona coluna dieta_padrao ('Normal'|'Vegetariano'|'Dieta') à tabela utilizadores.
+
+    Passa a ser a preferência persistente do aluno — usada como default no
+    autopreenchimento em vez de hard-coded "Normal". Pode ser sempre
+    sobreposta por refeição através do form normal de edição.
+    """
+    cols = [
+        r["name"] for r in conn.execute("PRAGMA table_info(utilizadores)").fetchall()
+    ]
+    if "dieta_padrao" not in cols:
+        conn.execute(
+            "ALTER TABLE utilizadores ADD COLUMN dieta_padrao TEXT "
+            "NOT NULL DEFAULT 'Normal' "
+            "CHECK(dieta_padrao IN ('Normal','Vegetariano','Dieta'))"
+        )
+
+
 def _repair_fts(conn: sqlite3.Connection) -> None:
     """Verifica e repara FTS5 se corrompida."""
     try:
@@ -216,6 +234,7 @@ MIGRATIONS: list[tuple[str, callable]] = [
     ("004_add_estufa_columns", _add_estufa_columns),
     ("005_add_licenca_horas", _add_licenca_horas),
     ("006_add_ausencia_horarios", _add_ausencia_horarios),
+    ("007_add_dieta_padrao", _add_dieta_padrao),
     # Data migrations (one-off fixes) — preserva nomes antigos para compat
     ("reis_ni_382_482", _fix_reis_ni),
     ("rafaela_nii_20223_21223", _fix_rafaela_nii),

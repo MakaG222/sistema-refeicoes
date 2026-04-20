@@ -136,10 +136,13 @@ _ALLOWED_USER_COLS = frozenset(
         "is_active",
         "email",
         "telemovel",
+        "dieta_padrao",
         "data_criacao",
         "turma_id",
     }
 )
+
+_DIETAS_VALIDAS = frozenset({"Normal", "Vegetariano", "Dieta"})
 
 _DEFAULT_USER_COLS = ("id", "NII", "NI", "Nome_completo", "ano", "email", "telemovel")
 
@@ -242,6 +245,41 @@ def update_aluno_contacts(uid: int, email: str | None, tel: str | None) -> None:
             (email, tel, uid),
         )
         conn.commit()
+
+
+def get_dieta_padrao(uid: int) -> str:
+    """Retorna a dieta padrão do utilizador (default 'Normal' se não definida)."""
+    with db() as conn:
+        row = conn.execute(
+            "SELECT dieta_padrao FROM utilizadores WHERE id=?", (uid,)
+        ).fetchone()
+    if not row:
+        return "Normal"
+    dieta = row["dieta_padrao"] if "dieta_padrao" in row.keys() else None
+    return dieta if dieta in _DIETAS_VALIDAS else "Normal"
+
+
+def update_dieta_padrao(uid: int, dieta: str) -> None:
+    """Atualiza a dieta padrão de um utilizador.
+
+    Raises ValueError se `dieta` não for uma das opções válidas.
+    """
+    if dieta not in _DIETAS_VALIDAS:
+        raise ValueError(f"Dieta inválida: {dieta!r}")
+    with db() as conn:
+        conn.execute("UPDATE utilizadores SET dieta_padrao=? WHERE id=?", (dieta, uid))
+        conn.commit()
+
+
+def dietas_padrao_batch() -> dict[int, str]:
+    """Retorna `{uid: dieta}` para todos os utilizadores — usado pelo autofill
+    para evitar N+1 queries durante o preenchimento semanal.
+    """
+    with db() as conn:
+        rows = conn.execute(
+            "SELECT id, COALESCE(dieta_padrao,'Normal') AS dieta FROM utilizadores"
+        ).fetchall()
+    return {int(r["id"]): (r["dieta"] or "Normal") for r in rows}
 
 
 def get_aluno_stats(uid: int, d0_iso: str) -> dict | None:

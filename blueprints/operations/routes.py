@@ -44,6 +44,7 @@ from utils.business import (
     _get_ocupacao_dia,
     _registar_ausencia,
     _remover_ausencia,
+    _sla_itens_do_dia,
     _tem_ausencia_ativa,
 )
 from utils.constants import ABREV_DIAS, MSG_ID_INVALIDO, NOMES_DIAS
@@ -94,6 +95,9 @@ def painel_dia():
 
     # ── Alertas operacionais ──────────────────────────────────────────────
     alertas = _alertas_painel(d_str, perfil)
+
+    # ── SLA / prazos de marcação por refeição ─────────────────────────────
+    sla_itens = _sla_itens_do_dia(dt)
 
     # ── Previsão de amanhã (cozinha / admin) ─────────────────
     previsao = None
@@ -192,6 +196,15 @@ def painel_dia():
                 "cls": "btn-ghost",
             }
         )
+        if perfil in ("cozinha", "admin"):
+            acoes.append(
+                {
+                    "url": url_for(".forecast_view"),
+                    "icon": "🔮",
+                    "label": "Previsão",
+                    "cls": "btn-ghost",
+                }
+            )
 
     if perfil in ("oficialdia", "admin"):
         for ano in _get_anos_disponiveis():
@@ -208,6 +221,14 @@ def painel_dia():
                 "url": url_for(".controlo_presencas", d=dt.isoformat()),
                 "icon": "🎯",
                 "label": "Controlo Presenças",
+                "cls": "btn-primary",
+            }
+        )
+        acoes.append(
+            {
+                "url": url_for(".checkin_kiosk"),
+                "icon": "📷",
+                "label": "Quiosque Check-in",
                 "cls": "btn-primary",
             }
         )
@@ -304,6 +325,7 @@ def painel_dia():
         prev_d=prev_d,
         next_d=next_d,
         alertas=alertas,
+        sla_itens=sla_itens,
         occ_items=occ_items,
         t=t,
         previsao=previsao,
@@ -311,6 +333,139 @@ def painel_dia():
         detidos=detidos,
         lics=lics,
         acoes=acoes,
+    )
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# FORECAST — média móvel por weekday (cozinha / admin)
+# ═══════════════════════════════════════════════════════════════════════════
+
+
+@ops_bp.route("/forecast")
+@role_required("cozinha", "admin")
+def forecast_view():
+    """Previsão de consumo para os próximos 7 dias, baseada em média móvel
+    das últimas 4 ocorrências do mesmo dia-da-semana.
+    """
+    from core.forecast import forecast_proximos_dias
+
+    ano_s = (request.args.get("ano") or "").strip()
+    ano: int | None = None
+    if ano_s.isdigit():
+        ano = int(ano_s)
+    try:
+        dias_s = int(request.args.get("dias", "7"))
+    except ValueError:
+        dias_s = 7
+    dias_s = max(1, min(dias_s, 14))
+    try:
+        semanas_s = int(request.args.get("semanas", "4"))
+    except ValueError:
+        semanas_s = 4
+    semanas_s = max(2, min(semanas_s, 8))
+
+    pontos = forecast_proximos_dias(dias=dias_s, ano=ano, semanas_historico=semanas_s)
+    linhas = [
+        {
+            "dia": p.dia.isoformat(),
+            "data_fmt": p.dia.strftime("%d/%m"),
+            "abrev": ABREV_DIAS[p.weekday],
+            "pa": p.pa,
+            "lanche": p.lanche,
+            "almoco": p.almoco,
+            "jantar": p.jantar,
+            "amostras": p.amostras,
+            "confianca": (
+                "alta"
+                if p.amostras >= semanas_s
+                else ("media" if p.amostras >= max(2, semanas_s // 2) else "baixa")
+            ),
+        }
+        for p in pontos
+    ]
+    totais_prev = {
+        "pa": sum(p.pa for p in pontos),
+        "lanche": sum(p.lanche for p in pontos),
+        "almoco": sum(p.almoco for p in pontos),
+        "jantar": sum(p.jantar for p in pontos),
+    }
+    return render_template(
+        "operations/forecast.html",
+        linhas=linhas,
+        totais=totais_prev,
+        dias=dias_s,
+        semanas=semanas_s,
+        ano=ano,
+        anos_disponiveis=_get_anos_disponiveis(),
+    )
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# QR CHECK-IN — Kiosk simples (oficialdia / admin)
+# ═══════════════════════════════════════════════════════════════════════════
+
+
+@ops_bp.route("/checkin", methods=["GET", "POST"])
+@role_required("oficialdia", "admin")
+def checkin_kiosk():
+    """Modo quiosque: lê o QR/NII de um aluno e regista entrada/saída.
+
+    Um leitor USB actua como teclado — digita o payload e pressiona Enter.
+    O input está sempre em foco. POST devolve a mesma página com flash.
+
+    Ação por defeito:
+        - Se o aluno está actualmente ausente → regista entrada (remove ausência)
+        - Caso contrário → regista saída (cria ausência no dia)
+    Pode ser forçada via `acao=entrada|saida` no form.
+    """
+    from core.qr import parse_payload
+    from core.users import get_aluno_by_ni
+
+    u = current_user()
+    hoje = date.today()
+    resultado: dict | None = None
+
+    if request.method == "POST":
+        raw = (request.form.get("payload") or "").strip()
+        acao = (request.form.get("acao") or "auto").strip()
+        nii = parse_payload(raw)
+        if not nii:
+            flash("Código inválido ou vazio.", "error")
+            return redirect(url_for(".checkin_kiosk"))
+
+        # Aceitamos NI (de marcação ao longo dos anos) ou NII (login)
+        aluno = get_aluno_by_ni(nii)
+        if not aluno:
+            from core.auth_db import user_by_nii
+
+            aluno_nii = user_by_nii(nii)
+            if aluno_nii and aluno_nii.get("perfil") == "aluno":
+                # user_by_nii devolve estrutura semelhante; normalizamos
+                aluno = get_aluno_by_ni(aluno_nii.get("NI") or "")
+        if not aluno:
+            flash(f"Aluno não encontrado para '{nii}'.", "error")
+            return redirect(url_for(".checkin_kiosk"))
+
+        ausente = _tem_ausencia_ativa(aluno["id"], hoje)
+        if acao == "entrada" or (acao == "auto" and ausente):
+            registar_entrada_presenca(aluno["id"], hoje)
+            acao_feita = "entrada"
+            icon = "✅"
+        else:
+            registar_saida_presenca(aluno["id"], hoje, u["nii"], u["nome"], u["perfil"])
+            acao_feita = "saída"
+            icon = "🚪"
+        flash(
+            f"{icon} {acao_feita.capitalize()} registada: "
+            f"{aluno['Nome_completo']} (NI {aluno['NI']})",
+            "ok",
+        )
+        return redirect(url_for(".checkin_kiosk"))
+
+    return render_template(
+        "operations/checkin.html",
+        hoje_fmt=hoje.strftime("%d/%m/%Y"),
+        resultado=resultado,
     )
 
 
@@ -419,7 +574,9 @@ def relatorio_semanal():
     }
 
     # Batch: totais e calendário para a semana toda
-    _rel_map, _rel_empty = get_totais_periodo(d0.isoformat(), d1.isoformat(), ano_int_rel)
+    _rel_map, _rel_empty = get_totais_periodo(
+        d0.isoformat(), d1.isoformat(), ano_int_rel
+    )
     _rel_cal = dias_operacionais_batch(d0, d1)
 
     totais = {
@@ -590,8 +747,10 @@ def ausencias():
                 request.form.get("ate", ""),
                 request.form.get("motivo", "")[:500],
                 u["nii"],
-                hora_inicio=hora_inicio, hora_fim=hora_fim,
-                estufa_almoco=estufa_almoco, estufa_jantar=estufa_jantar,
+                hora_inicio=hora_inicio,
+                hora_fim=hora_fim,
+                estufa_almoco=estufa_almoco,
+                estufa_jantar=estufa_jantar,
             )
             flash(
                 f"Ausência registada para {db_u['Nome_completo']}."
@@ -631,8 +790,12 @@ def licencas_entradas_saidas():
             flash("ID de licença inválido.", "error")
         elif acao in ("saida", "entrada", "limpar_saida", "limpar_entrada"):
             registar_hora_licenca(lic_id, acao)
-            msgs = {"saida": "Saída registada.", "entrada": "Entrada registada.",
-                    "limpar_saida": "Saída limpa.", "limpar_entrada": "Entrada limpa."}
+            msgs = {
+                "saida": "Saída registada.",
+                "entrada": "Entrada registada.",
+                "limpar_saida": "Saída limpa.",
+                "limpar_entrada": "Entrada limpa.",
+            }
             flash(f"✅ {msgs.get(acao, 'Ação concluída.')}", "ok")
 
         return redirect(url_for(".licencas_entradas_saidas", d=d_str))

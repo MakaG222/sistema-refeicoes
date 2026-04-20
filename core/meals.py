@@ -86,9 +86,10 @@ def refeicao_editavel(d: date) -> tuple[bool, str]:
 
 def get_totais_dia(di: str, ano: int | None = None) -> dict[str, int]:
     """Devolve totais de todas as refeições para uma data ISO (di) numa só query."""
+    # _SQL_TOTAIS_AGG e _SQL_ACTIVE_JOIN são constantes internas (sem input de user)
     sql = (
-        f"SELECT {_SQL_TOTAIS_AGG}"
-        f" FROM refeicoes r {_SQL_ACTIVE_JOIN}"
+        f"SELECT {_SQL_TOTAIS_AGG}"  # nosec B608
+        f" FROM refeicoes r {_SQL_ACTIVE_JOIN}"  # nosec B608
         " WHERE r.data=? AND (? IS NULL OR u.ano=?)"
     )
     with db() as conn:
@@ -106,9 +107,10 @@ def get_totais_periodo(
     d_de: str, d_ate: str, ano: int | None = None
 ) -> tuple[dict[str, dict[str, int]], dict[str, int]]:
     """Totais agrupados por dia para um intervalo. Devolve ({iso_date: dict}, empty_dict)."""
+    # _SQL_TOTAIS_AGG e _SQL_ACTIVE_JOIN são constantes internas (sem input de user)
     sql = (
-        f"SELECT r.data, {_SQL_TOTAIS_AGG}"
-        f" FROM refeicoes r {_SQL_ACTIVE_JOIN}"
+        f"SELECT r.data, {_SQL_TOTAIS_AGG}"  # nosec B608
+        f" FROM refeicoes r {_SQL_ACTIVE_JOIN}"  # nosec B608
         " WHERE r.data>=? AND r.data<=? AND (? IS NULL OR u.ano=?)"
         " GROUP BY r.data"
     )

@@ -173,3 +173,42 @@ def api_autopreencher_cron():
     except Exception as exc:
         current_app.logger.error(f"api_autopreencher_cron: {exc}")
         return _api_error(str(exc))
+
+
+@api_bp.route("/api/export-cron", methods=["POST"])
+def api_export_cron():
+    """Endpoint para cron externo gerar relatório diário em PDF.
+
+    Query params opcionais:
+      - data=YYYY-MM-DD (default: hoje)
+      - ano=1..8 (default: todos)
+
+    Uso:
+      curl -X POST -H "Authorization: Bearer <TOKEN>" \
+           "http://host/api/export-cron?data=2026-04-19"
+    """
+    if not _verify_cron_token():
+        abort(403)
+    from datetime import date as _date
+
+    from core.exports import exportacao_pdf_do_dia
+
+    data_s = (request.args.get("data") or "").strip()
+    ano_s = (request.args.get("ano") or "").strip()
+    try:
+        d = _date.fromisoformat(data_s) if data_s else _date.today()
+    except ValueError:
+        return _api_error("data inválida (esperado YYYY-MM-DD)", status=400)
+    ano: int | None = None
+    if ano_s:
+        try:
+            ano = int(ano_s)
+        except ValueError:
+            return _api_error("ano inválido", status=400)
+
+    try:
+        path = exportacao_pdf_do_dia(d, ano)
+        return _api_ok({"path": path, "data": d.isoformat(), "ano": ano})
+    except Exception as exc:
+        current_app.logger.error(f"api_export_cron: {exc}")
+        return _api_error(str(exc))

@@ -1,0 +1,87 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="container">
+  <div class="page-header">
+    {{ back_btn(url_for('.painel_dia')) }}
+    <div class="page-title">🔮 Previsão de consumo</div>
+  </div>
+
+  <div class="card card-compact">
+    <div class="flex-between">
+      <div class="text-muted" style="font-size:.9rem">
+        Média móvel das últimas <strong>{{ semanas }}</strong> ocorrências do mesmo dia-da-semana.
+        Útil para planeamento de encomendas e produção.
+      </div>
+      <form method="get" class="flex" style="gap:.5rem">
+        <select name="ano" class="w-auto" style="padding:.3rem .5rem">
+          <option value="">Todos os anos</option>
+          {% for a in anos_disponiveis %}
+          <option value="{{ a }}"{{ " selected" if ano == a|int else "" }}>{{ a }}º Ano</option>
+          {% endfor %}
+        </select>
+        <label style="font-size:.85rem">Dias
+          <input type="number" name="dias" min="1" max="14" value="{{ dias }}" style="width:4rem">
+        </label>
+        <label style="font-size:.85rem">Semanas
+          <input type="number" name="semanas" min="2" max="8" value="{{ semanas }}" style="width:4rem">
+        </label>
+        <button class="btn btn-primary btn-sm">Atualizar</button>
+      </form>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-title">📊 Próximos {{ dias }} dias</div>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Dia</th>
+            <th>Data</th>
+            <th>☕ PA</th>
+            <th>🥐 Lanche</th>
+            <th>🍽️ Almoço</th>
+            <th>🌙 Jantar</th>
+            <th>Confiança</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for r in linhas %}
+          <tr>
+            <td><strong>{{ r.abrev }}</strong></td>
+            <td>{{ r.data_fmt }}</td>
+            <td>{{ r.pa }}</td>
+            <td>{{ r.lanche }}</td>
+            <td>{{ r.almoco }}</td>
+            <td>{{ r.jantar }}</td>
+            <td>
+              {% if r.confianca == 'alta' %}
+                <span class="text-ok">● alta ({{ r.amostras }}/{{ semanas }})</span>
+              {% elif r.confianca == 'media' %}
+                <span class="text-warn">● média ({{ r.amostras }}/{{ semanas }})</span>
+              {% else %}
+                <span class="text-err">● baixa ({{ r.amostras }}/{{ semanas }})</span>
+              {% endif %}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+        <tfoot>
+          <tr>
+            <td colspan="2"><strong>Total período</strong></td>
+            <td><strong>{{ totais.pa }}</strong></td>
+            <td><strong>{{ totais.lanche }}</strong></td>
+            <td><strong>{{ totais.almoco }}</strong></td>
+            <td><strong>{{ totais.jantar }}</strong></td>
+            <td></td>
+          </tr>
+        </tfoot>
+      </table>
+    </div>
+    <p class="text-muted mt-xl" style="font-size:.8rem">
+      ⓘ Os valores são uma estimativa baseada em histórico. Confiança "baixa"
+      significa menos de metade da janela histórica disponível — trate com cautela.
+    </p>
+  </div>
+</div>
+{% endblock %}

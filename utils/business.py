@@ -11,6 +11,7 @@ from datetime import date, datetime, timedelta
 
 from flask import current_app
 
+from core.constants import PRAZO_LIMITE_HORAS
 from core.database import db
 from core.meals import (
     get_ocupacao_capacidade,
@@ -22,12 +23,16 @@ import config as cfg
 from utils.helpers import _refeicao_set
 
 
-def _horarios_sobrepoe(h_inicio: str, h_fim: str, ref_inicio: str, ref_fim: str) -> bool:
+def _horarios_sobrepoe(
+    h_inicio: str, h_fim: str, ref_inicio: str, ref_fim: str
+) -> bool:
     """Verifica se o intervalo [h_inicio, h_fim] se sobrepõe com [ref_inicio, ref_fim]."""
     return h_inicio < ref_fim and h_fim > ref_inicio
 
 
-def _refeicoes_afetadas(hora_inicio: str | None, hora_fim: str | None) -> dict[str, bool]:
+def _refeicoes_afetadas(
+    hora_inicio: str | None, hora_fim: str | None
+) -> dict[str, bool]:
     """Determina quais refeições são afetadas por uma ausência com horários.
 
     Se hora_inicio/hora_fim são None, todas as refeições são afetadas (dia inteiro).
@@ -41,13 +46,89 @@ def _refeicoes_afetadas(hora_inicio: str | None, hora_fim: str | None) -> dict[s
     return afetadas
 
 
+# ── SLA / Prazos de marcação ─────────────────────────────────────────────
+
+
+_SLA_MEALS: tuple[tuple[str, str, str], ...] = (
+    ("pequeno_almoco", "☕", "Pequeno Almoço"),
+    ("lanche", "🥐", "Lanche"),
+    ("almoco", "🍽️", "Almoço"),
+    ("jantar", "🌙", "Jantar"),
+)
+
+
+def _fmt_hm(total_minutes: int) -> str:
+    """Formata um intervalo em minutos para 'Xd Yh Zm' / 'Yh Zm' / 'Zm'."""
+    total_minutes = abs(int(total_minutes))
+    days, rem = divmod(total_minutes, 24 * 60)
+    hours, minutes = divmod(rem, 60)
+    if days:
+        return f"{days}d {hours}h"
+    if hours:
+        return f"{hours}h {minutes}m"
+    return f"{minutes}m"
+
+
+def _sla_itens_do_dia(d: date, agora: datetime | None = None) -> list[dict]:
+    """Calcula o estado do prazo de marcação para cada refeição de um dia.
+
+    Para cada refeição em cfg.REFEICAO_HORARIOS, calcula:
+        deadline_dt = datetime(d, hora_inicio) - PRAZO_LIMITE_HORAS
+    e compara com `agora`. O resultado é uma lista de dicts prontos para
+    renderização (label, icon, estado, detalhe, deadline_fmt).
+
+    Se PRAZO_LIMITE_HORAS é None, devolve lista vazia (funcionalidade off).
+    """
+    if PRAZO_LIMITE_HORAS is None:
+        return []
+    agora = agora or datetime.now()
+    out: list[dict] = []
+    for key, icon, label in _SLA_MEALS:
+        horario = cfg.REFEICAO_HORARIOS.get(key)
+        if not horario:
+            continue
+        hora_ini = horario[0]
+        try:
+            hh, mm = (int(x) for x in hora_ini.split(":"))
+        except ValueError:
+            continue
+        meal_start = datetime(d.year, d.month, d.day, hh, mm, 0)
+        deadline = meal_start - timedelta(hours=PRAZO_LIMITE_HORAS)
+        diff_min = int((deadline - agora).total_seconds() // 60)
+        if diff_min > 0:
+            # Ainda aberto. Warn se < 6h.
+            estado = "warn" if diff_min < 6 * 60 else "ok"
+            detalhe = f"fecha em {_fmt_hm(diff_min)}"
+        else:
+            estado = "closed"
+            detalhe = f"fechou há {_fmt_hm(diff_min)}"
+        out.append(
+            {
+                "key": key,
+                "icon": icon,
+                "label": label,
+                "estado": estado,
+                "detalhe": detalhe,
+                "deadline_fmt": deadline.strftime("%d/%m %H:%M"),
+                "meal_start_fmt": meal_start.strftime("%H:%M"),
+            }
+        )
+    return out
+
+
 # ── Ausências ────────────────────────────────────────────────────────────
 
 
 def _registar_ausencia(
-    uid: int, de: str, ate: str, motivo: str, criado_por: str,
-    hora_inicio: str | None = None, hora_fim: str | None = None,
-    estufa_almoco: bool = False, estufa_jantar: bool = False,
+    uid: int,
+    de: str,
+    ate: str,
+    motivo: str,
+    criado_por: str,
+    hora_inicio: str | None = None,
+    hora_fim: str | None = None,
+    estufa_almoco: bool = False,
+    estufa_jantar: bool = False,
 ) -> tuple[bool, str]:
     try:
         datetime.strptime(de, "%Y-%m-%d")
@@ -76,9 +157,17 @@ def _registar_ausencia(
                (utilizador_id,ausente_de,ausente_ate,hora_inicio,hora_fim,
                 estufa_almoco,estufa_jantar,motivo,criado_por)
                VALUES (?,?,?,?,?,?,?,?,?)""",
-            (uid, de, ate, hora_inicio, hora_fim,
-             1 if estufa_almoco else 0, 1 if estufa_jantar else 0,
-             motivo or None, criado_por),
+            (
+                uid,
+                de,
+                ate,
+                hora_inicio,
+                hora_fim,
+                1 if estufa_almoco else 0,
+                1 if estufa_jantar else 0,
+                motivo or None,
+                criado_por,
+            ),
         )
         # Limpar refeições afetadas durante o período de ausência
         _aplicar_ausencia_refeicoes(
@@ -94,7 +183,10 @@ def _registar_ausencia(
 
 
 def _aplicar_ausencia_refeicoes(
-    conn, uid: int, de: str, ate: str,
+    conn,
+    uid: int,
+    de: str,
+    ate: str,
     afetadas: dict[str, bool],
     estufa_almoco: bool = False,
     estufa_jantar: bool = False,
@@ -119,8 +211,10 @@ def _aplicar_ausencia_refeicoes(
             sets.append("jantar_sai_unidade=0")
             sets.append("jantar_estufa=0")
     if sets:
+        # `sets` só contém strings hardcoded desta função (nomes de colunas e
+        # valores literais) — sem input de user. Safe.
         conn.execute(
-            f"UPDATE refeicoes SET {', '.join(sets)} WHERE utilizador_id=? AND data>=? AND data<=?",
+            f"UPDATE refeicoes SET {', '.join(sets)} WHERE utilizador_id=? AND data>=? AND data<=?",  # nosec B608
             (uid, de, ate),
         )
 
@@ -132,9 +226,15 @@ def _remover_ausencia(aid: int) -> None:
 
 
 def _editar_ausencia(
-    aid: int, uid: int, de: str, ate: str, motivo: str,
-    hora_inicio: str | None = None, hora_fim: str | None = None,
-    estufa_almoco: bool = False, estufa_jantar: bool = False,
+    aid: int,
+    uid: int,
+    de: str,
+    ate: str,
+    motivo: str,
+    hora_inicio: str | None = None,
+    hora_fim: str | None = None,
+    estufa_almoco: bool = False,
+    estufa_jantar: bool = False,
 ) -> tuple[bool, str]:
     try:
         datetime.strptime(de, "%Y-%m-%d")
@@ -158,9 +258,17 @@ def _editar_ausencia(
             """UPDATE ausencias SET ausente_de=?,ausente_ate=?,hora_inicio=?,hora_fim=?,
                estufa_almoco=?,estufa_jantar=?,motivo=?
                WHERE id=? AND utilizador_id=?""",
-            (de, ate, hora_inicio, hora_fim,
-             1 if estufa_almoco else 0, 1 if estufa_jantar else 0,
-             motivo or None, aid, uid),
+            (
+                de,
+                ate,
+                hora_inicio,
+                hora_fim,
+                1 if estufa_almoco else 0,
+                1 if estufa_jantar else 0,
+                motivo or None,
+                aid,
+                uid,
+            ),
         )
         conn.commit()
     return True, ""
@@ -337,7 +445,10 @@ def _marcar_licenca_fds(uid: int, sexta: date, alterado_por: str) -> tuple[bool,
     Retorna (sucesso: bool, mensagem: str)
     """
     if _fds_deadline_passed(sexta):
-        return False, "Prazo expirado — licença FDS só pode ser marcada até sexta às 12h."
+        return (
+            False,
+            "Prazo expirado — licença FDS só pode ser marcada até sexta às 12h.",
+        )
     try:
         # ── Sexta-feira: licença antes_jantar ──────────────────────────
         with db() as conn:
@@ -380,7 +491,10 @@ def _cancelar_licenca_fds(uid: int, sexta: date, alterado_por: str) -> tuple[boo
     - Repõe jantar normal na sexta, retira sai_unidade
     """
     if _fds_deadline_passed(sexta):
-        return False, "Prazo expirado — licença FDS só pode ser cancelada até sexta às 12h."
+        return (
+            False,
+            "Prazo expirado — licença FDS só pode ser cancelada até sexta às 12h.",
+        )
     try:
         # Remover licença da sexta
         with db() as conn:

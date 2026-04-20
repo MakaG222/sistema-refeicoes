@@ -18,6 +18,7 @@ from core.meals import (
     refeicoes_batch,
 )
 from core.notifications import notify
+from core.users import dietas_padrao_batch
 
 log = logging.getLogger(__name__)
 
@@ -43,52 +44,44 @@ _CARRY_FIELDS = (
 )
 
 
-def _default_refeicao_para_dia(d: date) -> dict[str, Any]:
-    """Default por dia: tudo marcado em dias com refeições; tudo a zero caso contrário."""
-    if not dia_tem_refeicoes(d):
-        return {
-            "pequeno_almoco": 0,
-            "lanche": 0,
-            "almoco": None,
-            "jantar_tipo": None,
-            "jantar_sai_unidade": 0,
-            "almoco_estufa": 0,
-            "jantar_estufa": 0,
-        }
+_EMPTY_DEFAULT = {
+    "pequeno_almoco": 0,
+    "lanche": 0,
+    "almoco": None,
+    "jantar_tipo": None,
+    "jantar_sai_unidade": 0,
+    "almoco_estufa": 0,
+    "jantar_estufa": 0,
+}
+
+
+def _full_default(dieta: str = "Normal") -> dict[str, Any]:
+    """Dia com refeições → tudo marcado; almoço/jantar respeitam `dieta`."""
     return {
         "pequeno_almoco": 1,
         "lanche": 1,
-        "almoco": "Normal",
-        "jantar_tipo": "Normal",
+        "almoco": dieta,
+        "jantar_tipo": dieta,
         "jantar_sai_unidade": 0,
         "almoco_estufa": 0,
         "jantar_estufa": 0,
     }
+
+
+def _default_refeicao_para_dia(d: date, dieta: str = "Normal") -> dict[str, Any]:
+    """Default por dia: tudo marcado (com `dieta`) ou tudo a zero se não há refeições."""
+    if not dia_tem_refeicoes(d):
+        return dict(_EMPTY_DEFAULT)
+    return _full_default(dieta)
 
 
 def _default_refeicao_para_dia_precomputado(
-    d: date, tipos_dia: dict[str, str]
+    d: date, tipos_dia: dict[str, str], dieta: str = "Normal"
 ) -> dict[str, Any]:
-    """Mesmo contrato que `_default_refeicao_para_dia` mas usa tipos já carregados."""
+    """Mesmo contrato que `_default_refeicao_para_dia` mas com tipos pré-carregados."""
     if not _dia_tem_refeicoes_from_map(d, tipos_dia):
-        return {
-            "pequeno_almoco": 0,
-            "lanche": 0,
-            "almoco": None,
-            "jantar_tipo": None,
-            "jantar_sai_unidade": 0,
-            "almoco_estufa": 0,
-            "jantar_estufa": 0,
-        }
-    return {
-        "pequeno_almoco": 1,
-        "lanche": 1,
-        "almoco": "Normal",
-        "jantar_tipo": "Normal",
-        "jantar_sai_unidade": 0,
-        "almoco_estufa": 0,
-        "jantar_estufa": 0,
-    }
+        return dict(_EMPTY_DEFAULT)
+    return _full_default(dieta)
 
 
 def _carry_forward(prev: dict[str, Any], base: dict[str, Any]) -> dict[str, Any]:
@@ -121,6 +114,7 @@ def autopreencher_refeicoes_semanais(dias_a_gerar: int = 14) -> None:
         with db() as conn:
             users = [dict(r) for r in conn.execute("SELECT id FROM utilizadores")]
         tipos_dia = dias_operacionais_batch(today, window_ate)
+        dietas = dietas_padrao_batch()
     except Exception as e:
         log.exception("autopreencher_refeicoes_semanais: falha a obter contexto")
         notify(
@@ -139,6 +133,7 @@ def autopreencher_refeicoes_semanais(dias_a_gerar: int = 14) -> None:
     falhas: list[int] = []
     for u in users:
         uid = u["id"]
+        dieta = dietas.get(uid, "Normal")
         try:
             prev_meals, _ = refeicoes_batch(uid, prev_de, prev_ate)
             for d in dias_com_refeicoes:
@@ -146,7 +141,7 @@ def autopreencher_refeicoes_semanais(dias_a_gerar: int = 14) -> None:
                     continue
                 if refeicao_exists(uid, d):
                     continue
-                base = _default_refeicao_para_dia_precomputado(d, tipos_dia)
+                base = _default_refeicao_para_dia_precomputado(d, tipos_dia, dieta)
                 prev_row = prev_meals.get((d - timedelta(days=7)).isoformat(), {})
                 final = _carry_forward(prev_row, base)
                 refeicao_save(uid, d, final, alterado_por="sistema")

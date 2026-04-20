@@ -31,6 +31,8 @@ CREATE TABLE IF NOT EXISTS utilizadores (
   is_active            INTEGER NOT NULL DEFAULT 1,
   email                TEXT,
   telemovel            TEXT,
+  dieta_padrao         TEXT NOT NULL DEFAULT 'Normal'
+                         CHECK(dieta_padrao IN ('Normal','Vegetariano','Dieta')),
   data_criacao         TEXT DEFAULT CURRENT_TIMESTAMP
 );
 
