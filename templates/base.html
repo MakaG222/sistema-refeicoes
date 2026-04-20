@@ -5,8 +5,14 @@
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <meta name="description" content="Sistema de gest&atilde;o de refei&ccedil;&otilde;es da Escola Naval Portuguesa">
   <meta name="theme-color" content="#0A2D4E">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Refei&ccedil;&otilde;es">
+  <meta name="mobile-web-app-capable" content="yes">
   <title>Escola Naval — Refei&ccedil;&otilde;es</title>
   <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
+  <link rel="apple-touch-icon" href="/static/logo_escola_naval.jpg">
+  <link rel="manifest" href="/static/manifest.json">
   <link rel="stylesheet" href="/static/css/app.css">
   {% block head_extra %}{% endblock %}
 </head>
@@ -42,5 +48,6 @@
 {% endautoescape %}
 <script src="/static/js/app.js"></script>
 <script src="/static/js/dynamic-styles.js"></script>
+<script src="/static/js/sw-register.js"></script>
 {% block scripts %}{% endblock %}
 </body></html>

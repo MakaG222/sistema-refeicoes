@@ -34,6 +34,38 @@
   </div>
   {% endif %}
 
+  {% if sla_itens %}
+  <div class="card">
+    <div class="card-title">⏱️ Prazos de marcação</div>
+    <div class="grid grid-4">
+      {% for s in sla_itens %}
+      <div class="stat-box">
+        <div class="stat-lbl">{{ s.icon }} {{ s.label }}</div>
+        <div style="font-size:.95rem;margin-top:.35rem">
+          {% if s.estado == 'ok' %}
+            <span class="text-ok">● aberto</span>
+          {% elif s.estado == 'warn' %}
+            <span class="text-warn">● a fechar</span>
+          {% else %}
+            <span class="text-err">● fechado</span>
+          {% endif %}
+        </div>
+        <div class="text-muted" style="font-size:.78rem;margin-top:.15rem">
+          {{ s.detalhe }}
+        </div>
+        <div class="text-muted" style="font-size:.72rem">
+          prazo: {{ s.deadline_fmt }}
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+    <p class="text-muted mt-md" style="font-size:.78rem">
+      ⓘ Alunos podem alterar marcações até 48h antes do início da refeição.
+      Após o prazo, só o Oficial de Dia pode intervir.
+    </p>
+  </div>
+  {% endif %}
+
   <div class="card">
     <div class="card-title">Ocupação geral</div>
     <div class="grid grid-4">
