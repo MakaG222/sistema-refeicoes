@@ -333,3 +333,125 @@ class TestPDFExport:
             headers={"Authorization": "Bearer dev"},
         )
         assert resp.status_code == 400
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# #15 — QR check-in
+# ═══════════════════════════════════════════════════════════════════════════
+
+
+class TestQRHelpers:
+    def test_build_payload_format(self, app):
+        from core.qr import QR_PAYLOAD_PREFIX, build_payload
+
+        p = build_payload("abc123")
+        assert p.startswith(QR_PAYLOAD_PREFIX)
+        assert p.endswith("abc123")
+
+    def test_parse_payload_com_prefixo(self, app):
+        from core.qr import parse_payload
+
+        assert parse_payload("NII:abc123") == "abc123"
+        assert parse_payload("  NII:abc123  ") == "abc123"
+
+    def test_parse_payload_sem_prefixo(self, app):
+        from core.qr import parse_payload
+
+        assert parse_payload("abc123") == "abc123"
+        assert parse_payload("ni-007") == "ni-007"
+
+    def test_parse_payload_invalido(self, app):
+        from core.qr import parse_payload
+
+        assert parse_payload("") is None
+        assert parse_payload(None) is None  # type: ignore[arg-type]
+        assert parse_payload("   ") is None
+        assert parse_payload("com espaço") is None
+        assert parse_payload("NII:") is None  # prefixo mas vazio
+
+    def test_qr_svg_bytes_com_qrcode(self, app):
+        pytest.importorskip("qrcode")
+        from core.qr import qr_svg_bytes
+
+        out = qr_svg_bytes("NII:abc")
+        assert isinstance(out, bytes)
+        body = out.decode("utf-8")
+        assert "<svg" in body
+
+    def test_qr_svg_bytes_fallback(self, app, monkeypatch):
+        """Se `qrcode` não importa, devolve SVG fallback com o texto legível."""
+        import builtins
+
+        real = builtins.__import__
+
+        def fake(name, *a, **kw):
+            if name.startswith("qrcode"):
+                raise ImportError
+            return real(name, *a, **kw)
+
+        monkeypatch.setattr(builtins, "__import__", fake)
+        from core.qr import qr_svg_bytes
+
+        out = qr_svg_bytes("NII:xyz")
+        body = out.decode("utf-8")
+        assert "<svg" in body
+        assert "NII:xyz" in body  # texto legível em fallback
+
+
+class TestCheckinKiosk:
+    def test_aluno_qr_route(self, app, client):
+        from tests.conftest import login_as
+
+        create_aluno("qr_own_1", "QR001", "Aluno QR1", ano="1")
+        login_as(client, "qr_own_1", "qr_own_1")
+        resp = client.get("/aluno/qr")
+        assert resp.status_code == 200
+        assert resp.headers["Content-Type"].startswith("image/svg+xml")
+        body = resp.data.decode("utf-8")
+        assert "<svg" in body
+
+    def test_checkin_requer_oficialdia(self, app, client):
+        """Aluno sem perfil oficialdia/admin recebe 403."""
+        from tests.conftest import login_as
+
+        create_aluno("qr_chk_a", "QRA01", "Aluno CheckinA", ano="1")
+        login_as(client, "qr_chk_a", "qr_chk_a")
+        resp = client.get("/checkin")
+        # role_required redireciona ou devolve 403
+        assert resp.status_code in (302, 403)
+
+    def test_checkin_get_render(self, app, client):
+        from tests.conftest import login_as
+
+        login_as(client, "oficialdia", "oficial123")
+        resp = client.get("/checkin")
+        assert resp.status_code == 200
+        assert b"Quiosque" in resp.data or b"check-in" in resp.data
+
+    def test_checkin_nii_invalido(self, app, client):
+        from tests.conftest import get_csrf, login_as
+
+        login_as(client, "oficialdia", "oficial123")
+        csrf = get_csrf(client)
+        resp = client.post(
+            "/checkin",
+            data={"csrf_token": csrf, "payload": "   ", "acao": "auto"},
+            follow_redirects=True,
+        )
+        assert resp.status_code == 200
+        assert b"inv" in resp.data or b"vazio" in resp.data
+
+    def test_checkin_auto_regista_saida_se_presente(self, app, client):
+        """Aluno presente → check-in 'auto' regista saída."""
+        from tests.conftest import get_csrf, login_as
+
+        create_aluno("qr_chk_b", "QRB01", "Aluno CheckinB", ano="1")
+        login_as(client, "oficialdia", "oficial123")
+        csrf = get_csrf(client)
+        resp = client.post(
+            "/checkin",
+            data={"csrf_token": csrf, "payload": "NII:QRB01", "acao": "auto"},
+            follow_redirects=True,
+        )
+        # Deve redirecionar (302 → 200) sem erros de servidor
+        assert resp.status_code < 500

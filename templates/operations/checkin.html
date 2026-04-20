@@ -1,0 +1,57 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="container">
+  <div class="page-header">
+    {{ back_btn(url_for('.painel_dia')) }}
+    <div class="page-title">📷 Quiosque de check-in</div>
+  </div>
+
+  <div class="card">
+    <div class="card-title">🗓️ {{ hoje_fmt }}</div>
+    <p class="text-muted" style="font-size:.9rem">
+      Apresenta o QR do aluno a um leitor USB ou digita o NII/NI.
+      Carrega <kbd>Enter</kbd> para submeter. A ação é determinada
+      automaticamente (entrada se estava ausente, saída caso contrário).
+    </p>
+    <form method="post" autocomplete="off" data-autofocus>
+      {{ csrf_input() }}
+      <div class="form-group">
+        <label for="payload">Código / NII</label>
+        <input
+          type="text"
+          name="payload"
+          id="payload"
+          autofocus
+          required
+          autocomplete="off"
+          inputmode="text"
+          style="font-size:1.3rem;padding:.75rem;width:100%"
+          placeholder="NII:123 ou 123">
+      </div>
+      <div class="gap-btn">
+        <button name="acao" value="auto" class="btn btn-primary btn-lg">
+          🔄 Automático
+        </button>
+        <button name="acao" value="entrada" class="btn btn-ok">
+          ✅ Forçar entrada
+        </button>
+        <button name="acao" value="saida" class="btn btn-warn">
+          🚪 Forçar saída
+        </button>
+      </div>
+    </form>
+  </div>
+
+  <div class="card">
+    <div class="card-title">ℹ️ Como funciona</div>
+    <ul class="text-muted" style="font-size:.9rem;line-height:1.5">
+      <li>Cada aluno tem um QR no seu perfil — contém <code>NII:&lt;nii&gt;</code>.</li>
+      <li>Um leitor USB actua como teclado: digita o payload + Enter.</li>
+      <li>Também podes digitar manualmente o NI/NII se não tiveres leitor.</li>
+      <li>Modo <strong>Automático</strong>: se o aluno está ausente → entrada;
+          caso contrário → saída.</li>
+      <li>Podes forçar a ação clicando nos botões verde/laranja.</li>
+    </ul>
+  </div>
+</div>
+{% endblock %}

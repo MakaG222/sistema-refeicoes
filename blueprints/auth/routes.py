@@ -42,7 +42,9 @@ def login():
     error = None
     if request.method == "POST":
         nii = request.form.get("nii", "").strip()[:32]
-        pw = request.form.get("pw", request.form.get("password", "")).strip()[:MAX_PASSWORD_LEN]
+        pw = request.form.get("pw", request.form.get("password", "")).strip()[
+            :MAX_PASSWORD_LEN
+        ]
         # Rate limiting por IP (proteção contra ataques distribuídos)
         ip = _client_ip()
         ip_falhas = recent_failures_by_ip(ip, IP_RATE_LIMIT_WINDOW)
@@ -103,7 +105,9 @@ def login():
                             try:
                                 _migrate_password_hash(db_u["id"], pw)
                             except Exception:
-                                current_app.logger.exception("Falha ao migrar hash de password para NII=%s", nii)
+                                current_app.logger.exception(
+                                    "Falha ao migrar hash de password para NII=%s", nii
+                                )
                     else:
                         reg_login(nii, 0, ip=_client_ip())
                         falhas = recent_failures(nii, 10)

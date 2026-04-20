@@ -252,7 +252,10 @@ def ausencias_cmd():
                     count_ok += 1
                 else:
                     erros.append(f"{db_b['Nome_completo']}: {err}")
-            flash(f"{count_ok}/{len(niis)} ausência(s) registada(s).", "ok" if count_ok else "error")
+            flash(
+                f"{count_ok}/{len(niis)} ausência(s) registada(s).",
+                "ok" if count_ok else "error",
+            )
             if erros:
                 flash("Falhas: " + "; ".join(erros[:5]), "warn")
             return redirect(url_for(".ausencias_cmd"))
@@ -276,8 +279,10 @@ def ausencias_cmd():
                 request.form.get("ate", ""),
                 _val_text(request.form.get("motivo", ""))[:500],
                 u["nii"],
-                hora_inicio=hora_inicio, hora_fim=hora_fim,
-                estufa_almoco=estufa_almoco, estufa_jantar=estufa_jantar,
+                hora_inicio=hora_inicio,
+                hora_fim=hora_fim,
+                estufa_almoco=estufa_almoco,
+                estufa_jantar=estufa_jantar,
             )
             flash(
                 f"Ausência registada para {db_u['Nome_completo']}."
@@ -352,7 +357,10 @@ def detencoes_cmd():
                 d1 = _parse_date(de)
                 d2 = _parse_date(ate)
                 if d2 < d1:
-                    flash("A data 'Até' tem de ser igual ou posterior à data 'De'.", "error")
+                    flash(
+                        "A data 'Até' tem de ser igual ou posterior à data 'De'.",
+                        "error",
+                    )
                     return redirect(url_for(".detencoes_cmd"))
             except Exception:
                 flash("Datas inválidas.", "error")
@@ -374,7 +382,10 @@ def detencoes_cmd():
                     count_ok += 1
                 else:
                     erros.append(f"{db_b['Nome_completo']}: {msg}")
-            flash(f"{count_ok}/{len(niis)} detenção(ões) registada(s).", "ok" if count_ok else "error")
+            flash(
+                f"{count_ok}/{len(niis)} detenção(ões) registada(s).",
+                "ok" if count_ok else "error",
+            )
             if erros:
                 flash("Falhas: " + "; ".join(erros[:5]), "warn")
             return redirect(url_for(".detencoes_cmd"))

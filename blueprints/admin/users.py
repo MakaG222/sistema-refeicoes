@@ -302,7 +302,10 @@ def admin_importar_csv():
                 return redirect(url_for(".admin_importar_csv"))
             raw = raw.decode("utf-8-sig", errors="replace")
             if "\ufffd" in raw:
-                flash("Aviso: o ficheiro contém caracteres inválidos que foram substituídos.", "warn")
+                flash(
+                    "Aviso: o ficheiro contém caracteres inválidos que foram substituídos.",
+                    "warn",
+                )
             linhas = list(csv.reader(io.StringIO(raw)))
             if len(linhas) > 10_000:
                 flash("Demasiadas linhas (máximo 10.000).", "error")

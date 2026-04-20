@@ -211,8 +211,10 @@ def _aplicar_ausencia_refeicoes(
             sets.append("jantar_sai_unidade=0")
             sets.append("jantar_estufa=0")
     if sets:
+        # `sets` só contém strings hardcoded desta função (nomes de colunas e
+        # valores literais) — sem input de user. Safe.
         conn.execute(
-            f"UPDATE refeicoes SET {', '.join(sets)} WHERE utilizador_id=? AND data>=? AND data<=?",
+            f"UPDATE refeicoes SET {', '.join(sets)} WHERE utilizador_id=? AND data>=? AND data<=?",  # nosec B608
             (uid, de, ate),
         )
 

@@ -654,6 +654,28 @@ def exportar_historico_aluno():
     )
 
 
+@aluno_bp.route("/aluno/qr")
+@login_required
+def aluno_qr():
+    """Serve o QR code do aluno autenticado (SVG).
+
+    O payload codificado é `NII:<nii>` — basta ler no kiosk para identificar
+    o aluno e registar a presença.
+    """
+    from core.qr import build_payload, qr_svg_bytes
+
+    u = current_user()
+    payload = build_payload(u["nii"])
+    svg = qr_svg_bytes(payload)
+    return Response(
+        svg,
+        headers={
+            "Content-Type": "image/svg+xml; charset=utf-8",
+            "Cache-Control": "private, max-age=3600",
+        },
+    )
+
+
 @aluno_bp.route("/aluno/password", methods=["GET", "POST"])
 @login_required
 def aluno_password():

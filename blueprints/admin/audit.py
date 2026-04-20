@@ -111,7 +111,14 @@ def admin_audit_export():
     w = csv.writer(buf)
     w.writerow(["Timestamp", "Actor", "Action", "Detail"])
     for r in rows:
-        w.writerow([r.get("ts", ""), r.get("actor", ""), r.get("action", ""), r.get("detail", "")])
+        w.writerow(
+            [
+                r.get("ts", ""),
+                r.get("actor", ""),
+                r.get("action", ""),
+                r.get("detail", ""),
+            ]
+        )
     return Response(
         buf.getvalue(),
         mimetype="text/csv",

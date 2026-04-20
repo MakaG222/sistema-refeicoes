@@ -12,6 +12,7 @@ gunicorn>=22.0,<23.0      # multi-worker, Railway/Docker ready
 # ── Excel / exportações ───────────────────────────────────────────────────────
 openpyxl>=3.1,<3.2        # exportação .xlsx (obrigatório — não incluído no stdlib)
 reportlab>=4.0,<5.0       # exportação PDF (opcional — módulo degrada para HTML se em falta)
+qrcode>=7.4,<9.0          # geração de QR codes SVG (opcional — fallback textual)
 
 # ── Segurança / utilitários ───────────────────────────────────────────────────
 # secrets, sqlite3, csv, shutil, pathlib, datetime — stdlib, não precisam de pip

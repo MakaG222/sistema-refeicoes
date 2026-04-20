@@ -50,6 +50,19 @@
         </div>
       </div>
       <div class="card">
+        <div class="card-title">📱 O meu QR</div>
+        <p class="text-muted" style="font-size:.85rem">
+          Usa este QR no quiosque de check-in do refeitório. Podes imprimir,
+          guardar no telemóvel ou mostrar no ecrã — ele codifica o teu NII.
+        </p>
+        <div style="text-align:center;margin:1rem 0">
+          <img src="{{ url_for(".aluno_qr") }}" alt="QR do aluno {{ aluno.NII }}" style="max-width:220px;height:auto;border:1px solid #ccc;background:#fff;padding:.25rem">
+        </div>
+        <div class="gap-btn" style="justify-content:center">
+          <a class="btn btn-ghost btn-sm" href="{{ url_for(".aluno_qr") }}" download="qr-{{ aluno.NII }}.svg">⬇ Descarregar SVG</a>
+        </div>
+      </div>
+      <div class="card">
         <div class="card-title">⚡ Ações rápidas</div>
         <div class="gap-btn">
           <a class="btn btn-ghost" href="{{ url_for(".aluno_ausencias") }}">🚫 Gerir ausências</a>

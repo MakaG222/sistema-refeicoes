@@ -226,6 +226,14 @@ def painel_dia():
         )
         acoes.append(
             {
+                "url": url_for(".checkin_kiosk"),
+                "icon": "📷",
+                "label": "Quiosque Check-in",
+                "cls": "btn-primary",
+            }
+        )
+        acoes.append(
+            {
                 "url": url_for(".excecoes_dia", d=dt.isoformat()),
                 "icon": "📝",
                 "label": "Exceções",
@@ -389,6 +397,75 @@ def forecast_view():
         semanas=semanas_s,
         ano=ano,
         anos_disponiveis=_get_anos_disponiveis(),
+    )
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# QR CHECK-IN — Kiosk simples (oficialdia / admin)
+# ═══════════════════════════════════════════════════════════════════════════
+
+
+@ops_bp.route("/checkin", methods=["GET", "POST"])
+@role_required("oficialdia", "admin")
+def checkin_kiosk():
+    """Modo quiosque: lê o QR/NII de um aluno e regista entrada/saída.
+
+    Um leitor USB actua como teclado — digita o payload e pressiona Enter.
+    O input está sempre em foco. POST devolve a mesma página com flash.
+
+    Ação por defeito:
+        - Se o aluno está actualmente ausente → regista entrada (remove ausência)
+        - Caso contrário → regista saída (cria ausência no dia)
+    Pode ser forçada via `acao=entrada|saida` no form.
+    """
+    from core.qr import parse_payload
+    from core.users import get_aluno_by_ni
+
+    u = current_user()
+    hoje = date.today()
+    resultado: dict | None = None
+
+    if request.method == "POST":
+        raw = (request.form.get("payload") or "").strip()
+        acao = (request.form.get("acao") or "auto").strip()
+        nii = parse_payload(raw)
+        if not nii:
+            flash("Código inválido ou vazio.", "error")
+            return redirect(url_for(".checkin_kiosk"))
+
+        # Aceitamos NI (de marcação ao longo dos anos) ou NII (login)
+        aluno = get_aluno_by_ni(nii)
+        if not aluno:
+            from core.auth_db import user_by_nii
+
+            aluno_nii = user_by_nii(nii)
+            if aluno_nii and aluno_nii.get("perfil") == "aluno":
+                # user_by_nii devolve estrutura semelhante; normalizamos
+                aluno = get_aluno_by_ni(aluno_nii.get("NI") or "")
+        if not aluno:
+            flash(f"Aluno não encontrado para '{nii}'.", "error")
+            return redirect(url_for(".checkin_kiosk"))
+
+        ausente = _tem_ausencia_ativa(aluno["id"], hoje)
+        if acao == "entrada" or (acao == "auto" and ausente):
+            registar_entrada_presenca(aluno["id"], hoje)
+            acao_feita = "entrada"
+            icon = "✅"
+        else:
+            registar_saida_presenca(aluno["id"], hoje, u["nii"], u["nome"], u["perfil"])
+            acao_feita = "saída"
+            icon = "🚪"
+        flash(
+            f"{icon} {acao_feita.capitalize()} registada: "
+            f"{aluno['Nome_completo']} (NI {aluno['NI']})",
+            "ok",
+        )
+        return redirect(url_for(".checkin_kiosk"))
+
+    return render_template(
+        "operations/checkin.html",
+        hoje_fmt=hoje.strftime("%d/%m/%Y"),
+        resultado=resultado,
     )
 
 
