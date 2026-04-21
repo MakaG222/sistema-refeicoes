@@ -41,6 +41,12 @@ def app():
     flask_app = app_module.app
     flask_app.config["TESTING"] = True
     flask_app.config["WTF_CSRF_ENABLED"] = False
+    # Desactiva rate-limit em testes — evita 429 em suites que fazem muitos
+    # pedidos sequenciais. Testes específicos de rate-limit reactivam inline.
+    flask_app.config["RATELIMIT_ENABLED"] = False
+    # Flask-Limiter guarda em app.extensions["limiter"] um set contendo a instância.
+    for _lim in flask_app.extensions.get("limiter", set()):
+        _lim.enabled = False
 
     yield flask_app
 

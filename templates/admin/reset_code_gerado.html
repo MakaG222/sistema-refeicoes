@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="container">
+  <div class="page-header">
+    <div class="page-title">&#x1f510; C&oacute;digo de reset gerado</div>
+  </div>
+  <div class="card">
+    <div class="card-title">Utilizador <strong>{{ nii }}</strong></div>
+    <div class="alert alert-warn" role="alert">
+      &#x26a0;&#xfe0f; <strong>Atenção:</strong> este código é mostrado <em>uma única vez</em>.
+      Guarda-o agora — não será possível voltar a ver.
+    </div>
+    <div class="reset-code-box">
+      <code class="reset-code">{{ code }}</code>
+    </div>
+    <div class="text-muted text-sm">
+      O utilizador deve usar este código como password no próximo login (v&aacute;lido
+      durante {{ ttl_hours }}h). Após o login, ser&aacute; forçado a escolher uma nova
+      password. O código invalida-se ao ser usado.
+    </div>
+    <div class="mt-md">
+      <a class="btn btn-primary" href="{{ url_for('.admin_utilizadores') }}">&#x2190; Voltar a utilizadores</a>
+    </div>
+  </div>
+</div>
+{% endblock %}

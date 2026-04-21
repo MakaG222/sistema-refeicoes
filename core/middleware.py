@@ -39,6 +39,30 @@ class RequestIdFilter(logging.Filter):
         return True
 
 
+class UserContextFilter(logging.Filter):
+    """Injecta NII e perfil do utilizador autenticado nos log records.
+
+    Em requests sem sessão autenticada ou fora de contexto Flask, os campos
+    ficam como `"-"`. Útil em produção para correlacionar logs com acções
+    concretas de um utilizador (ex: via grep por user_nii).
+    """
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        user_nii = "-"
+        user_role = "-"
+        try:
+            # `session` é um proxy — qualquer acesso fora do request context levanta.
+            u = session.get("user") if session else None
+            if u:
+                user_nii = str(u.get("nii", "-") or "-")
+                user_role = str(u.get("perfil", "-") or "-")
+        except Exception:
+            pass
+        record.user_nii = user_nii  # type: ignore[attr-defined]
+        record.user_role = user_role  # type: ignore[attr-defined]
+        return True
+
+
 def get_metrics() -> dict:
     """Retorna cópia snapshot das métricas."""
     with _metrics_lock:
@@ -54,11 +78,14 @@ def get_route_metrics() -> dict[str, dict]:
 def register_middleware(app: Flask) -> None:
     """Regista before/after request e error handlers na app Flask."""
 
-    # Registar RequestIdFilter nos loggers
+    # Registar RequestIdFilter + UserContextFilter nos loggers
     rid_filter = RequestIdFilter()
+    uctx_filter = UserContextFilter()
     app.logger.addFilter(rid_filter)
+    app.logger.addFilter(uctx_filter)
     for handler in app.logger.handlers:
         handler.addFilter(rid_filter)
+        handler.addFilter(uctx_filter)
 
     @app.before_request
     def before():
@@ -153,6 +180,22 @@ def register_middleware(app: Flask) -> None:
     @app.errorhandler(404)
     def err404(e):
         return render_template("errors/404.html", content=""), 404
+
+    @app.errorhandler(429)
+    def err429(e):
+        """Rate limited — JSON para /api/*, template para UI."""
+        retry_after = getattr(e, "retry_after", None)
+        if request and request.path.startswith("/api/"):
+            payload = {
+                "status": "error",
+                "error": "rate limited",
+                "retry_after": retry_after,
+            }
+            resp = (payload, 429)
+            return resp
+        return render_template(
+            "errors/429.html", content="", retry_after=retry_after
+        ), 429
 
     @app.errorhandler(500)
     def err500(e):

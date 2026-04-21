@@ -74,9 +74,9 @@ def query_admin_audit(
     action: str = "",
     limit: int = 500,
 ) -> tuple[list[dict], int]:
-    """Consulta o log de auditoria admin.
+    """Consulta o log de auditoria admin (modo legacy — limit fixo, sem paginação).
 
-    Retorna (rows, total).
+    Retorna (rows, total_absoluto). Para paginação, usa `query_admin_audit_paged`.
     """
     sql = "SELECT id,ts,actor,action,detail FROM admin_audit_log WHERE 1=1"
     args: list = []
@@ -94,3 +94,46 @@ def query_admin_audit(
         total = conn.execute("SELECT COUNT(*) c FROM admin_audit_log").fetchone()["c"]
 
     return rows, total
+
+
+def query_admin_audit_paged(
+    actor: str = "",
+    action: str = "",
+    *,
+    page: int = 1,
+    per_page: int = 50,
+) -> tuple[list[dict], int, int]:
+    """Versão paginada — retorna (rows, filtered_total, total_absoluto).
+
+    `filtered_total` considera filtros `actor` e `action`; `total_absoluto`
+    conta TODOS os registos (útil para footer do template).
+    """
+    page = max(1, int(page or 1))
+    per_page = max(1, min(500, int(per_page or 50)))
+    base = "FROM admin_audit_log WHERE 1=1"
+    args: list = []
+    if actor:
+        base += " AND actor LIKE ?"
+        args.append(f"%{actor}%")
+    if action:
+        base += " AND action LIKE ?"
+        args.append(f"%{action}%")
+
+    with db() as conn:
+        total_abs = conn.execute("SELECT COUNT(*) c FROM admin_audit_log").fetchone()[
+            "c"
+        ]
+        filtered_total = conn.execute(
+            "SELECT COUNT(*) c " + base,  # nosec B608 — args parametrizados
+            args,
+        ).fetchone()["c"]
+        offset = (page - 1) * per_page
+        sql = (
+            "SELECT id,ts,actor,action,detail "
+            + base
+            + " ORDER BY id DESC LIMIT ? OFFSET ?"
+        )
+        rows = [
+            dict(r) for r in conn.execute(sql, [*args, per_page, offset]).fetchall()
+        ]
+    return rows, filtered_total, total_abs

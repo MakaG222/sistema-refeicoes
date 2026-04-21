@@ -47,6 +47,10 @@
         </tbody>
       </table>
     </div>
+    {% if paged %}
+      {% set qs = 'actor=' ~ q_actor ~ '&action=' ~ q_action ~ '&per_page=' ~ per_page %}
+      {{ ui.pagination_nav(page, total_pages, qs) }}
+    {% endif %}
   </div>
 </div>
 {% endblock %}

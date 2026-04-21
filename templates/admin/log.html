@@ -83,17 +83,8 @@
         </tbody>
       </table>
     </div>
-    {% if total_pages > 1 %}
-    <div class="d-flex gap-sm flex-wrap mt-md" role="navigation" aria-label="Paginação">
-      {% if page > 1 %}
-      <a class="btn btn-ghost btn-sm" href="?q_nome={{ q_nome }}&q_por={{ q_por }}&q_campo={{ q_campo }}&d0={{ q_d0 }}&d1={{ q_d1 }}&page={{ page - 1 }}">← Anterior</a>
-      {% endif %}
-      <span class="text-muted text-sm">Página {{ page }} de {{ total_pages }}</span>
-      {% if page < total_pages %}
-      <a class="btn btn-ghost btn-sm" href="?q_nome={{ q_nome }}&q_por={{ q_por }}&q_campo={{ q_campo }}&d0={{ q_d0 }}&d1={{ q_d1 }}&page={{ page + 1 }}">Seguinte →</a>
-      {% endif %}
-    </div>
-    {% endif %}
+    {% set qs = 'q_nome=' ~ q_nome ~ '&q_por=' ~ q_por ~ '&q_campo=' ~ q_campo ~ '&d0=' ~ q_d0 ~ '&d1=' ~ q_d1 %}
+    {{ ui.pagination_nav(page, total_pages, qs) }}
   </div>
 </div>
 {% endblock %}

@@ -110,6 +110,14 @@ app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1)
 app.config.from_object(cfg.Config)
 cfg.configure_logging(app)
 
+# ── Rate limiter (defesa em profundidade no HTTP layer) ─────────────────
+# Decorators `@limiter.limit(...)` aplicados nas rotas sensíveis por blueprint
+# (/auth/login, /api/*-cron, /api/unlock-expired). Desactivável em testes via
+# `app.config["RATELIMIT_ENABLED"] = False` na fixture.
+from core.rate_limit import limiter  # noqa: E402
+
+limiter.init_app(app)
+
 app.teardown_appcontext(close_request_db)
 
 

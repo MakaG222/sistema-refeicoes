@@ -16,11 +16,14 @@ from flask import (
 
 from core.auth_db import (
     block_user,
+    clear_reset_code,
+    consume_reset_code,
     recent_failures,
     recent_failures_by_ip,
     reg_login,
     user_by_nii,
 )
+from core.rate_limit import limiter
 from blueprints.auth import auth_bp
 from utils.auth import current_user, login_required
 from utils.helpers import _audit, _client_ip
@@ -36,6 +39,7 @@ from utils.passwords import _check_password, _migrate_password_hash
 
 @auth_bp.route("/", methods=["GET", "POST"])
 @auth_bp.route("/login", methods=["GET", "POST"])
+@limiter.limit("10 per minute", methods=["POST"])
 def login():
     if "user" in session:
         return redirect(url_for("auth.dashboard"))
@@ -82,7 +86,26 @@ def login():
                 if db_u:
                     ph = db_u.get("Palavra_chave", "") or ""
                     ok = _check_password(ph, pw)
+                    # Fallback: se a password normal não bate, tenta reset_code.
+                    # Se for válido, marca must_change_password e consome o código.
+                    used_reset_code = False
+                    if not ok and consume_reset_code(nii, pw):
+                        ok = True
+                        used_reset_code = True
+                        # Re-fetch para apanhar must_change_password actualizado
+                        db_u = user_by_nii(nii) or db_u
+                        current_app.logger.info(
+                            "Login via reset_code: NII=%s IP=%s", nii, _client_ip()
+                        )
+                        _audit(
+                            nii,
+                            "login_reset_code",
+                            f"IP={_client_ip()}",
+                        )
                     if ok:
+                        # Sempre que login normal é bem-sucedido, limpa reset_code pendente
+                        if not used_reset_code:
+                            clear_reset_code(nii)
                         _perfil = (
                             db_u.get("perfil")
                             if hasattr(db_u, "get")
@@ -100,8 +123,13 @@ def login():
                         current_app.logger.info(
                             f"Login OK: NII={nii} perfil={u['perfil']} IP={_client_ip()}"
                         )
-                        # Migração transparente: se ainda é plain-text, converter para hash
-                        if not ph.startswith(("pbkdf2:", "scrypt:", "argon2:")):
+                        # Migração transparente: se ainda é plain-text, converter para hash.
+                        # NUNCA migrar quando entrámos via reset_code — `pw` é o código
+                        # temporário e não a password real; gravá-lo substituiria a
+                        # password do utilizador por um token temporário.
+                        if not used_reset_code and not ph.startswith(
+                            ("pbkdf2:", "scrypt:", "argon2:")
+                        ):
                             try:
                                 _migrate_password_hash(db_u["id"], pw)
                             except Exception:

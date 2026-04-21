@@ -28,3 +28,28 @@
     {{ empty_state(icon, title, hint, cta_url, cta_text) }}
   </td></tr>
 {% endmacro %}
+
+{#
+   pagination_nav(page, total_pages, extra_qs='')
+   Botões Anterior/Próximo + indicador "Página X de Y". Preserva query string
+   existente via `extra_qs` (ex: 'q=foo&ano=all'). Se total_pages <= 1 não
+   renderiza nada.
+#}
+{% macro pagination_nav(page, total_pages, extra_qs='') %}
+  {% if total_pages > 1 %}
+  <nav class="pagination-nav" role="navigation" aria-label="Paginação">
+    {% set qs_prefix = extra_qs + '&' if extra_qs else '' %}
+    {% if page > 1 %}
+      <a class="btn btn-ghost btn-sm" href="?{{ qs_prefix }}page={{ page - 1 }}" aria-label="Página anterior">&larr; Anterior</a>
+    {% else %}
+      <span class="btn btn-ghost btn-sm" aria-disabled="true">&larr; Anterior</span>
+    {% endif %}
+    <span class="pagination-status text-sm text-muted">P&aacute;gina {{ page }} de {{ total_pages }}</span>
+    {% if page < total_pages %}
+      <a class="btn btn-ghost btn-sm" href="?{{ qs_prefix }}page={{ page + 1 }}" aria-label="Página seguinte">Seguinte &rarr;</a>
+    {% else %}
+      <span class="btn btn-ghost btn-sm" aria-disabled="true">Seguinte &rarr;</span>
+    {% endif %}
+  </nav>
+  {% endif %}
+{% endmacro %}
