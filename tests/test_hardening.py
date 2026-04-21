@@ -248,3 +248,329 @@ class TestCSVImportValidation:
         )
         assert resp.status_code == 200
         assert b"ficheiro" in resp.data.lower() or resp.status_code == 200
+
+
+# ── PR B.1 — Password reset por admin (reset_code) ─────────────────────
+
+
+class TestResetCode:
+    """set/consume/clear_reset_code + integração no login flow."""
+
+    def test_set_reset_code_retorna_token(self, app):
+        from core.auth_db import set_reset_code
+
+        create_system_user("rst_user1", "aluno", pw="Rstuser123")
+        with app.app_context():
+            code = set_reset_code("rst_user1")
+        assert code is not None
+        assert isinstance(code, str)
+        assert len(code) >= 8
+
+    def test_set_reset_code_nii_inexistente_retorna_none(self, app):
+        from core.auth_db import set_reset_code
+
+        with app.app_context():
+            code = set_reset_code("NII_INEXISTENTE_XYZ")
+        assert code is None
+
+    def test_consume_reset_code_invalida_apos_uso(self, app):
+        """Single-use: segundo consume com o mesmo código falha."""
+        from core.auth_db import consume_reset_code, set_reset_code
+
+        create_system_user("rst_user2", "aluno", pw="Rstuser234")
+        with app.app_context():
+            code = set_reset_code("rst_user2")
+            assert code
+            # 1º uso: OK
+            assert consume_reset_code("rst_user2", code) is True
+            # 2º uso: falha (single-use)
+            assert consume_reset_code("rst_user2", code) is False
+
+    def test_consume_reset_code_expirado_falha(self, app):
+        """Código com TTL negativo deve falhar."""
+        from core.auth_db import consume_reset_code, set_reset_code
+
+        create_system_user("rst_user3", "aluno", pw="Rstuser345")
+        with app.app_context():
+            # TTL=0 → expira imediatamente (datetime.now() > datetime.now())
+            code = set_reset_code("rst_user3", ttl_hours=-1)
+            assert code
+            assert consume_reset_code("rst_user3", code) is False
+
+    def test_consume_reset_code_marca_must_change_password(self, app):
+        """Após consumir, must_change_password=1 para forçar /aluno/password."""
+        from core.auth_db import consume_reset_code, set_reset_code
+        from core.database import db
+
+        create_system_user("rst_user4", "aluno", pw="Rstuser456")
+        with app.app_context():
+            code = set_reset_code("rst_user4")
+            assert code
+            assert consume_reset_code("rst_user4", code) is True
+            with db() as conn:
+                r = conn.execute(
+                    "SELECT must_change_password FROM utilizadores WHERE NII=?",
+                    ("rst_user4",),
+                ).fetchone()
+            assert r["must_change_password"] == 1
+
+    def test_login_com_reset_code_auto_consome(self, app, client):
+        """POST /login com reset_code válido → 302 redirect (aceita)."""
+        from core.auth_db import set_reset_code
+
+        create_system_user("rst_login", "aluno", pw="Rstlogin123")
+        with app.app_context():
+            code = set_reset_code("rst_login")
+            assert code
+        client.get("/login")
+        with client.session_transaction() as sess:
+            token = sess.get("_csrf_token", "")
+        resp = client.post(
+            "/login",
+            data={"nii": "rst_login", "pw": code, "csrf_token": token},
+            follow_redirects=False,
+        )
+        assert resp.status_code == 302  # login bem-sucedido
+
+
+# ── PR B.2 — Auto-unlock / cleanup de login_eventos ────────────────────
+
+
+class TestUnlockExpired:
+    """POST /api/unlock-expired — cleanup de dados expirados."""
+
+    def test_sem_token_retorna_403(self, app, client):
+        resp = client.post("/api/unlock-expired")
+        assert resp.status_code == 403
+
+    def test_token_invalido_retorna_403(self, app, client):
+        resp = client.post(
+            "/api/unlock-expired",
+            headers={"Authorization": "Bearer token-errado"},
+        )
+        assert resp.status_code == 403
+
+    def test_com_token_valido_faz_cleanup(self, app, client):
+        """Com token dev em ENV development, endpoint executa e retorna OK."""
+        import config as cfg
+
+        old = cfg.CRON_API_TOKEN
+        try:
+            cfg.CRON_API_TOKEN = ""  # força fallback "dev" em non-prod
+            resp = client.post(
+                "/api/unlock-expired",
+                headers={"Authorization": "Bearer dev"},
+            )
+            assert resp.status_code == 200
+            payload = resp.get_json()
+            assert payload["status"] == "ok"
+            assert "deleted_login_failures" in payload
+            assert "expired_reset_codes" in payload
+            assert "unlocked_users" in payload
+        finally:
+            cfg.CRON_API_TOKEN = old
+
+    def test_apaga_reset_codes_expirados(self, app, client):
+        """reset_codes com expires < now são limpos pelo endpoint."""
+        import config as cfg
+        from core.database import db
+
+        create_system_user("unlk_user1", "aluno", pw="Unlkuser123")
+        # Injecta reset_code com expiry no passado
+        with app.app_context():
+            with db() as conn:
+                conn.execute(
+                    "UPDATE utilizadores SET reset_code=?, reset_expires=? WHERE NII=?",
+                    ("expired-code", "2000-01-01 00:00:00", "unlk_user1"),
+                )
+                conn.commit()
+        old = cfg.CRON_API_TOKEN
+        try:
+            cfg.CRON_API_TOKEN = ""
+            resp = client.post(
+                "/api/unlock-expired",
+                headers={"Authorization": "Bearer dev"},
+            )
+            assert resp.status_code == 200
+            payload = resp.get_json()
+            assert payload["expired_reset_codes"] >= 1
+        finally:
+            cfg.CRON_API_TOKEN = old
+
+        # Verifica que o código foi limpo
+        with app.app_context():
+            with db() as conn:
+                r = conn.execute(
+                    "SELECT reset_code, reset_expires FROM utilizadores WHERE NII=?",
+                    ("unlk_user1",),
+                ).fetchone()
+        assert r["reset_code"] is None
+        assert r["reset_expires"] is None
+
+
+# ── PR B.3 — UserContextFilter para logs ───────────────────────────────
+
+
+class TestUserContextFilter:
+    """Filtro injecta user_nii + user_role nos log records."""
+
+    def test_filter_anonimo_fica_com_traco(self, app):
+        """Fora de request context, filtro injecta '-'."""
+        import logging
+
+        from core.middleware import UserContextFilter
+
+        rec = logging.LogRecord("x", logging.INFO, "f.py", 1, "msg", None, None)
+        f = UserContextFilter()
+        assert f.filter(rec) is True
+        assert rec.user_nii == "-"
+        assert rec.user_role == "-"
+
+    def test_filter_em_request_com_sessao_injecta_user(self, app, client):
+        """Em request autenticado, filtro lê session['user'] e injecta NII/role."""
+        import logging
+
+        from core.middleware import UserContextFilter
+
+        create_system_user("uctx_user1", "admin", pw="Uctxuser12")
+        login_as(client, "uctx_user1", "Uctxuser12")
+
+        with client.session_transaction() as sess:
+            assert sess.get("user"), "login deveria ter populado session['user']"
+
+        # Entra em request context manualmente para invocar o filtro
+        with client.application.test_request_context("/"):
+            # Copia a sessão do client para o request context
+            from flask import session as flask_session
+
+            flask_session["user"] = {
+                "nii": "uctx_user1",
+                "perfil": "admin",
+            }
+            rec = logging.LogRecord("x", logging.INFO, "f.py", 1, "msg", None, None)
+            f = UserContextFilter()
+            assert f.filter(rec) is True
+            assert rec.user_nii == "uctx_user1"
+            assert rec.user_role == "admin"
+
+
+# ── PR B.4 — Flask-Limiter (rate-limit HTTP-layer) ─────────────────────
+
+
+class TestFlaskLimiter:
+    """Rate-limit global via Flask-Limiter em /auth/login e /api/*."""
+
+    def test_limiter_registado_em_app_extensions(self, app):
+        """Flask-Limiter deve ter sido inicializado pelo app factory."""
+        assert "limiter" in app.extensions
+
+    def test_limiter_desactivado_em_testes(self, app):
+        """conftest.py desactiva limiter — testes normais não batem 429."""
+        for lim in app.extensions.get("limiter", set()):
+            assert lim.enabled is False
+
+    def test_post_login_nao_bate_429_com_limiter_off(self, app, client):
+        """Sem limiter, 15 POSTs consecutivos passam sem 429."""
+        for _ in range(15):
+            resp = client.post(
+                "/login",
+                data={"nii": "xxx", "pw": "xxx", "csrf_token": ""},
+                follow_redirects=False,
+            )
+            assert resp.status_code != 429
+
+
+# ── PR B.5 — Paginação consistente ─────────────────────────────────────
+
+
+class TestAdminAuditPagination:
+    """Paginação no /admin/auditoria com query_admin_audit_paged."""
+
+    def test_query_paged_retorna_3_tuple(self, app):
+        """query_admin_audit_paged retorna (rows, filtered_total, total_abs)."""
+        from core.audit import query_admin_audit_paged
+
+        with app.app_context():
+            result = query_admin_audit_paged(page=1, per_page=10)
+        assert len(result) == 3
+        rows, filtered_total, total_abs = result
+        assert isinstance(rows, list)
+        assert isinstance(filtered_total, int)
+        assert isinstance(total_abs, int)
+        assert len(rows) <= 10
+
+    def test_admin_auditoria_com_page_retorna_200(self, app, client):
+        """GET /admin/auditoria?page=1 renderiza template paginado."""
+        create_system_user("aud_pag1", "admin", pw="Audpag1234")
+        login_as(client, "aud_pag1", "Audpag1234")
+        resp = client.get("/admin/auditoria?page=1")
+        assert resp.status_code == 200
+
+    def test_admin_auditoria_com_limite_legacy_retorna_200(self, app, client):
+        """?limite=N mantém comportamento legacy (sem page)."""
+        create_system_user("aud_pag2", "admin", pw="Audpag2345")
+        login_as(client, "aud_pag2", "Audpag2345")
+        resp = client.get("/admin/auditoria?limite=100")
+        assert resp.status_code == 200
+
+    def test_pagination_nav_macro_renderiza_quando_total_pages_ge_2(self, app):
+        """pagination_nav só renderiza quando há >1 página."""
+        from flask import render_template_string
+
+        tpl = (
+            '{% import "_macros.html" as ui %}'
+            "{{ ui.pagination_nav(page, total_pages, qs) }}"
+        )
+        with app.app_context(), app.test_request_context("/"):
+            # 1 página → macro não renderiza nada
+            r1 = render_template_string(tpl, page=1, total_pages=1, qs="q=foo")
+            assert "pagination-nav" not in r1
+            # 3 páginas, estamos na 2ª → prev + next activos
+            r2 = render_template_string(tpl, page=2, total_pages=3, qs="q=foo")
+            assert "pagination-nav" in r2
+            assert "q=foo" in r2
+            assert "page=1" in r2
+            assert "page=3" in r2
+
+
+# ── PR B.1 — UI admin: botão "Gerar código de reset" ───────────────────
+
+
+class TestAdminResetCodeUI:
+    """Fluxo UI: admin clica → POST acao=gerar_reset → mostra código 1×."""
+
+    def test_gerar_reset_mostra_template_com_codigo(self, app, client):
+        create_system_user("rst_ui_admin", "admin", pw="Rstuiadmin1")
+        create_system_user("rst_ui_aluno", "aluno", pw="Rstuialuno1")
+        login_as(client, "rst_ui_admin", "Rstuiadmin1")
+        csrf = get_csrf(client)
+        resp = client.post(
+            "/admin/utilizadores",
+            data={
+                "acao": "gerar_reset",
+                "nii": "rst_ui_aluno",
+                "csrf_token": csrf,
+            },
+            follow_redirects=False,
+        )
+        assert resp.status_code == 200
+        html = resp.data.decode()
+        assert "reset-code" in html  # classe CSS do template
+        assert "rst_ui_aluno" in html
+
+    def test_gerar_reset_nii_inexistente_flasha_erro(self, app, client):
+        create_system_user("rst_ui_admin2", "admin", pw="Rstuiadmin2")
+        login_as(client, "rst_ui_admin2", "Rstuiadmin2")
+        csrf = get_csrf(client)
+        resp = client.post(
+            "/admin/utilizadores",
+            data={
+                "acao": "gerar_reset",
+                "nii": "NII_NAO_EXISTE_ZZZ",
+                "csrf_token": csrf,
+            },
+            follow_redirects=True,
+        )
+        assert resp.status_code == 200
+        # O erro aparece como flash (toast/mensagem) no HTML
+        assert b"NII" in resp.data

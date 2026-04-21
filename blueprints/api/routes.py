@@ -13,6 +13,7 @@ import config as cfg
 from core.backup import ensure_daily_backup, limpar_backups_antigos
 from core.autofill import autopreencher_refeicoes_semanais
 from core.database import db
+from core.rate_limit import limiter
 
 from blueprints.api import api_bp
 
@@ -145,6 +146,7 @@ def health_metrics():
 
 
 @api_bp.route("/api/backup-cron", methods=["POST"])
+@limiter.limit("30 per minute")
 def api_backup_cron():
     """Endpoint para cron job externo invocar backup diário.
     Uso: curl -X POST -H "Authorization: Bearer <CRON_API_TOKEN>" http://host/api/backup-cron
@@ -161,6 +163,7 @@ def api_backup_cron():
 
 
 @api_bp.route("/api/autopreencher-cron", methods=["POST"])
+@limiter.limit("30 per minute")
 def api_autopreencher_cron():
     """Endpoint para cron externo pré-preencher refeições semanalmente.
     Uso: curl -X POST -H "Authorization: Bearer <CRON_API_TOKEN>" http://host/api/autopreencher-cron
@@ -176,6 +179,7 @@ def api_autopreencher_cron():
 
 
 @api_bp.route("/api/export-cron", methods=["POST"])
+@limiter.limit("30 per minute")
 def api_export_cron():
     """Endpoint para cron externo gerar relatório diário em PDF.
 
@@ -211,4 +215,63 @@ def api_export_cron():
         return _api_ok({"path": path, "data": d.isoformat(), "ano": ano})
     except Exception as exc:
         current_app.logger.error(f"api_export_cron: {exc}")
+        return _api_error(str(exc))
+
+
+@api_bp.route("/api/unlock-expired", methods=["POST"])
+@limiter.limit("30 per minute")
+def api_unlock_expired():
+    """Cron — limpeza de dados expirados de segurança.
+
+    1. Remove eventos de login `fail` com mais de 24h (evita crescimento
+       infinito da tabela login_eventos).
+    2. Limpa reset_code expirados.
+    3. Remove `locked_until` de utilizadores cujo bloqueio já passou
+       (SQLite não expira automaticamente; mantem a lockout funcional
+       via comparação em `blueprints/auth/routes.py:login` mas liberta
+       a UI de mostrar contas como "bloqueadas" visualmente).
+
+    Uso:
+      curl -X POST -H "Authorization: Bearer <TOKEN>" http://host/api/unlock-expired
+    """
+    if not _verify_cron_token():
+        abort(403)
+    try:
+        with db() as conn:
+            # 1. Purga tentativas falhadas antigas (>24h) — retenção legal mínima.
+            cur = conn.execute(
+                "DELETE FROM login_eventos"
+                " WHERE sucesso=0 AND criado_em < datetime('now','localtime','-24 hours')"
+            )
+            deleted_fails = cur.rowcount
+            # 2. Limpa reset_codes expirados (evita accumulation e facilita audit).
+            cur2 = conn.execute(
+                "UPDATE utilizadores SET reset_code=NULL, reset_expires=NULL"
+                " WHERE reset_expires IS NOT NULL"
+                " AND reset_expires < datetime('now','localtime')"
+            )
+            expired_codes = cur2.rowcount
+            # 3. Limpa locked_until já expirado.
+            cur3 = conn.execute(
+                "UPDATE utilizadores SET locked_until=NULL"
+                " WHERE locked_until IS NOT NULL"
+                " AND locked_until < datetime('now','localtime')"
+            )
+            unlocked = cur3.rowcount
+            conn.commit()
+        current_app.logger.info(
+            "unlock-expired: failures=%d reset_codes=%d unlocked=%d",
+            deleted_fails,
+            expired_codes,
+            unlocked,
+        )
+        return _api_ok(
+            {
+                "deleted_login_failures": deleted_fails,
+                "expired_reset_codes": expired_codes,
+                "unlocked_users": unlocked,
+            }
+        )
+    except Exception as exc:
+        current_app.logger.error(f"api_unlock_expired: {exc}")
         return _api_error(str(exc))

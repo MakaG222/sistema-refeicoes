@@ -85,12 +85,16 @@ def configure_logging(flask_app) -> None:
 
         def format(self, record: logging.LogRecord) -> str:
             rid = getattr(record, "request_id", "-")
+            user_nii = getattr(record, "user_nii", "-")
+            user_role = getattr(record, "user_role", "-")
             entry = {
                 "ts": self.formatTime(record, self.datefmt),
                 "level": record.levelname,
                 "logger": record.name,
                 "msg": record.getMessage(),
                 "rid": rid,
+                "user_nii": None if user_nii == "-" else user_nii,
+                "user_role": None if user_role == "-" else user_role,
             }
             if record.exc_info and record.exc_info[0] is not None:
                 entry["exception"] = self.formatException(record.exc_info)
@@ -102,6 +106,10 @@ def configure_logging(flask_app) -> None:
         def format(self, record: logging.LogRecord) -> str:
             if not hasattr(record, "request_id"):
                 record.request_id = "-"  # type: ignore[attr-defined]
+            if not hasattr(record, "user_nii"):
+                record.user_nii = "-"  # type: ignore[attr-defined]
+            if not hasattr(record, "user_role"):
+                record.user_role = "-"  # type: ignore[attr-defined]
             return super().format(record)
 
     handler = logging.StreamHandler(sys.stdout)

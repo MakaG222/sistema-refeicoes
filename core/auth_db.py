@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import logging
+import secrets
 import sqlite3
+from datetime import datetime, timedelta
 
 log = logging.getLogger(__name__)
 
@@ -27,9 +29,17 @@ __all__ = [
     "user_by_nii",
     "user_by_ni",
     "user_id_by_nii",
+    "set_reset_code",
+    "consume_reset_code",
+    "clear_reset_code",
     "PERFIS_ADMIN",
     "PERFIS_TESTE",
 ]
+
+# Validade do reset_code gerado por admin (24h é suficiente para uso operacional)
+RESET_CODE_TTL_HOURS = 24
+# Comprimento em bytes do token antes de base64url (8 bytes → ~11 chars, legível)
+RESET_CODE_BYTES = 8
 
 
 def verify_password(pw: str, stored: str) -> bool:
@@ -124,3 +134,91 @@ def user_by_ni(ni: str) -> sqlite3.Row | None:
 def user_id_by_nii(nii: str) -> int | None:
     u = user_by_nii(nii)
     return u["id"] if u else None
+
+
+# ────────────────────────────────────────────────────────────────────────────
+# Password reset (single-use code, 24h TTL)
+# ────────────────────────────────────────────────────────────────────────────
+
+
+def set_reset_code(nii: str, ttl_hours: int = RESET_CODE_TTL_HOURS) -> str | None:
+    """Gera e guarda um reset_code para o utilizador `nii`.
+
+    Retorna o código em plaintext (mostrar 1× ao admin) ou None se o NII
+    não existe. O código invalida o código anterior por completo.
+    """
+    nii = (nii or "").strip()
+    if not nii:
+        return None
+    code = secrets.token_urlsafe(RESET_CODE_BYTES)
+    expires = (datetime.now() + timedelta(hours=ttl_hours)).isoformat(
+        sep=" ", timespec="seconds"
+    )
+    with db() as conn:
+        cur = conn.execute(
+            "UPDATE utilizadores SET reset_code=?, reset_expires=?"
+            " WHERE NII = ? COLLATE NOCASE",
+            (code, expires, nii),
+        )
+        conn.commit()
+        if cur.rowcount == 0:
+            return None
+    return code
+
+
+def consume_reset_code(nii: str, code: str) -> bool:
+    """Tenta consumir o reset_code — válido só se match exacto, não expirado
+    e único-uso. Em caso de sucesso, limpa o código e marca
+    `must_change_password=1` para forçar redirect para /aluno/password.
+    """
+    nii = (nii or "").strip()
+    code = (code or "").strip()
+    if not nii or not code:
+        return False
+    with db() as conn:
+        r = conn.execute(
+            "SELECT reset_code, reset_expires FROM utilizadores"
+            " WHERE NII = ? COLLATE NOCASE",
+            (nii,),
+        ).fetchone()
+        if not r:
+            return False
+        stored = r["reset_code"] or ""
+        expires_str = r["reset_expires"] or ""
+        if not stored or not expires_str:
+            return False
+        # Comparação constant-time — defesa contra timing attacks no token
+        if not secrets.compare_digest(stored, code):
+            return False
+        try:
+            exp = datetime.fromisoformat(expires_str)
+        except ValueError:
+            return False
+        if exp < datetime.now():
+            return False
+        # OK — invalidar imediatamente (single-use) e forçar mudança de pw
+        conn.execute(
+            "UPDATE utilizadores SET reset_code=NULL, reset_expires=NULL,"
+            " must_change_password=1 WHERE NII = ? COLLATE NOCASE",
+            (nii,),
+        )
+        conn.commit()
+    return True
+
+
+def clear_reset_code(nii: str) -> None:
+    """Limpa o reset_code (usado quando o utilizador faz login normal ou o
+    admin cancela). Nunca falha."""
+    nii = (nii or "").strip()
+    if not nii:
+        return
+    try:
+        with db() as conn:
+            conn.execute(
+                "UPDATE utilizadores SET reset_code=NULL, reset_expires=NULL"
+                " WHERE NII = ? COLLATE NOCASE",
+                (nii,),
+            )
+            conn.commit()
+    except sqlite3.Error:
+        pass

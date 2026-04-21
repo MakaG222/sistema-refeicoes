@@ -9,12 +9,17 @@
     if (!h || !estufa) return;
     if (h.value) {
       estufa.style.display = 'flex';
+      estufa.setAttribute('aria-hidden', 'false');
     } else {
       estufa.style.display = 'none';
+      estufa.setAttribute('aria-hidden', 'true');
       var he = document.getElementById('h_' + meal + '_estufa');
       var mark = document.getElementById(meal === 'almoco' ? 'alm_estufa_mark' : 'jan_estufa_mark');
       if (he) he.value = '0';
-      if (mark) { mark.textContent = ''; mark.style.background = ''; mark.style.borderColor = ''; mark.style.color = ''; }
+      if (mark) {
+        mark.textContent = ''; mark.style.background = ''; mark.style.borderColor = ''; mark.style.color = '';
+        mark.setAttribute('aria-pressed', 'false');
+      }
     }
   }
 
@@ -45,6 +50,7 @@
       var on = h.value === '1' || h.value === 'on';
       h.value = on ? '0' : '1';
       toggle.classList.toggle('sw-on', !on);
+      toggle.setAttribute('aria-pressed', on ? 'false' : 'true');
       toggle.querySelector('.sw-mark').textContent = on ? '' : '\u2713';
       return;
     }
@@ -59,12 +65,19 @@
       var pills = row.querySelectorAll('.sw-pill');
       if (h2.value === val) {
         h2.value = '';
-        pills.forEach(function(p) { p.classList.remove('sw-sel'); });
+        pills.forEach(function(p) {
+          p.classList.remove('sw-sel');
+          p.setAttribute('aria-checked', 'false');
+        });
         row.classList.remove('sw-on');
       } else {
         h2.value = val;
-        pills.forEach(function(p) { p.classList.remove('sw-sel'); });
+        pills.forEach(function(p) {
+          p.classList.remove('sw-sel');
+          p.setAttribute('aria-checked', 'false');
+        });
         pill.classList.add('sw-sel');
+        pill.setAttribute('aria-checked', 'true');
         row.classList.add('sw-on');
       }
       updateEstufaVisibility(meal);
@@ -80,8 +93,10 @@
       he.value = on2 ? '0' : '1';
       if (!on2) {
         est.textContent = '\u2713'; est.style.background = '#f39c12'; est.style.borderColor = '#f39c12'; est.style.color = '#fff';
+        est.setAttribute('aria-pressed', 'true');
       } else {
         est.textContent = ''; est.style.background = ''; est.style.borderColor = ''; est.style.color = '';
+        est.setAttribute('aria-pressed', 'false');
       }
     }
   });

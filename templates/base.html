@@ -14,9 +14,13 @@
   <link rel="apple-touch-icon" href="/static/logo_escola_naval.jpg">
   <link rel="manifest" href="/static/manifest.json">
   <link rel="stylesheet" href="/static/css/app.css">
+  <link rel="stylesheet" href="/static/css/toasts.css">
+  <link rel="stylesheet" href="/static/css/theme.css">
+  <script src="/static/js/theme.js"></script>
   {% block head_extra %}{% endblock %}
 </head>
 <body>
+<a class="skip-link" href="#content">Saltar para conte&uacute;do</a>
 {% autoescape true %}
 {% if session.user %}
 <nav role="navigation" aria-label="Navega&ccedil;&atilde;o principal">
@@ -26,6 +30,7 @@
     {% if session.user.perfil == 'aluno' %}
     <a class="nav-link" href="{{ url_for('aluno.aluno_perfil') }}" aria-label="Ver perfil">&#x1f464; Perfil</a>
     {% endif %}
+    <button type="button" class="theme-toggle" data-theme-toggle aria-label="Alternar modo de cor" aria-pressed="false">&#x1f319;</button>
     <form method="post" action="{{ url_for('auth.logout') }}" class="form-inline">
       {{ csrf_input() }}
       <button type="submit" class="nav-link btn-logout" aria-label="Terminar sess&atilde;o">Sair</button>
@@ -33,21 +38,16 @@
   </div>
 </nav>
 {% endif %}
-{% with msgs = get_flashed_messages(with_categories=true) %}
-  {% if msgs %}
-    <div class="container container-flush" role="alert" aria-live="polite">
-    {% for cat,msg in msgs %}
-      <div class="alert alert-{{ cat }}" role="status">{{ msg }}</div>
-    {% endfor %}
-    </div>
-  {% endif %}
-{% endwith %}
 <main id="content">
 {% block content %}{% endblock %}
 </main>
+{{ flash_toasts() }}
+{% include "_shortcuts_help.html" %}
 {% endautoescape %}
 <script src="/static/js/app.js"></script>
 <script src="/static/js/dynamic-styles.js"></script>
 <script src="/static/js/sw-register.js"></script>
+<script src="/static/js/toasts.js"></script>
+<script src="/static/js/shortcuts.js"></script>
 {% block scripts %}{% endblock %}
 </body></html>

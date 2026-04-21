@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% import "_macros.html" as ui %}
 {% block content %}
 <div class="container">
   <div class="page-header">{{ back_btn(url_for('.admin_home')) }}<div class="page-title">🔐 Auditoria de Ações</div></div>
@@ -41,11 +42,15 @@
             <td class="small text-muted">{{ r.detail or "—" }}</td>
           </tr>
           {% else %}
-          <tr><td colspan="4" class="text-muted center empty-cell-lg">Sem registos.</td></tr>
+          {{ ui.empty_row(4, "🔐", "Sem registos de auditoria", "As ações administrativas aparecem aqui automaticamente. Volta depois de executares alguma ação.") }}
           {% endfor %}
         </tbody>
       </table>
     </div>
+    {% if paged %}
+      {% set qs = 'actor=' ~ q_actor ~ '&action=' ~ q_action ~ '&per_page=' ~ per_page %}
+      {{ ui.pagination_nav(page, total_pages, qs) }}
+    {% endif %}
   </div>
 </div>
 {% endblock %}

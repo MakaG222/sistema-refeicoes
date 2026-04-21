@@ -15,6 +15,7 @@ from flask import (
 )
 
 from blueprints.admin import admin_bp
+from core.auth_db import RESET_CODE_TTL_HOURS, set_reset_code
 from core.meals import get_totais_dia
 from core.users import (
     count_users,
@@ -223,6 +224,28 @@ def admin_utilizadores():
                 if ok
                 else msg,
                 "ok" if ok else "error",
+            )
+        elif acao == "gerar_reset":
+            # Gera um reset_code single-use (24h) — alternativa mais segura
+            # ao _reset_pw tradicional que usa o NII como password.
+            nii = request.form.get("nii", "").strip()
+            if not nii:
+                flash("NII em falta.", "error")
+                return redirect(request.url)
+            code = set_reset_code(nii)
+            if not code:
+                flash(f"NII '{nii}' não encontrado.", "error")
+                return redirect(url_for(".admin_utilizadores"))
+            _audit(
+                current_user().get("nii", "admin"),
+                "gerar_reset_code",
+                f"NII={nii} ttl_h={RESET_CODE_TTL_HOURS}",
+            )
+            return render_template(
+                "admin/reset_code_gerado.html",
+                nii=nii,
+                code=code,
+                ttl_hours=RESET_CODE_TTL_HOURS,
             )
         elif acao == "desbloquear":
             nii_d = request.form.get("nii", "")

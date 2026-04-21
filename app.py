@@ -61,6 +61,7 @@ from utils.helpers import (  # noqa: E402, F401
     render,
     esc,
     csrf_input,
+    render_flash_toasts,
     _parse_date,
     _parse_date_strict,
     _ano_label,
@@ -109,6 +110,14 @@ app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1)
 app.config.from_object(cfg.Config)
 cfg.configure_logging(app)
 
+# ── Rate limiter (defesa em profundidade no HTTP layer) ─────────────────
+# Decorators `@limiter.limit(...)` aplicados nas rotas sensíveis por blueprint
+# (/auth/login, /api/*-cron, /api/unlock-expired). Desactivável em testes via
+# `app.config["RATELIMIT_ENABLED"] = False` na fixture.
+from core.rate_limit import limiter  # noqa: E402
+
+limiter.init_app(app)
+
 app.teardown_appcontext(close_request_db)
 
 
@@ -121,6 +130,7 @@ app.jinja_env.globals["back_btn"] = _back_btn
 app.jinja_env.globals["bar_html"] = _bar_html
 app.jinja_env.globals["prazo_label"] = _prazo_label
 app.jinja_env.globals["ano_label"] = _ano_label
+app.jinja_env.globals["flash_toasts"] = render_flash_toasts
 
 # ── Registar Blueprints ──────────────────────────────────────────────────
 from blueprints.api import api_bp  # noqa: E402

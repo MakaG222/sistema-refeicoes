@@ -13,7 +13,7 @@ from flask import (
 )
 
 from blueprints.admin import admin_bp
-from core.audit import query_admin_audit, query_meal_log
+from core.audit import query_admin_audit, query_admin_audit_paged, query_meal_log
 from utils.auth import role_required
 from utils.validators import _val_int_id
 
@@ -63,17 +63,39 @@ def admin_log():
 @admin_bp.route("/admin/auditoria")
 @role_required("admin")
 def admin_audit():
-    """Registo de ações administrativas (logins, criação/edição de utilizadores, etc.)."""
-    limite = min(_val_int_id(request.args.get("limite", "500")) or 500, 5000)
+    """Registo de ações administrativas (logins, criação/edição de utilizadores, etc.).
+
+    Paginação: ?page=N&per_page=50 (default 50, max 500). Mantém backward-compat
+    com `?limite=` via fallback para query_admin_audit quando `page` não é
+    passado explicitamente.
+    """
     q_actor = request.args.get("actor", "").strip()
     q_action = request.args.get("action", "").strip()
+    has_page = "page" in request.args
+    per_page = min(500, _val_int_id(request.args.get("per_page", "50")) or 50)
+    page = max(1, _val_int_id(request.args.get("page", "1")) or 1)
+
+    limite = 0
+    filtered_total = 0
+    total_pages = 1
 
     try:
-        rows, total = query_admin_audit(
-            actor=q_actor,
-            action=q_action,
-            limit=limite,
-        )
+        if has_page:
+            rows, filtered_total, total = query_admin_audit_paged(
+                actor=q_actor,
+                action=q_action,
+                page=page,
+                per_page=per_page,
+            )
+            total_pages = max(1, (filtered_total + per_page - 1) // per_page)
+        else:
+            # Legacy: ?limite= — mantém comportamento antigo para callers existentes.
+            limite = min(_val_int_id(request.args.get("limite", "500")) or 500, 5000)
+            rows, total = query_admin_audit(
+                actor=q_actor,
+                action=q_action,
+                limit=limite,
+            )
     except Exception as exc:
         current_app.logger.error(f"admin_audit: {exc}")
         rows, total = [], 0
@@ -93,6 +115,11 @@ def admin_audit():
         limite=limite,
         q_actor=q_actor,
         q_action=q_action,
+        page=page,
+        per_page=per_page,
+        total_pages=total_pages,
+        filtered_total=filtered_total,
+        paged=has_page,
         ACTION_ICONS=ACTION_ICONS,
     )
 

@@ -202,6 +202,22 @@ def _fix_rafaela_nii(conn: sqlite3.Connection) -> None:
         log.warning("Migração Rafaela NII falhou: %s", exc)
 
 
+def _add_reset_code(conn: sqlite3.Connection) -> None:
+    """Adiciona colunas reset_code + reset_expires à tabela utilizadores.
+
+    Suporta o fluxo de password-reset por admin: admin gera um código único
+    válido durante 24h, utilizador faz login com ele e é redirigido para
+    /auth/change-password. Código invalida-se no uso (single-use).
+    """
+    cols = [
+        r["name"] for r in conn.execute("PRAGMA table_info(utilizadores)").fetchall()
+    ]
+    if "reset_code" not in cols:
+        conn.execute("ALTER TABLE utilizadores ADD COLUMN reset_code TEXT")
+    if "reset_expires" not in cols:
+        conn.execute("ALTER TABLE utilizadores ADD COLUMN reset_expires TEXT")
+
+
 def _reset_aluno_creds(conn: sqlite3.Connection) -> None:
     """Reset credenciais dos alunos: password=hash(NII), must_change=1."""
     alunos = conn.execute(
@@ -235,6 +251,7 @@ MIGRATIONS: list[tuple[str, callable]] = [
     ("005_add_licenca_horas", _add_licenca_horas),
     ("006_add_ausencia_horarios", _add_ausencia_horarios),
     ("007_add_dieta_padrao", _add_dieta_padrao),
+    ("008_add_reset_code", _add_reset_code),
     # Data migrations (one-off fixes) — preserva nomes antigos para compat
     ("reis_ni_382_482", _fix_reis_ni),
     ("rafaela_nii_20223_21223", _fix_rafaela_nii),

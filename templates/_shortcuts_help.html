@@ -1,0 +1,24 @@
+{# Overlay de ajuda para atalhos de teclado. Incluído no base.html. #}
+<dialog id="shortcuts-help" class="shortcuts-dialog" aria-labelledby="shortcuts-title">
+  <div class="shortcuts-content">
+    <div class="shortcuts-header">
+      <h2 id="shortcuts-title" class="shortcuts-title">&#x2328;&#xFE0F; Atalhos de teclado</h2>
+      <button type="button" class="shortcuts-close" data-close-shortcuts aria-label="Fechar ajuda">&times;</button>
+    </div>
+    <dl class="shortcuts-list">
+      <dt><kbd>?</kbd></dt>
+      <dd>Abrir / fechar esta ajuda</dd>
+      <dt><kbd>Esc</kbd></dt>
+      <dd>Fechar di&aacute;logos e overlays</dd>
+      <dt><kbd>Ctrl</kbd>+<kbd>S</kbd></dt>
+      <dd>Guardar formul&aacute;rio principal (quando dispon&iacute;vel)</dd>
+      <dt><kbd>Ctrl</kbd>+<kbd>P</kbd></dt>
+      <dd>Imprimir p&aacute;gina (em mapas e relat&oacute;rios)</dd>
+      <dt><kbd>Tab</kbd></dt>
+      <dd>Navegar entre elementos focalizaveis (skip-link no primeiro Tab)</dd>
+    </dl>
+    <div class="shortcuts-footer">
+      <button type="button" class="btn btn-ghost btn-sm" data-close-shortcuts>Fechar</button>
+    </div>
+  </div>
+</dialog>

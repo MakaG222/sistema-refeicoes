@@ -1,0 +1,52 @@
+/* ── Toast system ─────────────────────────────────────────────────── */
+/* Lightweight, CSP-safe (`script-src 'self'`), zero JS framework.
+   Injected via static/js/toasts.js — reads `<script type="application/json" data-toast>`
+   emitted by utils/helpers.py:flash_as_toast() or called via `window.showToast`. */
+
+.toast-container{
+  position:fixed;top:1rem;right:1rem;z-index:10000;
+  display:flex;flex-direction:column;gap:.5rem;
+  max-width:min(90vw,380px);
+  pointer-events:none; /* let container pass clicks — only toasts receive */
+}
+.toast-container > .toast{pointer-events:auto}
+
+.toast{
+  background:var(--card,#fff);color:var(--text,#1a2533);
+  border-left:4px solid var(--muted,#6c757d);
+  border-radius:10px;box-shadow:0 4px 14px rgba(0,0,0,.15);
+  padding:.75rem 2.25rem .75rem 1rem;
+  font-size:.88rem;line-height:1.35;
+  position:relative;
+  animation:toast-in .22s ease-out;
+  will-change:transform,opacity;
+}
+.toast.toast-ok{border-left-color:var(--ok,#1e8449)}
+.toast.toast-error{border-left-color:var(--danger,#c0392b)}
+.toast.toast-warn{border-left-color:var(--warn,#d68910)}
+.toast.toast-info{border-left-color:var(--primary,#0a2d4e)}
+
+.toast.is-leaving{animation:toast-out .18s ease-in forwards}
+
+.toast-close{
+  position:absolute;top:.4rem;right:.4rem;
+  background:transparent;border:none;cursor:pointer;
+  width:1.6rem;height:1.6rem;border-radius:6px;
+  color:var(--muted,#6c757d);font-size:1.1rem;line-height:1;
+  display:inline-flex;align-items:center;justify-content:center;
+}
+.toast-close:hover{background:rgba(0,0,0,.05);color:var(--text,#1a2533)}
+.toast-close:focus-visible{outline:2px solid var(--primary,#0a2d4e);outline-offset:1px}
+
+@keyframes toast-in{
+  from{opacity:0;transform:translateX(16px)}
+  to{opacity:1;transform:translateX(0)}
+}
+@keyframes toast-out{
+  from{opacity:1;transform:translateX(0)}
+  to{opacity:0;transform:translateX(16px)}
+}
+
+@media (prefers-reduced-motion: reduce){
+  .toast,.toast.is-leaving{animation:none}
+}

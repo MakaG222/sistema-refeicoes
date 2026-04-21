@@ -1,0 +1,16 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="container" role="alert" aria-live="polite">
+  <div class="page-header"><div class="page-title">&#x1f6d1; Demasiados pedidos</div></div>
+  <div class="card">
+    <p>Foram feitos demasiados pedidos num curto per&iacute;odo. Aguarda
+    alguns segundos e tenta novamente.</p>
+    <p class="text-muted text-sm">
+      Se est&aacute;s a fazer login, verifica a password. Se o problema persiste
+      ap&oacute;s 1 minuto, contacta o administrador.
+    </p>
+    <br>
+    <a class="btn btn-primary" href="/" aria-label="Tentar novamente">Tentar novamente</a>
+  </div>
+</div>
+{% endblock %}

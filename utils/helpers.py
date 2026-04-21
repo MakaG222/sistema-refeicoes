@@ -2,10 +2,18 @@
 
 from __future__ import annotations
 
+import json
 import secrets
 from datetime import date, datetime, timedelta
 
-from flask import Response, current_app, render_template, request, session
+from flask import (
+    Response,
+    current_app,
+    get_flashed_messages,
+    render_template,
+    request,
+    session,
+)
 from markupsafe import Markup, escape
 
 from core.constants import PRAZO_LIMITE_HORAS
@@ -35,6 +43,56 @@ def csrf_input() -> Markup:
     t = session.get("_csrf_token") or secrets.token_urlsafe(32)
     session["_csrf_token"] = t
     return Markup(f'<input type="hidden" name="csrf_token" value="{t}">')  # nosec B704
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# TOASTS (CSP-safe, consumidos por static/js/toasts.js)
+# ═══════════════════════════════════════════════════════════════════════════
+
+
+# Mapa de categorias legacy do Flask flash → níveis de toast do front-end.
+_TOAST_LEVEL_MAP = {
+    "ok": "ok",
+    "success": "ok",
+    "error": "error",
+    "danger": "error",
+    "warn": "warn",
+    "warning": "warn",
+    "info": "info",
+    "message": "info",
+}
+
+
+def _toast_level(category: str | None) -> str:
+    """Normaliza categoria do flash para um dos 4 níveis do toast."""
+    return _TOAST_LEVEL_MAP.get((category or "info").lower(), "info")
+
+
+def render_flash_toasts() -> Markup:
+    """Renderiza os flash messages pendentes como blocos JSON consumidos pelo
+    `static/js/toasts.js` no DOMContentLoaded.
+
+    Estratégia CSP-safe: em vez de `<script>showToast(...)</script>` (bloqueado
+    por `script-src 'self'`), emitimos `<script type="application/json"
+    data-toast>{...}</script>` — o browser não executa o conteúdo e o nosso
+    script externo itera e invoca `showToast()` com textContent (seguro).
+    """
+    msgs = get_flashed_messages(with_categories=True)
+    if not msgs:
+        return Markup("")
+    parts: list[str] = []
+    for category, msg in msgs:
+        payload = json.dumps(
+            {"msg": str(msg), "level": _toast_level(category)},
+            ensure_ascii=False,
+            separators=(",", ":"),
+        )
+        # Escapa `</` → `<\/` para impossibilitar fecho prematuro do <script>.
+        # json.dumps por defeito NÃO escapa estas sequências, temos de o fazer
+        # manualmente (ataque clássico de script-injection em JSON embutido).
+        payload = payload.replace("</", "<\\/")
+        parts.append(f'<script type="application/json" data-toast>{payload}</script>')
+    return Markup("".join(parts))  # nosec B704 — payload JSON-escapado + </ escapado
 
 
 # ═══════════════════════════════════════════════════════════════════════════

@@ -1,0 +1,55 @@
+{# ─────────────────────────────────────────────────────────────────────
+   Macros reutilizáveis — importar com:
+     {% import "_macros.html" as ui %}
+   ──────────────────────────────────────────────────────────────────── #}
+
+{#
+   empty_state(icon, title, hint, cta_url=None, cta_text=None)
+   Empty state amigável para listagens vazias. Usar dentro de `<td colspan>` ou
+   em qualquer `<div>` quando a coleção está vazia. CSP-safe (só HTML semântico).
+#}
+{% macro empty_state(icon, title, hint, cta_url=None, cta_text=None) %}
+  <div class="empty-state" role="status">
+    <div class="empty-state-icon" aria-hidden="true">{{ icon }}</div>
+    <div class="empty-state-title">{{ title }}</div>
+    {% if hint %}<div class="empty-state-hint">{{ hint }}</div>{% endif %}
+    {% if cta_url and cta_text %}
+      <a class="btn btn-primary btn-sm empty-state-cta" href="{{ cta_url }}">{{ cta_text }}</a>
+    {% endif %}
+  </div>
+{% endmacro %}
+
+{#
+   empty_row(colspan, icon, title, hint='', cta_url=None, cta_text=None)
+   Mesmo mas dentro de uma `<tr>` — útil para tabelas.
+#}
+{% macro empty_row(colspan, icon, title, hint='', cta_url=None, cta_text=None) %}
+  <tr><td colspan="{{ colspan }}" class="empty-cell-lg">
+    {{ empty_state(icon, title, hint, cta_url, cta_text) }}
+  </td></tr>
+{% endmacro %}
+
+{#
+   pagination_nav(page, total_pages, extra_qs='')
+   Botões Anterior/Próximo + indicador "Página X de Y". Preserva query string
+   existente via `extra_qs` (ex: 'q=foo&ano=all'). Se total_pages <= 1 não
+   renderiza nada.
+#}
+{% macro pagination_nav(page, total_pages, extra_qs='') %}
+  {% if total_pages > 1 %}
+  <nav class="pagination-nav" role="navigation" aria-label="Paginação">
+    {% set qs_prefix = extra_qs + '&' if extra_qs else '' %}
+    {% if page > 1 %}
+      <a class="btn btn-ghost btn-sm" href="?{{ qs_prefix }}page={{ page - 1 }}" aria-label="Página anterior">&larr; Anterior</a>
+    {% else %}
+      <span class="btn btn-ghost btn-sm" aria-disabled="true">&larr; Anterior</span>
+    {% endif %}
+    <span class="pagination-status text-sm text-muted">P&aacute;gina {{ page }} de {{ total_pages }}</span>
+    {% if page < total_pages %}
+      <a class="btn btn-ghost btn-sm" href="?{{ qs_prefix }}page={{ page + 1 }}" aria-label="Página seguinte">Seguinte &rarr;</a>
+    {% else %}
+      <span class="btn btn-ghost btn-sm" aria-disabled="true">Seguinte &rarr;</span>
+    {% endif %}
+  </nav>
+  {% endif %}
+{% endmacro %}
