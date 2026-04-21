@@ -3,6 +3,22 @@
 Sistema web de gestão de refeições para a Escola Naval Portuguesa.
 Permite aos cadetes marcar refeições, aos oficiais de dia gerir presenças e licenças, e à administração controlar utilizadores, turmas e relatórios.
 
+## Documentação
+
+- **[Arquitectura](docs/ARCHITECTURE.md)** — stack, decisões de design, estrutura
+- **[API](docs/API.md)** — endpoints JSON (`/health` + cron)
+- **[Runbook](docs/RUNBOOK.md)** — restart, logs, backup, erros comuns
+- **[Manual de utilização](docs/USER_MANUAL.md)** — guia por perfil
+- **[Contributing](docs/CONTRIBUTING.md)** — setup dev, branch naming, CI local
+- **[Changelog](CHANGELOG.md)** — histórico de versões
+
+Guia rápido por perfil:
+- [Aluno](docs/USER_MANUAL.md#aluno) — marcar refeições, QR, licenças
+- [Oficial-dia](docs/USER_MANUAL.md#oficial-dia) — painel, kiosk, presenças
+- [Cozinha](docs/USER_MANUAL.md#cozinha) — totais, menus, exports
+- [CMD](docs/USER_MANUAL.md#cmd) — gerir ano, detenções
+- [Admin](docs/USER_MANUAL.md#administrador) — users, menus, auditoria, backup
+
 ## Arquitectura
 
 ```
@@ -48,7 +64,8 @@ utils/                  Helpers partilhados
 
 templates/              Jinja2 templates (extends base.html)
 static/                 CSS e JS externos (app.css, meal-editor.css, app.js, etc.)
-tests/                  717 testes pytest (cobertura 92%)
+tests/                  864 testes pytest (cobertura 90%)
+docs/                   Documentação (arquitectura, API, runbook, manual, contributing)
 ```
 
 ## Perfis de utilizador
