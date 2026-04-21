@@ -8,6 +8,7 @@ Permite aos cadetes marcar refeições, aos oficiais de dia gerir presenças e l
 - **[Arquitectura](docs/ARCHITECTURE.md)** — stack, decisões de design, estrutura
 - **[API](docs/API.md)** — endpoints JSON (`/health` + cron)
 - **[Runbook](docs/RUNBOOK.md)** — restart, logs, backup, erros comuns
+- **[Deployment checklist](docs/DEPLOYMENT_CHECKLIST.md)** — lista obrigatória antes de UAT/produção
 - **[Manual de utilização](docs/USER_MANUAL.md)** — guia por perfil
 - **[Contributing](docs/CONTRIBUTING.md)** — setup dev, branch naming, CI local
 - **[Changelog](CHANGELOG.md)** — histórico de versões

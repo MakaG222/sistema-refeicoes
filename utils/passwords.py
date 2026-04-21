@@ -28,12 +28,68 @@ def generate_password_hash(password: str) -> str:
         return _gen_pw_hash(password, method="pbkdf2:sha256")
 
 
-def _validate_password(pw: str) -> tuple[bool, str]:
-    """Valida requisitos de password: mínimo 8 caracteres, letras e números."""
-    if len(pw) < 8:
+# Top passwords comuns — bloqueadas mesmo cumprindo os requisitos abaixo.
+# Lista curta (pragmática); não substitui o user fazer melhor, mas trava o óbvio.
+_COMMON_PASSWORDS = frozenset(
+    {
+        "password",
+        "password1",
+        "password123",
+        "passw0rd",
+        "qwerty123",
+        "abc12345",
+        "12345678a",
+        "admin123",
+        "admin1234",
+        "senha1234",
+        "senha123",
+        "12345678",
+        "123456789",
+        "11111111",
+        "aaaaaaaa",
+        "letmein1",
+        "welcome1",
+        "iloveyou1",
+        "monkey123",
+        "dragon123",
+        "football1",
+        "baseball1",
+        "sunshine1",
+        "princess1",
+        "superman1",
+        "batman123",
+        "marinha1",
+        "escolanaval1",
+    }
+)
+
+
+def _validate_password(pw: str, *, nii: str = "", ni: str = "") -> tuple[bool, str]:
+    """Valida requisitos de password.
+
+    Requisitos (v1.1.1):
+    - Mínimo 8 caracteres
+    - Pelo menos uma letra E pelo menos um dígito
+    - Não pode ser apenas 1 classe de caracteres
+    - Não pode estar na blacklist de passwords comuns
+    - Não pode ser igual ao NII ou NI do utilizador (se fornecidos)
+
+    `nii` e `ni` são opcionais — se o chamador souber quem é o user,
+    passa-os para bloquear passwords triviais `= NII`.
+    """
+    if not pw or len(pw) < 8:
         return False, "A password deve ter pelo menos 8 caracteres."
-    if pw.isdigit() or pw.isalpha():
-        return False, "A password deve conter letras e n\u00fameros."
+    has_letter = any(c.isalpha() for c in pw)
+    has_digit = any(c.isdigit() for c in pw)
+    if not (has_letter and has_digit):
+        return False, "A password deve conter pelo menos uma letra e um n\u00famero."
+    lower = pw.lower().strip()
+    if lower in _COMMON_PASSWORDS:
+        return False, "Esta password \u00e9 demasiado comum. Escolhe outra."
+    if nii and lower == str(nii).lower():
+        return False, "A password n\u00e3o pode ser igual ao NII."
+    if ni and lower == str(ni).lower():
+        return False, "A password n\u00e3o pode ser igual ao NI."
     return True, ""
 
 
@@ -77,7 +133,11 @@ def _alterar_password(nii: str, old: str, new: str) -> tuple[bool, str]:
     ph = row["Palavra_chave"] or ""
     if not _check_password(ph, old):
         return False, "Password atual incorreta."
-    pw_ok, pw_msg = _validate_password(new)
+    # Recupera NI para validar que a nova password não é igual
+    with db() as conn:
+        meta = conn.execute("SELECT NI FROM utilizadores WHERE id=?", (uid,)).fetchone()
+    user_ni = (meta["NI"] if meta else "") or ""
+    pw_ok, pw_msg = _validate_password(new, nii=nii, ni=user_ni)
     if not pw_ok:
         return False, pw_msg
     new_hash = generate_password_hash(new)
@@ -120,7 +180,7 @@ def _criar_utilizador(
         if not perfil:
             return False, "Perfil inv\u00e1lido."
         pw = str(pw).strip()[:256]
-        pw_ok, pw_msg = _validate_password(pw)
+        pw_ok, pw_msg = _validate_password(pw, nii=nii, ni=ni)
         if not pw_ok:
             return False, pw_msg
         pw_hash = generate_password_hash(pw)
