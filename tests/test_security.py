@@ -220,6 +220,45 @@ class TestPasswordValidationAcceptsStrong:
         assert ok
 
 
+class TestPasswordPolicyBlacklist:
+    """v1.1.1 — passwords comuns e matches com NII/NI bloqueados."""
+
+    def test_common_password_rejected(self):
+        from utils.passwords import _validate_password
+
+        # "password1" cumpre requisitos técnicos mas está na blacklist
+        ok, msg = _validate_password("password1")
+        assert not ok
+        assert "comum" in msg.lower()
+
+    def test_common_password_case_insensitive(self):
+        from utils.passwords import _validate_password
+
+        ok, msg = _validate_password("PASSWORD1")
+        assert not ok
+        assert "comum" in msg.lower()
+
+    def test_password_equals_nii_rejected(self):
+        from utils.passwords import _validate_password
+
+        ok, msg = _validate_password("alunox12345", nii="alunox12345")
+        assert not ok
+        assert "NII" in msg
+
+    def test_password_equals_ni_rejected(self):
+        from utils.passwords import _validate_password
+
+        ok, msg = _validate_password("ni98765432", nii="someother", ni="ni98765432")
+        assert not ok
+        assert "NI" in msg
+
+    def test_strong_password_with_nii_context_accepted(self):
+        from utils.passwords import _validate_password
+
+        ok, _ = _validate_password("X9k!mPq2rT", nii="12345", ni="NI-99")
+        assert ok
+
+
 # ── CSRF Protection ──────────────────────────────────────────────────────────
 
 
@@ -286,7 +325,7 @@ class TestCriarUtilizadorPasswordValidation:
             "weakpw2", "WK002", "Weak Password", "1", "aluno", "12345678"
         )
         assert not ok
-        assert "letras" in msg
+        assert "letra" in msg
 
     def test_criar_utilizador_rejects_alpha_only(self):
         import app as app_module
@@ -295,7 +334,7 @@ class TestCriarUtilizadorPasswordValidation:
             "weakpw3", "WK003", "Weak Password", "1", "aluno", "abcdefgh"
         )
         assert not ok
-        assert "letras" in msg or "números" in msg
+        assert "letra" in msg or "n\u00famero" in msg
 
     def test_criar_utilizador_accepts_strong_password(self, app):
         import app as app_module

@@ -120,6 +120,41 @@ docker compose up -d app
 curl http://localhost:5000/health | jq
 ```
 
+### Teste de restore (OBRIGATÓRIO antes de produção)
+
+**Um backup nunca testado ≈ sem backup.** Correr este procedimento em
+ambiente de staging ou máquina dev antes do deploy inicial, e depois
+1× por trimestre.
+
+```bash
+# 1. Fazer backup do estado actual (guardar como sanidade)
+cp sistema.db sistema.db.pre-test
+
+# 2. Escolher um backup recente
+ls -lt backups/*.db.gz | head -3
+
+# 3. Restore
+flask restore backups/sistema_AAAAMMDD_HHMMSS.db.gz
+
+# 4. Arrancar app em porta dev
+flask run --debug &
+APP_PID=$!
+
+# 5. Fumar:
+#    a) GET /health → 200
+curl -sf http://localhost:5000/health | jq '.status'
+#    b) Login com um user conhecido do backup → dashboard carrega
+#    c) Listar 5 refeições em /aluno/historico → aparecem
+#    d) /admin/auditoria → log visível com entradas antigas
+
+# 6. Parar app, restaurar estado original
+kill $APP_PID
+mv sistema.db.pre-test sistema.db
+```
+
+Se qualquer um dos passos 5a-5d falha: o backup está corrupto ou
+incompleto. **Investigar antes de confiar neste backup em produção.**
+
 ### Backup offsite
 
 Configurar vars em `.env`:
