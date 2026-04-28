@@ -24,6 +24,15 @@ PRAZO_LIMITE_HORAS = 48
 CUTOFF_LANCHE_HORA = 10
 BACKUP_RETENCAO_DIAS = 30
 
+# QR rotativo de check-in: TTL curto para que o token mostrado pelo oficial
+# não seja reutilizável após o aluno passar à frente. 60s dá margem para o
+# aluno autenticar (caso a sessão tenha expirado) sem cair no token expirado.
+CHECKIN_TOKEN_TTL_SECONDS = 60
+# Frequência de refresh do QR no painel do oficial — JS faz poll, gera novo
+# token e desenha. Ligeiramente menor que o TTL para nunca mostrar token já
+# expirado.
+CHECKIN_TOKEN_REFRESH_SECONDS = 45
+
 # ---------------------------------------------------------------------------
 # Perfis de sistema (contas admin/cmd/cozinha/oficialdia)
 # ---------------------------------------------------------------------------

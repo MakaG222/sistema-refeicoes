@@ -1,0 +1,57 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="container">
+  <div class="page-header">
+    {{ back_btn(url_for('.painel_dia')) }}
+    <div class="page-title">📱 QR Rotativo — Auto-scan</div>
+  </div>
+
+  <div class="card">
+    <div class="card-title">Como funciona</div>
+    <ul class="text-muted" style="font-size:.9rem;line-height:1.5">
+      <li>Mostra o QR a cada aluno; eles scaneiam com a câmara do telemóvel
+          (sem precisar de app).</li>
+      <li>O QR roda a cada ~45s — assim ninguém pode reutilizar um screenshot
+          mais tarde.</li>
+      <li>Cada aluno só pode usar o mesmo código uma vez (anti double-scan).</li>
+      <li>Se a sessão do aluno expirou, faz login e o sistema volta automaticamente
+          ao check-in.</li>
+    </ul>
+  </div>
+
+  <div class="card" data-qr-rotativo data-tipo-inicial="{{ tipo_inicial }}">
+    <div class="qr-mode-bar" role="group" aria-label="Modo de check-in">
+      <button type="button" class="btn btn-mode" data-mode="auto"
+              aria-pressed="{{ 'true' if tipo_inicial == 'auto' else 'false' }}">
+        🔄 Automático
+      </button>
+      <button type="button" class="btn btn-mode" data-mode="entrada"
+              aria-pressed="{{ 'true' if tipo_inicial == 'entrada' else 'false' }}">
+        ✅ Forçar entrada
+      </button>
+      <button type="button" class="btn btn-mode" data-mode="saida"
+              aria-pressed="{{ 'true' if tipo_inicial == 'saida' else 'false' }}">
+        🚪 Forçar saída
+      </button>
+    </div>
+
+    <div class="qr-stage">
+      <div class="qr-frame" id="qrFrame" aria-live="polite" aria-label="Código QR de check-in">
+        <div class="qr-loading">A gerar QR…</div>
+      </div>
+      <div class="qr-meta">
+        <div class="qr-countdown" aria-live="off">
+          Próximo refresh em <strong id="qrCountdown">—</strong>s
+        </div>
+        <div class="qr-status" id="qrStatus" role="status" aria-live="polite"></div>
+        <details class="qr-debug">
+          <summary>URL para teste manual</summary>
+          <code id="qrUrl" style="word-break:break-all"></code>
+        </details>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="{{ url_for('static', filename='js/qr-rotativo.js') }}" defer></script>
+{% endblock %}

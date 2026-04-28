@@ -37,12 +37,30 @@ from utils.constants import (
 from utils.passwords import _check_password, _migrate_password_hash
 
 
+def _safe_next(raw: str | None) -> str | None:
+    """Sanitiza um valor `next`: aceita apenas paths relativos ao próprio
+    site para evitar open-redirect (ex: `https://malicioso.com/login`)."""
+    if not raw:
+        return None
+    raw = raw.strip()
+    # Bloqueia esquemas absolutos e protocol-relative
+    if not raw.startswith("/") or raw.startswith("//") or raw.startswith("/\\"):
+        return None
+    # Bloqueia tentativas de injectar CR/LF
+    if any(c in raw for c in ("\r", "\n")):
+        return None
+    return raw[:512]
+
+
 @auth_bp.route("/", methods=["GET", "POST"])
 @auth_bp.route("/login", methods=["GET", "POST"])
 @limiter.limit("10 per minute", methods=["POST"])
 def login():
     if "user" in session:
-        return redirect(url_for("auth.dashboard"))
+        # Já autenticado — segue o `next` se vier, senão dashboard
+        nxt = _safe_next(request.args.get("next") or request.form.get("next"))
+        return redirect(nxt or url_for("auth.dashboard"))
+    next_url = _safe_next(request.args.get("next") or request.form.get("next"))
     error = None
     if request.method == "POST":
         nii = request.form.get("nii", "").strip()[:32]
@@ -164,9 +182,11 @@ def login():
                     "warn",
                 )
                 return redirect(url_for("aluno.aluno_password"))
+            if next_url:
+                return redirect(next_url)
             return redirect(url_for("auth.dashboard"))
 
-    return render_template("auth/login.html", error=error)
+    return render_template("auth/login.html", error=error, next_url=next_url)
 
 
 @auth_bp.route("/logout", methods=["POST"])

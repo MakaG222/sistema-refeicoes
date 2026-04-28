@@ -258,18 +258,26 @@ def api_unlock_expired():
                 " AND locked_until < datetime('now','localtime')"
             )
             unlocked = cur3.rowcount
+            # 4. Limpa tokens de check-in expirados (QR rotativo).
+            cur4 = conn.execute(
+                "DELETE FROM checkin_tokens"
+                " WHERE expires_at < datetime('now','localtime')"
+            )
+            expired_checkin_tokens = cur4.rowcount
             conn.commit()
         current_app.logger.info(
-            "unlock-expired: failures=%d reset_codes=%d unlocked=%d",
+            "unlock-expired: failures=%d reset_codes=%d unlocked=%d checkin_tokens=%d",
             deleted_fails,
             expired_codes,
             unlocked,
+            expired_checkin_tokens,
         )
         return _api_ok(
             {
                 "deleted_login_failures": deleted_fails,
                 "expired_reset_codes": expired_codes,
                 "unlocked_users": unlocked,
+                "expired_checkin_tokens": expired_checkin_tokens,
             }
         )
     except Exception as exc:
