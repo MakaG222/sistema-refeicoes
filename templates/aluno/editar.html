@@ -12,6 +12,9 @@
       {% if detido %}
       <div class="alert alert-error mb-lg">🚫 Estás detido neste dia. As refeições estão bloqueadas e não podem ser alteradas.</div>
       {% endif %}
+      {% if not detido and not pode_editar_tudo %}
+      <div class="alert alert-warn mb-lg">⏱️ O prazo geral desta refeição já passou. Só podes alterar o <strong>lanche</strong> (até às 10h do dia-de-prazo).</div>
+      {% endif %}
       {% if menu %}
       <div class="card card-accent-gold">
         <div class="card-title">📋 Ementa — {{ dt.strftime("%d/%m/%Y") }}</div>
@@ -38,9 +41,11 @@
           <input type="hidden" name="lanche" id="h_lanche" value="{{ lan_on }}">
           <input type="hidden" name="almoco" id="h_almoco" value="{{ alm_val }}">
           <input type="hidden" name="jantar" id="h_jantar" value="{{ jan_val }}">
+          {% set lock_nonlanche = (not detido and not pode_editar_tudo) %}
+          {% set nonlanche_style = 'opacity:.5;pointer-events:none' if lock_nonlanche else '' %}
           <div class="sw-group"{% if detido %} style="opacity:.5;pointer-events:none"{% endif %}>
             <!-- PA toggle -->
-            <div class="sw-row{{ "  sw-on" if pa_on else "" }}" data-meal="pa" data-toggle-meal role="button" tabindex="0" aria-pressed="{{ 'true' if pa_on else 'false' }}" aria-label="Pequeno Almoço">
+            <div class="sw-row{{ "  sw-on" if pa_on else "" }}" data-meal="pa" data-toggle-meal role="button" tabindex="0" aria-pressed="{{ 'true' if pa_on else 'false' }}" aria-label="Pequeno Almoço"{% if lock_nonlanche %} style="{{ nonlanche_style }}" aria-disabled="true"{% endif %}>
               <span class="sw-icon" aria-hidden="true">☕</span>
               <span class="sw-label">Pequeno Almoço</span>
               <span class="sw-mark" aria-hidden="true">{{ "✓" if pa_on else "" }}</span>
@@ -52,7 +57,7 @@
               <span class="sw-mark" aria-hidden="true">{{ "✓" if lan_on else "" }}</span>
             </div>
             <!-- Almoço pill selector -->
-            <div class="sw-pill-row{{ "  sw-on" if alm_val else "" }}" id="alm_row" role="radiogroup" aria-label="Tipo de almoço">
+            <div class="sw-pill-row{{ "  sw-on" if alm_val else "" }}" id="alm_row" role="radiogroup" aria-label="Tipo de almoço"{% if lock_nonlanche %} style="{{ nonlanche_style }}" aria-disabled="true"{% endif %}>
               <span class="sw-pill-icon" aria-hidden="true">🍽️</span>
               <span class="sw-pill-label">Almoço</span>
               <div class="sw-pill-opts">
@@ -61,14 +66,14 @@
                 <div class="sw-pill{{ " sw-sel" if alm_val == "Dieta" else "" }}" data-pill-meal="almoco" data-pill-val="Dieta" role="radio" tabindex="0" aria-checked="{{ 'true' if alm_val == 'Dieta' else 'false' }}">Dieta</div>
               </div>
             </div>
-            <div id="alm_estufa_row" class="estufa-row{{ '' if alm_val else ' d-none' }}" aria-hidden="{{ 'false' if alm_val else 'true' }}">
+            <div id="alm_estufa_row" class="estufa-row{{ '' if alm_val else ' d-none' }}" aria-hidden="{{ 'false' if alm_val else 'true' }}"{% if lock_nonlanche %} style="{{ nonlanche_style }}"{% endif %}>
               <input type="hidden" name="almoco_estufa" id="h_almoco_estufa" value="{{ '1' if alm_estufa else '0' }}">
               <span class="estufa-icon" aria-hidden="true">♨️</span>
               <span class="estufa-label">Guardar na estufa</span>
               <div class="sw-mark cursor-pointer{{ ' estufa-mark-active' if alm_estufa else '' }}" id="alm_estufa_mark" data-estufa="almoco" role="button" tabindex="0" aria-pressed="{{ 'true' if alm_estufa else 'false' }}" aria-label="Guardar almoço na estufa">{{ "✓" if alm_estufa else "" }}</div>
             </div>
             <!-- Jantar pill selector -->
-            <div class="sw-pill-row{{ "  sw-on" if jan_val and not jan_blocked else "" }}{{ " opacity-faded" if jan_blocked else "" }}" id="jan_row" role="radiogroup" aria-label="Tipo de jantar"{% if jan_blocked %} aria-disabled="true"{% endif %}>
+            <div class="sw-pill-row{{ "  sw-on" if jan_val and not jan_blocked else "" }}{{ " opacity-faded" if jan_blocked else "" }}" id="jan_row" role="radiogroup" aria-label="Tipo de jantar"{% if jan_blocked or lock_nonlanche %} aria-disabled="true"{% endif %}{% if lock_nonlanche %} style="{{ nonlanche_style }}"{% endif %}>
               <span class="sw-pill-icon" aria-hidden="true">🌙</span>
               <span class="sw-pill-label">Jantar</span>
               <div class="sw-pill-opts">
@@ -77,14 +82,14 @@
                 <div class="sw-pill{{ " sw-sel" if jan_val == "Dieta" else "" }}" data-pill-meal="jantar" data-pill-val="Dieta" role="radio" tabindex="0" aria-checked="{{ 'true' if jan_val == 'Dieta' else 'false' }}">Dieta</div>
               </div>
             </div>
-            <div id="jan_estufa_row" class="estufa-row{{ '' if (jan_val and not jan_blocked) else ' d-none' }}" aria-hidden="{{ 'false' if (jan_val and not jan_blocked) else 'true' }}">
+            <div id="jan_estufa_row" class="estufa-row{{ '' if (jan_val and not jan_blocked) else ' d-none' }}" aria-hidden="{{ 'false' if (jan_val and not jan_blocked) else 'true' }}"{% if lock_nonlanche %} style="{{ nonlanche_style }}"{% endif %}>
               <input type="hidden" name="jantar_estufa" id="h_jantar_estufa" value="{{ '1' if jan_estufa else '0' }}">
               <span class="estufa-icon" aria-hidden="true">♨️</span>
               <span class="estufa-label">Guardar na estufa</span>
               <div class="sw-mark cursor-pointer{{ ' estufa-mark-active' if jan_estufa else '' }}" id="jan_estufa_mark" data-estufa="jantar" role="button" tabindex="0" aria-pressed="{{ 'true' if jan_estufa else 'false' }}" aria-label="Guardar jantar na estufa">{{ "✓" if jan_estufa else "" }}</div>
             </div>
           </div>
-          {% if not detido %}
+          {% if not detido and pode_editar_tudo %}
           <div class="card card-accent-blue">
             <div class="card-title">🚪 Licença de saída</div>
             {% if not detido %}

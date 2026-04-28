@@ -11,6 +11,7 @@
         {% endif %}
         <form method="post" aria-label="Formulário de login">
           {{ csrf_input() }}
+          {% if next_url %}<input type="hidden" name="next" value="{{ next_url }}">{% endif %}
           <div class="form-group">
             <label for="nii-input">NII</label>
             <input id="nii-input" type="text" name="nii" maxlength="32" autofocus autocomplete="username" required placeholder="O teu NII (ex: 24123)" aria-required="true">

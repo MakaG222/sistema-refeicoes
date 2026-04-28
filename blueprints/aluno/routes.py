@@ -299,10 +299,16 @@ def aluno_editar(d):
         )
         return redirect(url_for(".aluno_home"))
 
-    ok_edit, msg = _dia_editavel_aluno(dt)
-    if not ok_edit:
-        flash(f"Não é possível editar: {msg}", "warn")
+    # Cutoff mais permissivo (lanche, 10h do dia de prazo) determina se a
+    # página abre. Se só o lanche estiver aberto, os outros campos ficam
+    # disabled no template.
+    ok_lanche, msg_lanche = _dia_editavel_aluno(dt, tipo="lanche")
+    if not ok_lanche:
+        flash(f"Não é possível editar: {msg_lanche}", "warn")
         return redirect(url_for(".aluno_home"))
+
+    ok_geral, _ = _dia_editavel_aluno(dt)
+    pode_editar_tudo = ok_geral  # se False: só lanche editável
 
     r = refeicao_get(uid, dt)
     is_weekend = dt.weekday() >= 5
@@ -337,29 +343,41 @@ def aluno_editar(d):
         if not _check_rate_limit("_meal_ops"):
             flash("Demasiadas alterações. Aguarda um minuto.", "warn")
             return redirect(url_for(".aluno_home"))
-        pa = 1 if request.form.get("pa") in ("1", "on") else 0
         lanche = 1 if request.form.get("lanche") in ("1", "on") else 0
-        alm = _val_refeicao(request.form.get("almoco"))
-        jan = _val_refeicao(request.form.get("jantar"))
-        sai = 0 if detido else (1 if request.form.get("sai") else 0)
-        alm_estufa = 1 if (alm and request.form.get("almoco_estufa") == "1") else 0
-        jan_estufa = 1 if (jan and request.form.get("jantar_estufa") == "1") else 0
-
-        # Processar licença (antes_jantar / apos_jantar / vazio)
-        licenca_tipo = request.form.get("licenca", "")
-        if licenca_tipo in ("antes_jantar", "apos_jantar"):
-            pode, motivo = _pode_marcar_licenca(uid, dt, ano_aluno, ni_aluno)
-            if pode:
-                upsert_licenca(uid, dt.isoformat(), licenca_tipo)
-                if licenca_tipo == "antes_jantar":
-                    jan = ""
-                    sai = 1
-                else:
-                    sai = 1
-            else:
-                flash(motivo, "warn")
+        if pode_editar_tudo:
+            pa = 1 if request.form.get("pa") in ("1", "on") else 0
+            alm = _val_refeicao(request.form.get("almoco"))
+            jan = _val_refeicao(request.form.get("jantar"))
+            sai = 0 if detido else (1 if request.form.get("sai") else 0)
+            alm_estufa = 1 if (alm and request.form.get("almoco_estufa") == "1") else 0
+            jan_estufa = 1 if (jan and request.form.get("jantar_estufa") == "1") else 0
         else:
-            delete_licenca(uid, dt.isoformat())
+            # Só lanche editável — preservar os restantes campos
+            pa = 1 if r.get("pequeno_almoco") else 0
+            alm = r.get("almoco") or ""
+            jan = r.get("jantar_tipo") or ""
+            sai = 1 if r.get("jantar_sai_unidade") else 0
+            alm_estufa = 1 if r.get("almoco_estufa") else 0
+            jan_estufa = 1 if r.get("jantar_estufa") else 0
+
+        # Processar licença (antes_jantar / apos_jantar / vazio) — só quando o
+        # aluno ainda pode editar o dia todo. Fora do prazo geral (só lanche),
+        # não mexer na licença.
+        if pode_editar_tudo:
+            licenca_tipo = request.form.get("licenca", "")
+            if licenca_tipo in ("antes_jantar", "apos_jantar"):
+                pode, motivo = _pode_marcar_licenca(uid, dt, ano_aluno, ni_aluno)
+                if pode:
+                    upsert_licenca(uid, dt.isoformat(), licenca_tipo)
+                    if licenca_tipo == "antes_jantar":
+                        jan = ""
+                        sai = 1
+                    else:
+                        sai = 1
+                else:
+                    flash(motivo, "warn")
+            else:
+                delete_licenca(uid, dt.isoformat())
 
         if _refeicao_set(
             uid,
@@ -420,6 +438,7 @@ def aluno_editar(d):
         usadas_semana=usadas_semana,
         max_uteis=max_uteis,
         is_weekday=is_weekday,
+        pode_editar_tudo=pode_editar_tudo,
     )
 
 

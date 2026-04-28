@@ -202,6 +202,41 @@ def _fix_rafaela_nii(conn: sqlite3.Connection) -> None:
         log.warning("Migração Rafaela NII falhou: %s", exc)
 
 
+def _add_checkin_tokens(conn: sqlite3.Connection) -> None:
+    """Cria tabelas checkin_tokens + checkin_log para QR rotativo (PR2).
+
+    O paradigma anterior era estático: cada aluno tinha um QR fixo (NII)
+    que era scaneado pelo kiosk do oficial. Inverte-se: oficial mostra um
+    QR rotativo (URL com token TTL ~60s) que o aluno scaneia com a câmara
+    do telemóvel — abre /checkin?token=… e regista entrada/saída.
+    """
+    conn.executescript(
+        """
+        CREATE TABLE IF NOT EXISTS checkin_tokens (
+          token       TEXT PRIMARY KEY,
+          created_at  TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+          expires_at  TEXT NOT NULL,
+          created_by  INTEGER NOT NULL REFERENCES utilizadores(id) ON DELETE CASCADE,
+          tipo        TEXT NOT NULL CHECK(tipo IN ('entrada','saida','auto'))
+        );
+        CREATE INDEX IF NOT EXISTS idx_checkin_tokens_exp ON checkin_tokens(expires_at);
+
+        CREATE TABLE IF NOT EXISTS checkin_log (
+          id            INTEGER PRIMARY KEY AUTOINCREMENT,
+          utilizador_id INTEGER NOT NULL REFERENCES utilizadores(id) ON DELETE CASCADE,
+          token         TEXT NOT NULL,
+          tipo          TEXT NOT NULL CHECK(tipo IN ('entrada','saida')),
+          ts            TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+          ip            TEXT,
+          user_agent    TEXT,
+          UNIQUE(utilizador_id, token)
+        );
+        CREATE INDEX IF NOT EXISTS idx_checkin_log_uid_ts ON checkin_log(utilizador_id, ts);
+        CREATE INDEX IF NOT EXISTS idx_checkin_log_token ON checkin_log(token);
+        """
+    )
+
+
 def _add_reset_code(conn: sqlite3.Connection) -> None:
     """Adiciona colunas reset_code + reset_expires à tabela utilizadores.
 
@@ -252,6 +287,7 @@ MIGRATIONS: list[tuple[str, callable]] = [
     ("006_add_ausencia_horarios", _add_ausencia_horarios),
     ("007_add_dieta_padrao", _add_dieta_padrao),
     ("008_add_reset_code", _add_reset_code),
+    ("009_add_checkin_tokens", _add_checkin_tokens),
     # Data migrations (one-off fixes) — preserva nomes antigos para compat
     ("reis_ni_382_482", _fix_reis_ni),
     ("rafaela_nii_20223_21223", _fix_rafaela_nii),

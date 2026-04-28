@@ -414,8 +414,12 @@ def _pode_marcar_licenca(uid: int, d: date, ano: int, ni: str) -> tuple[bool, st
 # ── Dia editável ─────────────────────────────────────────────────────────
 
 
-def _dia_editavel_aluno(d: date) -> tuple[bool, str]:
-    """Editável pelo aluno: futuro, dentro de DIAS_ANTECEDENCIA, prazo ok. Fins de semana permitidos."""
+def _dia_editavel_aluno(d: date, tipo: str | None = None) -> tuple[bool, str]:
+    """Editável pelo aluno: futuro, dentro de DIAS_ANTECEDENCIA, prazo ok. Fins de semana permitidos.
+
+    `tipo` propaga para `refeicao_editavel` para aplicar cutoff específico
+    (ex: 'lanche' tem cutoff às 10h do dia de prazo).
+    """
     hoje = date.today()
     if d < hoje:
         return False, "Data no passado."
@@ -424,7 +428,7 @@ def _dia_editavel_aluno(d: date) -> tuple[bool, str]:
             False,
             f"Só é possível marcar com {cfg.DIAS_ANTECEDENCIA} dias de antecedência.",
         )
-    return refeicao_editavel(d)
+    return refeicao_editavel(d, tipo=tipo)
 
 
 # ── Licença FDS ──────────────────────────────────────────────────────────

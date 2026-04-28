@@ -172,6 +172,30 @@ CREATE TABLE IF NOT EXISTS turmas (
   criado_em TEXT DEFAULT (datetime('now','localtime'))
 );
 
+-- Tokens rotativos para QR de check-in (oficial mostra → aluno scan)
+CREATE TABLE IF NOT EXISTS checkin_tokens (
+  token       TEXT PRIMARY KEY,
+  created_at  TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+  expires_at  TEXT NOT NULL,
+  created_by  INTEGER NOT NULL REFERENCES utilizadores(id) ON DELETE CASCADE,
+  tipo        TEXT NOT NULL CHECK(tipo IN ('entrada','saida','auto'))
+);
+CREATE INDEX IF NOT EXISTS idx_checkin_tokens_exp ON checkin_tokens(expires_at);
+
+-- Log de check-ins efectuados (uma linha por aluno×token)
+CREATE TABLE IF NOT EXISTS checkin_log (
+  id            INTEGER PRIMARY KEY AUTOINCREMENT,
+  utilizador_id INTEGER NOT NULL REFERENCES utilizadores(id) ON DELETE CASCADE,
+  token         TEXT NOT NULL,
+  tipo          TEXT NOT NULL CHECK(tipo IN ('entrada','saida')),
+  ts            TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+  ip            TEXT,
+  user_agent    TEXT,
+  UNIQUE(utilizador_id, token)
+);
+CREATE INDEX IF NOT EXISTS idx_checkin_log_uid_ts ON checkin_log(utilizador_id, ts);
+CREATE INDEX IF NOT EXISTS idx_checkin_log_token ON checkin_log(token);
+
 CREATE INDEX IF NOT EXISTS idx_refeicoes_data ON refeicoes(data);
 CREATE INDEX IF NOT EXISTS idx_refeicoes_user ON refeicoes(utilizador_id);
 CREATE INDEX IF NOT EXISTS idx_refeicoes_user_data ON refeicoes(utilizador_id, data);

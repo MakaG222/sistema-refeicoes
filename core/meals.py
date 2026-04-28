@@ -7,7 +7,7 @@ import sqlite3
 from datetime import date, datetime, timedelta
 from typing import Any
 
-from core.constants import PRAZO_LIMITE_HORAS
+from core.constants import CUTOFF_LANCHE_HORA, PRAZO_LIMITE_HORAS
 from core.database import db
 
 log = logging.getLogger(__name__)
@@ -58,8 +58,15 @@ def _empty_totais() -> dict[str, int]:
     return dict.fromkeys(_TOTAIS_KEYS, 0)
 
 
-def refeicao_editavel(d: date) -> tuple[bool, str]:
-    """Devolve (True, '') se a data d ainda pode ser editada, ou (False, motivo)."""
+def refeicao_editavel(d: date, tipo: str | None = None) -> tuple[bool, str]:
+    """Devolve (True, '') se a data d ainda pode ser editada, ou (False, motivo).
+
+    Args:
+        d: data da refeição
+        tipo: tipo de refeição — para aplicar cutoff específico
+              ('lanche' fecha às CUTOFF_LANCHE_HORA do dia de prazo, em vez
+              das 00:00; None usa o prazo geral de 48h)
+    """
     agora_dt = datetime.now()
     hoje = agora_dt.date()
 
@@ -73,11 +80,16 @@ def refeicao_editavel(d: date) -> tuple[bool, str]:
         prazo_dt = datetime(d.year, d.month, d.day, 0, 0, 0) - timedelta(
             hours=PRAZO_LIMITE_HORAS
         )
+        if tipo == "lanche":
+            # Lanche mantém as 48h, mas fecha às 10h do dia de prazo (mais 10h
+            # de margem para o aluno confirmar/alterar na manhã desse dia).
+            prazo_dt = prazo_dt.replace(hour=CUTOFF_LANCHE_HORA)
         if agora_dt >= prazo_dt:
             prazo_str = prazo_dt.strftime("%d/%m/%Y às %H:%M")
+            what = f"o {tipo}" if tipo else "a refeição"
             return False, (
-                f"Prazo excedido para alterar a refeição de {d.strftime('%d/%m/%Y')}.\n"
-                f"   O prazo terminou em {prazo_str} ({PRAZO_LIMITE_HORAS}h antes da refeição).\n"
+                f"Prazo excedido para alterar {what} de {d.strftime('%d/%m/%Y')}.\n"
+                f"   O prazo terminou em {prazo_str}.\n"
                 f"   Para efetuar alterações, fala com o Oficial de Dia."
             )
 

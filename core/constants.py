@@ -19,7 +19,19 @@ Path(EXPORT_DIR).mkdir(exist_ok=True)
 # Limites operacionais
 # ---------------------------------------------------------------------------
 PRAZO_LIMITE_HORAS = 48
+# Cutoff específico do lanche: mantém as 48h, mas termina às 10h do dia de
+# prazo (em vez das 00:00). Dá ao aluno até às 10:00 do dia d-2 para alterar.
+CUTOFF_LANCHE_HORA = 10
 BACKUP_RETENCAO_DIAS = 30
+
+# QR rotativo de check-in: TTL curto para que o token mostrado pelo oficial
+# não seja reutilizável após o aluno passar à frente. 60s dá margem para o
+# aluno autenticar (caso a sessão tenha expirado) sem cair no token expirado.
+CHECKIN_TOKEN_TTL_SECONDS = 60
+# Frequência de refresh do QR no painel do oficial — JS faz poll, gera novo
+# token e desenha. Ligeiramente menor que o TTL para nunca mostrar token já
+# expirado.
+CHECKIN_TOKEN_REFRESH_SECONDS = 45
 
 # ---------------------------------------------------------------------------
 # Perfis de sistema (contas admin/cmd/cozinha/oficialdia)

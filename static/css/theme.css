@@ -58,6 +58,83 @@
 :root[data-theme="dark"] .alert-info{background:rgba(36,113,163,.18)}
 :root[data-theme="dark"] .toast{background:var(--card);color:var(--text)}
 
+/* Login — em dark, a login-box e o gradiente envolvente mudam para tons
+   escuros coerentes; os inputs por dentro já usam a regra genérica acima. */
+:root[data-theme="dark"] .login-wrap{
+  background:linear-gradient(160deg,#050d18 0%,#0a2d4e 60%,#050d18 100%);
+}
+:root[data-theme="dark"] .login-box{
+  background:var(--card);color:var(--text);
+  box-shadow:0 24px 70px rgba(0,0,0,.55);
+}
+
+/* Contraste em elementos com texto azul/cinza escuro hardcoded (app.css) */
+:root[data-theme="dark"] label{color:var(--muted)}
+:root[data-theme="dark"] .badge-info,
+:root[data-theme="dark"] .chip-type{background:rgba(36,113,163,.22);color:#a0c9eb}
+:root[data-theme="dark"] .badge-ok,
+:root[data-theme="dark"] .chip-ok{background:rgba(30,132,73,.22);color:#8ad5a5}
+:root[data-theme="dark"] .badge-no,
+:root[data-theme="dark"] .chip-no{background:rgba(146,43,33,.28);color:#f0a195}
+:root[data-theme="dark"] .badge-warn{background:rgba(154,125,10,.28);color:#f5d96b}
+:root[data-theme="dark"] .badge-gold{background:rgba(201,162,39,.22);color:#f0d080}
+:root[data-theme="dark"] .badge-muted{background:rgba(255,255,255,.08);color:var(--muted)}
+:root[data-theme="dark"] .alert-ok{color:#a9dfbf;border-color:rgba(169,223,191,.3)}
+:root[data-theme="dark"] .alert-error{color:#f1948a;border-color:rgba(241,148,138,.3)}
+:root[data-theme="dark"] .alert-warn{color:#f5d96b;border-color:rgba(249,231,159,.3)}
+:root[data-theme="dark"] .alert-info{color:#a0c9eb;border-color:rgba(169,201,235,.3)}
+:root[data-theme="dark"] .cal-text-fim_semana{color:#a0c9eb}
+:root[data-theme="dark"] .cal-text-normal{color:#8ad5a5}
+:root[data-theme="dark"] .cal-text-feriado{color:#f0a195}
+:root[data-theme="dark"] .cal-text-exercicio{color:#f5d96b}
+:root[data-theme="dark"] .cal-text-outro{color:var(--muted)}
+:root[data-theme="dark"] .cal-bg-normal{background:rgba(30,132,73,.14)}
+:root[data-theme="dark"] .cal-bg-fim_semana{background:rgba(36,113,163,.14)}
+:root[data-theme="dark"] .cal-bg-feriado{background:rgba(146,43,33,.17)}
+:root[data-theme="dark"] .cal-bg-exercicio{background:rgba(154,125,10,.17)}
+:root[data-theme="dark"] .cal-bg-outro{background:rgba(255,255,255,.04)}
+:root[data-theme="dark"] .cal-empty{background:rgba(255,255,255,.03)}
+:root[data-theme="dark"] .chart-dow-day{color:#a0c9eb}
+:root[data-theme="dark"] .chart-dow-wknd{color:#f0d080}
+:root[data-theme="dark"] .chart-val{color:var(--text)}
+:root[data-theme="dark"] .chart-date{color:var(--muted)}
+:root[data-theme="dark"] .chart-col-day,
+:root[data-theme="dark"] .chart-col-off{background:var(--card)}
+:root[data-theme="dark"] .chart-col-wknd{background:rgba(201,162,39,.08)}
+:root[data-theme="dark"] .ausente-banner{background:rgba(201,162,39,.12);color:#f0d080;border-color:rgba(201,162,39,.35)}
+:root[data-theme="dark"] .prazo-warn{color:#f5d96b}
+:root[data-theme="dark"] .prazo-lock{color:#f0a195}
+:root[data-theme="dark"] .delta-up{color:#8ad5a5}
+:root[data-theme="dark"] .delta-down{color:#f0a195}
+:root[data-theme="dark"] .delta-zero{color:var(--muted)}
+:root[data-theme="dark"] .profile-meal-box{background:rgba(255,255,255,.04)}
+:root[data-theme="dark"] .presence-absent{background:rgba(146,43,33,.14)}
+:root[data-theme="dark"] .presence-present{background:rgba(30,132,73,.12)}
+:root[data-theme="dark"] .row-present{background:rgba(30,132,73,.12)}
+:root[data-theme="dark"] .row-no-meals{background:rgba(154,125,10,.14)}
+:root[data-theme="dark"] .row-absent{background:rgba(146,43,33,.14)}
+:root[data-theme="dark"] .row-weekend{background:rgba(201,162,39,.10)}
+:root[data-theme="dark"] .row-summary{background:rgba(255,255,255,.05);border-top-color:var(--border);color:var(--text)}
+:root[data-theme="dark"] .row-prev{background:rgba(154,125,10,.1)}
+:root[data-theme="dark"] .row-delta{background:var(--card)}
+:root[data-theme="dark"] .row-dup{background:rgba(201,162,39,.1)}
+:root[data-theme="dark"] .row-new{background:rgba(30,132,73,.1)}
+:root[data-theme="dark"] .chip-ausente{background:rgba(201,162,39,.14);color:#f0d080}
+:root[data-theme="dark"] .chip-detido{background:rgba(146,43,33,.17);color:#f0a195}
+:root[data-theme="dark"] .chip-licenca{background:rgba(30,132,73,.14);color:#8ad5a5}
+:root[data-theme="dark"] .csv-format,
+:root[data-theme="dark"] .csv-preview{background:rgba(255,255,255,.04);color:var(--text)}
+:root[data-theme="dark"] .ref-chip-ok{background:rgba(30,132,73,.14);border-color:rgba(169,223,191,.3);color:#a9dfbf}
+:root[data-theme="dark"] .ref-chip-no{background:rgba(146,43,33,.14);border-color:rgba(241,148,138,.3);color:#f0a195}
+:root[data-theme="dark"] .ref-chip-sai{background:rgba(154,125,10,.14);border-color:rgba(249,231,159,.3);color:#f5d96b}
+:root[data-theme="dark"] .week-card.weekend-active{background:rgba(201,162,39,.12)}
+:root[data-theme="dark"] .stat-box-warn{background:rgba(154,125,10,.18)}
+:root[data-theme="dark"] a{color:#a0c9eb}
+:root[data-theme="dark"] a:hover{color:#c7ddef}
+
+/* Border-top azul dos cards em dark: tom mais claro para ser visível */
+:root[data-theme="dark"] .card-accent-blue{border-top-color:#5aa1d0}
+
 @media (prefers-color-scheme: dark){
   :where(:root:not([data-theme="light"]):not([data-theme="dark"])) .stat-box,
   :where(:root:not([data-theme="light"]):not([data-theme="dark"])) .week-card,
@@ -83,6 +160,32 @@
     background:#121a26;
   }
   :where(:root:not([data-theme="light"]):not([data-theme="dark"])) .text-dark{color:var(--text)}
+
+  /* Contraste adicional (ver bloco [data-theme="dark"] acima). */
+  :where(:root:not([data-theme="light"]):not([data-theme="dark"])) .login-wrap{
+    background:linear-gradient(160deg,#050d18 0%,#0a2d4e 60%,#050d18 100%);
+  }
+  :where(:root:not([data-theme="light"]):not([data-theme="dark"])) .login-box{
+    background:var(--card);color:var(--text);
+    box-shadow:0 24px 70px rgba(0,0,0,.55);
+  }
+  :where(:root:not([data-theme="light"]):not([data-theme="dark"])) label{color:var(--muted)}
+  :where(:root:not([data-theme="light"]):not([data-theme="dark"])) .badge-info,
+  :where(:root:not([data-theme="light"]):not([data-theme="dark"])) .chip-type{background:rgba(36,113,163,.22);color:#a0c9eb}
+  :where(:root:not([data-theme="light"]):not([data-theme="dark"])) .badge-ok,
+  :where(:root:not([data-theme="light"]):not([data-theme="dark"])) .chip-ok{background:rgba(30,132,73,.22);color:#8ad5a5}
+  :where(:root:not([data-theme="light"]):not([data-theme="dark"])) .badge-no,
+  :where(:root:not([data-theme="light"]):not([data-theme="dark"])) .chip-no{background:rgba(146,43,33,.28);color:#f0a195}
+  :where(:root:not([data-theme="light"]):not([data-theme="dark"])) .badge-warn{background:rgba(154,125,10,.28);color:#f5d96b}
+  :where(:root:not([data-theme="light"]):not([data-theme="dark"])) .alert-info{color:#a0c9eb;border-color:rgba(169,201,235,.3)}
+  :where(:root:not([data-theme="light"]):not([data-theme="dark"])) .alert-ok{color:#a9dfbf}
+  :where(:root:not([data-theme="light"]):not([data-theme="dark"])) .alert-error{color:#f1948a}
+  :where(:root:not([data-theme="light"]):not([data-theme="dark"])) .alert-warn{color:#f5d96b}
+  :where(:root:not([data-theme="light"]):not([data-theme="dark"])) .cal-text-fim_semana{color:#a0c9eb}
+  :where(:root:not([data-theme="light"]):not([data-theme="dark"])) .chart-val{color:var(--text)}
+  :where(:root:not([data-theme="light"]):not([data-theme="dark"])) .chart-date{color:var(--muted)}
+  :where(:root:not([data-theme="light"]):not([data-theme="dark"])) .chart-dow-day{color:#a0c9eb}
+  :where(:root:not([data-theme="light"]):not([data-theme="dark"])) a{color:#a0c9eb}
 }
 
 /* ── Skip-link (acessibilidade) ───────────────────────────────────── */

@@ -234,6 +234,14 @@ def painel_dia():
         )
         acoes.append(
             {
+                "url": url_for(".qr_rotativo"),
+                "icon": "📱",
+                "label": "QR Rotativo (auto-scan)",
+                "cls": "btn-primary",
+            }
+        )
+        acoes.append(
+            {
                 "url": url_for(".excecoes_dia", d=dt.isoformat()),
                 "icon": "📝",
                 "label": "Exceções",
@@ -467,6 +475,141 @@ def checkin_kiosk():
         hoje_fmt=hoje.strftime("%d/%m/%Y"),
         resultado=resultado,
     )
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# QR ROTATIVO — Oficial mostra QR rotativo; aluno scaneia e regista no telemóvel
+# ═══════════════════════════════════════════════════════════════════════════
+
+
+@ops_bp.route("/qr-rotativo", methods=["GET"])
+@role_required("oficialdia", "admin")
+def qr_rotativo():
+    """Página do oficial-dia: mostra QR que rota a cada ~45s.
+
+    O QR codifica a URL `/checkin?token=…`. Aluno scaneia com câmara
+    nativa do telemóvel, abre browser, autentica (se preciso) e regista
+    entrada/saída numa página própria. Sem app, sem permissões.
+    """
+    tipo = (request.args.get("tipo") or "auto").strip().lower()
+    if tipo not in ("entrada", "saida", "auto"):
+        tipo = "auto"
+    return render_template("operations/qr_rotativo.html", tipo_inicial=tipo)
+
+
+@ops_bp.route("/qr-rotativo/token", methods=["GET"])
+@role_required("oficialdia", "admin")
+def qr_rotativo_token():
+    """Endpoint JSON chamado pelo JS de poll: gera novo token e devolve URL+SVG."""
+    from core.checkin import gerar_token
+    from core.constants import CHECKIN_TOKEN_TTL_SECONDS
+    from core.qr import qr_svg_bytes
+    from flask import jsonify
+
+    u = current_user()
+    tipo = (request.args.get("tipo") or "auto").strip().lower()
+    if tipo not in ("entrada", "saida", "auto"):
+        tipo = "auto"
+
+    try:
+        info = gerar_token(u["id"], tipo=tipo)
+    except Exception as exc:
+        log.exception("qr_rotativo_token: falha a gerar token: %s", exc)
+        return jsonify({"error": "internal"}), 500
+
+    checkin_url = url_for(".checkin_token", token=info["token"], _external=True)
+    svg = qr_svg_bytes(checkin_url).decode("utf-8")
+    return jsonify(
+        {
+            "token": info["token"],
+            "url": checkin_url,
+            "tipo": info["tipo"],
+            "expires_at": info["expires_at"],
+            "ttl_seconds": CHECKIN_TOKEN_TTL_SECONDS,
+            "svg": svg,
+        }
+    )
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# CHECK-IN POR ALUNO (URL com token rotativo) — destino do scan
+# ═══════════════════════════════════════════════════════════════════════════
+
+
+@ops_bp.route("/checkin/t/<token>", methods=["GET"])
+def checkin_token(token: str):
+    """Aluno abre esta URL ao scanar o QR rotativo do oficial.
+
+    Fluxo:
+      1. Se sessão não tem aluno → redirect login com next=esta-url.
+      2. Valida token (existe + não expirado).
+      3. Resolve tipo (entrada/saida/auto) — auto decide pela ausência actual.
+      4. Insere checkin_log (UNIQUE protege double-scan) + chama
+         registar_*_presenca para alterar `ausencias`/`licencas`.
+      5. Redirect /aluno/perfil com flash.
+    """
+    from core.checkin import consumir_token, validar_token
+
+    u = current_user()
+    # Não autenticado → login com next
+    if not u:
+        nxt = url_for(".checkin_token", token=token)
+        return redirect(url_for("auth.login", next=nxt))
+
+    # Apenas alunos podem registar check-in via QR rotativo
+    if u.get("perfil") != "aluno":
+        flash(
+            "Apenas alunos podem registar check-in pelo QR. Oficiais usam o quiosque.",
+            "error",
+        )
+        return redirect(url_for("auth.dashboard"))
+
+    info = validar_token(token)
+    if info is None:
+        flash(
+            "Código expirado ou inválido. Pede ao Oficial de Dia para mostrar um novo QR.",
+            "error",
+        )
+        return redirect(url_for("aluno.aluno_perfil"))
+
+    hoje = date.today()
+    aluno_id = u["id"]
+    tipo_token = info["tipo"]
+
+    # Resolver entrada vs. saída quando tipo='auto'
+    if tipo_token == "auto":  # nosec B105 — 'auto' é um modo, não password
+        ausente = _tem_ausencia_ativa(aluno_id, hoje)
+        tipo_resolvido = "entrada" if ausente else "saida"
+    else:
+        tipo_resolvido = tipo_token
+
+    ip = request.headers.get("X-Forwarded-For", request.remote_addr)
+    ua = (request.headers.get("User-Agent") or "")[:200]
+
+    ok, msg = consumir_token(token, aluno_id, tipo_resolvido, ip=ip, user_agent=ua)
+    if not ok:
+        flash(msg, "warn")
+        return redirect(url_for("aluno.aluno_perfil"))
+
+    try:
+        if tipo_resolvido == "entrada":
+            registar_entrada_presenca(aluno_id, hoje)
+            icon, label = "✅", "entrada"
+        else:
+            registar_saida_presenca(
+                aluno_id, hoje, u["nii"], u.get("nome", ""), u["perfil"]
+            )
+            icon, label = "🚪", "saída"
+    except Exception as exc:
+        log.exception("checkin_token: falha a registar presença: %s", exc)
+        flash("Erro ao registar a presença. Avisa o Oficial de Dia.", "error")
+        return redirect(url_for("aluno.aluno_perfil"))
+
+    flash(
+        f"{icon} {label.capitalize()} registada às {datetime.now().strftime('%H:%M')}.",
+        "ok",
+    )
+    return redirect(url_for("aluno.aluno_perfil"))
 
 
 # ═══════════════════════════════════════════════════════════════════════════
