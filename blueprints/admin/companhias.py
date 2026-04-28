@@ -35,6 +35,18 @@ from utils.validators import _val_ano, _val_int_id, _val_ni, _val_nii, _val_text
 def admin_companhias():
     if request.method == "POST":
         acao = request.form.get("acao", "")
+        # Mapear cada acção à aba onde acontece, para que o redirect preserve
+        # o contexto (e o flash apareça na aba certa).
+        tab_por_acao = {
+            "criar_turma": "turmas",
+            "eliminar_turma": "turmas",
+            "atribuir_turma": "atribuir",
+            "mover_aluno": "mover",
+            "promover_um": "promocao",
+            "promover_todos": "promocao",
+            "promover_todos_anos": "promocao",
+        }
+        anchor = "#" + tab_por_acao.get(acao, "turmas")
 
         if acao == "criar_turma":
             nome_turma = _val_text(request.form.get("nome_turma", ""), 100)
@@ -74,11 +86,18 @@ def admin_companhias():
         elif acao == "atribuir_turma":
             nii_at = request.form.get("nii_at", "").strip()
             tid_at = request.form.get("turma_id", "").strip()
-            if nii_at:
+            if not nii_at:
+                flash("NII em falta — indica o aluno a atribuir.", "error")
+            else:
                 try:
                     turma_val = int(tid_at) if tid_at else None
-                    assign_turma(nii_at, turma_val)
-                    flash(f"Turma do aluno {nii_at} atualizada.", "ok")
+                    if assign_turma(nii_at, turma_val):
+                        flash(f"Turma do aluno {nii_at} atualizada.", "ok")
+                    else:
+                        flash(
+                            f"NII {nii_at} não encontrado (ou não é aluno).",
+                            "error",
+                        )
                 except ValueError:
                     flash(MSG_ID_INVALIDO, "error")
                 except Exception as ex:
@@ -94,8 +113,16 @@ def admin_companhias():
                 flash("Ano inválido (0-8).", "error")
             else:
                 try:
-                    move_aluno_ano(nii_m, novo_ano_v)
-                    flash(f"Aluno {nii_m} movido para {_ano_label(novo_ano_v)}.", "ok")
+                    if move_aluno_ano(nii_m, novo_ano_v):
+                        flash(
+                            f"Aluno {nii_m} movido para {_ano_label(novo_ano_v)}.",
+                            "ok",
+                        )
+                    else:
+                        flash(
+                            f"NII {nii_m} não encontrado (ou não é aluno).",
+                            "error",
+                        )
                 except Exception as ex:
                     current_app.logger.error("mover_aluno: %s", ex)
                     flash(MSG_ERRO_INTERNO, "error")
@@ -105,15 +132,18 @@ def admin_companhias():
             novo_ni = _val_ni(request.form.get("novo_ni", ""))
             if uid_p is None:
                 flash("ID inválido.", "error")
-                return redirect(url_for(".admin_companhias"))
+                return redirect(url_for(".admin_companhias") + anchor)
             dest = promote_one(uid_p, novo_ni)
-            flash(f"Aluno promovido para {dest}.", "ok")
+            if dest == "Não encontrado":
+                flash(f"Aluno com ID {uid_p} não encontrado.", "error")
+            else:
+                flash(f"Aluno promovido para {dest}.", "ok")
 
         elif acao == "promover_todos":
             ano_origem = _val_ano(request.form.get("ano_origem", 0))
             if ano_origem is None:
                 flash("Ano de origem inválido.", "error")
-                return redirect(url_for(".admin_companhias"))
+                return redirect(url_for(".admin_companhias") + anchor)
             dest = promote_all_in_year(ano_origem)
             flash(
                 f"Todos os alunos do {_ano_label(ano_origem)} promovidos para {dest}.",
@@ -126,7 +156,7 @@ def admin_companhias():
             detail = ", ".join(parts) if parts else "nenhum aluno"
             flash(f"Promoção global concluída: {detail}.", "ok")
 
-        return redirect(url_for(".admin_companhias"))
+        return redirect(url_for(".admin_companhias") + anchor)
 
     data = get_companhias_data()
 

@@ -19,6 +19,9 @@ Path(EXPORT_DIR).mkdir(exist_ok=True)
 # Limites operacionais
 # ---------------------------------------------------------------------------
 PRAZO_LIMITE_HORAS = 48
+# Cutoff específico do lanche: mantém as 48h, mas termina às 10h do dia de
+# prazo (em vez das 00:00). Dá ao aluno até às 10:00 do dia d-2 para alterar.
+CUTOFF_LANCHE_HORA = 10
 BACKUP_RETENCAO_DIAS = 30
 
 # ---------------------------------------------------------------------------

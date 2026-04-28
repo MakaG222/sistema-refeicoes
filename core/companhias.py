@@ -28,28 +28,40 @@ def delete_turma(tid: int) -> None:
         conn.commit()
 
 
-def assign_turma(nii: str, turma_id: int | None) -> None:
-    """Atribui (ou remove) a turma de um aluno."""
+def assign_turma(nii: str, turma_id: int | None) -> bool:
+    """Atribui (ou remove) a turma de um aluno.
+
+    Returns:
+        True se algum registo foi actualizado, False se o NII não existe
+        (ou não é aluno).
+    """
     with db() as conn:
-        conn.execute(
+        cur = conn.execute(
             "UPDATE utilizadores SET turma_id=? WHERE NII=? AND perfil='aluno'",
             (turma_id, nii),
         )
         conn.commit()
+    return cur.rowcount > 0
 
 
-def move_aluno_ano(nii: str, novo_ano: int) -> None:
-    """Move um aluno para outro ano."""
+def move_aluno_ano(nii: str, novo_ano: int) -> bool:
+    """Move um aluno para outro ano.
+
+    Returns:
+        True se algum registo foi actualizado, False se o NII não existe
+        (ou não é aluno).
+    """
     with db() as conn:
-        conn.execute(
+        cur = conn.execute(
             "UPDATE utilizadores SET ano=? WHERE NII=? AND perfil='aluno'",
             (novo_ano, nii),
         )
         conn.commit()
+    return cur.rowcount > 0
 
 
 def promote_one(uid: int, novo_ni: str | None = None) -> str:
-    """Promove um aluno individual. Retorna a label do destino."""
+    """Promove um aluno individual. Retorna a label do destino (ou 'Não encontrado')."""
     with db() as conn:
         al = conn.execute(
             "SELECT ano,NI FROM utilizadores WHERE id=?", (uid,)
