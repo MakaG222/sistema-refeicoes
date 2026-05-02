@@ -79,12 +79,21 @@ Dependências cruzadas passam por `core/` — nenhum blueprint importa de outro.
 5. **Rate-limit HTTP**: Flask-Limiter — 10 req/min em `/auth/login`,
    30 req/min em `/api/*` cron (defesa adicional mesmo com token).
 6. **HTTPS forçado em produção**: middleware 301 de http→https (respeita
-   `X-Forwarded-Proto` vindo do proxy).
-7. **Password reset**: admin gera código `secrets.token_urlsafe(8)` válido
+   `X-Forwarded-Proto` vindo do proxy) + **HSTS** (`max-age=31536000;
+   includeSubDomains`) só em produção. Sem `preload` por defeito (commitment
+   permanente — opt-in só após validar 6+ meses estável).
+7. **Headers de segurança**: `X-Frame-Options: SAMEORIGIN`,
+   `X-Content-Type-Options: nosniff`, `Referrer-Policy:
+   strict-origin-when-cross-origin`. Todos via `setdefault` em
+   `core/middleware.py`.
+8. **Password reset**: admin gera código `secrets.token_urlsafe(8)` válido
    24h, single-use, constant-time compare, força change-password no próximo
    login.
-8. **Auditoria**: `admin_audit_log` regista todas as acções administrativas
+9. **Auditoria**: `admin_audit_log` regista todas as acções administrativas
    + `login_eventos` regista tentativas (sucesso/falha) para análise.
+10. **Error tracking** (opt-in): Sentry com `send_default_pii=False` +
+    `before_send` scrubber para passwords, NII, csrf, Authorization,
+    cookies. Sem `SENTRY_DSN` é no-op completo. Ver `config._scrub_event`.
 
 ### Observabilidade
 

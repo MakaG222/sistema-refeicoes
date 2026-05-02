@@ -149,6 +149,43 @@ curl -X POST \
 
 Schedule sugerido: **diário, 03:00**.
 
+### `POST /api/vacuum-cron`
+
+Manutenção da base de dados:
+1. `PRAGMA wal_checkpoint(TRUNCATE)` — liberta o ficheiro `.db-wal`.
+2. `VACUUM` — rebuild do `.db` principal, devolve ao SO o espaço de
+   páginas livres acumulado por DELETEs/UPDATEs.
+3. `PRAGMA optimize` — re-analisa estatísticas das tabelas grandes
+   para o query planner.
+
+**Operação cara** (cópia inteira do `.db`) — agendar em janela de baixo
+tráfego. Adquire **lock exclusivo**; pedidos concorrentes esperam até
+8s (`busy_timeout`) antes de falhar.
+
+Rate limit: **5/min** (mais restritivo que outros crons — VACUUM é pesado).
+
+**Resposta:**
+```json
+{
+  "status": "ok",
+  "ts": "...",
+  "size_before_bytes": 12345678,
+  "size_after_bytes":   9876543,
+  "freed_bytes":        2469135,
+  "freed_pct":          20.0,
+  "optimize_ok":        true
+}
+```
+
+**Exemplo:**
+```bash
+curl -X POST \
+  -H "Authorization: Bearer $CRON_API_TOKEN" \
+  https://refeicoes.exemplo.pt/api/vacuum-cron
+```
+
+Schedule sugerido: **mensal, 1º dia 03:30**.
+
 ## Códigos de erro
 
 | Status | Significado                                            |
@@ -185,6 +222,7 @@ case "${1:?usage: cron.sh {backup|autofill|export|unlock}}" in
   autofill)  ep="/api/autopreencher-cron" ;;
   export)    ep="/api/export-cron" ;;
   unlock)    ep="/api/unlock-expired" ;;
+  vacuum)    ep="/api/vacuum-cron" ;;
 esac
 
 curl --fail-with-body -sS -X POST \

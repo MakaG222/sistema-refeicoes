@@ -281,11 +281,48 @@ Resumo dos schedules recomendados:
 | `/api/backup-cron`       | cada 6h                | Backup rolado            |
 | `/api/export-cron`       | 1º do mês 06:00        | Export CSV+PDF mensal    |
 | `/api/unlock-expired`    | diário 03:00           | Cleanup login_eventos    |
+| `/api/vacuum-cron`       | 1º do mês 03:30        | VACUUM + PRAGMA optimize |
 
 Validar que os crons estão a correr:
 ```bash
 grep '"cron' /var/log/refeicoes/cron-*.log | tail -20
 ```
+
+### Manutenção da BD (`/api/vacuum-cron`)
+
+`PRAGMA wal_checkpoint(TRUNCATE)` corre a cada 5 min via middleware
+(liberta o ficheiro `.db-wal`), mas **não** reclama o espaço de páginas
+livres dentro do `.db` principal — esse acumula-se com DELETEs e UPDATEs.
+Após meses, a BD pode estar 30-50% fragmentada.
+
+`/api/vacuum-cron` faz:
+1. `wal_checkpoint(TRUNCATE)` (liberta WAL)
+2. `VACUUM` (rebuild completo, devolve espaço ao SO)
+3. `PRAGMA optimize` (reanalisa estatísticas das tabelas para o query planner)
+
+VACUUM adquire **lock exclusivo** — agendar em janela de baixo tráfego
+(03:30 do 1º de cada mês). Pedidos concorrentes esperam até 8s
+(`busy_timeout`) antes de falhar com `database is locked`.
+
+```bash
+curl -X POST -H "Authorization: Bearer $CRON_API_TOKEN" \
+     http://localhost:5000/api/vacuum-cron | jq
+
+# Response:
+# {
+#   "status": "ok",
+#   "size_before_bytes": 12345678,
+#   "size_after_bytes":   9876543,
+#   "freed_bytes":        2469135,
+#   "freed_pct":          20.0,
+#   "optimize_ok":        true
+# }
+```
+
+Se `freed_pct > 30%` regular → considera baixar a frequência da causa
+(DELETEs em massa, exports). Se `freed_pct ≈ 0%` ao fim de 1 ano →
+maintenance está a correr suficientemente bem, podes baixar para
+trimestral.
 
 ---
 

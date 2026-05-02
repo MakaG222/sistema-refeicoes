@@ -334,3 +334,130 @@ class TestCronToken:
                 headers={"Authorization": token},  # sem 'Bearer '
             )
         assert resp.status_code == 403
+
+
+# ── /api/vacuum-cron — manutenção da BD (VACUUM + PRAGMA optimize) ───────────
+
+
+class TestVacuumCron:
+    """Endpoint de manutenção mensal: reclama espaço fragmentado + analisa."""
+
+    def test_vacuum_no_token_returns_403(self, client):
+        resp = client.post("/api/vacuum-cron")
+        assert resp.status_code == 403
+
+    def test_vacuum_wrong_token_returns_403(self, client):
+        import config as cfg
+
+        with mock.patch.object(cfg, "CRON_API_TOKEN", "correct-vacuum-token"):
+            resp = client.post(
+                "/api/vacuum-cron",
+                headers={"Authorization": "Bearer errado"},
+            )
+        assert resp.status_code == 403
+
+    def test_vacuum_valid_token_returns_sizes(self, client):
+        """Token válido → 200 com size_before, size_after, freed_bytes."""
+        import config as cfg
+
+        token = "test-vacuum-token-xyz"
+        with mock.patch.object(cfg, "CRON_API_TOKEN", token):
+            resp = client.post(
+                "/api/vacuum-cron",
+                headers={"Authorization": f"Bearer {token}"},
+            )
+        assert resp.status_code == 200
+        data = resp.get_json()
+        assert data["status"] == "ok"
+        # Campos obrigatórios da response
+        for k in (
+            "size_before_bytes",
+            "size_after_bytes",
+            "freed_bytes",
+            "freed_pct",
+            "optimize_ok",
+        ):
+            assert k in data, f"campo {k} em falta"
+        # Tipos sensatos
+        assert isinstance(data["size_before_bytes"], int)
+        assert isinstance(data["size_after_bytes"], int)
+        assert isinstance(data["optimize_ok"], bool)
+        # VACUUM nunca deve aumentar o ficheiro
+        assert data["size_after_bytes"] <= data["size_before_bytes"]
+        assert data["freed_bytes"] >= 0
+
+    def test_vacuum_freed_pct_is_zero_when_db_empty(self, client):
+        """BD com size_before=0 → freed_pct=0 (sem ZeroDivisionError)."""
+        import config as cfg
+
+        token = "test-vacuum-token-empty"
+        with (
+            mock.patch.object(cfg, "CRON_API_TOKEN", token),
+            mock.patch(
+                "blueprints.api.routes.vacuum_database",
+                return_value=(0, 0),
+            ),
+            mock.patch(
+                "blueprints.api.routes.optimize_database",
+                return_value=True,
+            ),
+        ):
+            resp = client.post(
+                "/api/vacuum-cron",
+                headers={"Authorization": f"Bearer {token}"},
+            )
+        assert resp.status_code == 200
+        data = resp.get_json()
+        assert data["freed_pct"] == 0.0
+        assert data["freed_bytes"] == 0
+
+    def test_vacuum_exception_returns_error(self, client):
+        """Excepção em vacuum_database → 500 com _api_error."""
+        import config as cfg
+
+        token = "test-vacuum-token-err"
+        with (
+            mock.patch.object(cfg, "CRON_API_TOKEN", token),
+            mock.patch(
+                "blueprints.api.routes.vacuum_database",
+                side_effect=RuntimeError("disco cheio"),
+            ),
+        ):
+            resp = client.post(
+                "/api/vacuum-cron",
+                headers={"Authorization": f"Bearer {token}"},
+            )
+        assert resp.status_code == 500
+        data = resp.get_json()
+        assert data["status"] == "error"
+        assert "disco cheio" in data["error"]
+
+
+# ── core.database — VACUUM / optimize unit tests ──────────────────────────────
+
+
+class TestDatabaseMaintenance:
+    """Testes directos das funções helper (sem passar pela rota)."""
+
+    def test_db_file_size_returns_int(self, app):
+        from core.database import db_file_size_bytes
+
+        size = db_file_size_bytes()
+        assert isinstance(size, int)
+        assert size >= 0
+
+    def test_vacuum_database_returns_tuple_of_ints(self, app):
+        from core.database import vacuum_database
+
+        before, after = vacuum_database()
+        assert isinstance(before, int)
+        assert isinstance(after, int)
+        # VACUUM nunca aumenta o ficheiro
+        assert after <= before
+
+    def test_optimize_database_returns_bool(self, app):
+        from core.database import optimize_database
+
+        result = optimize_database()
+        assert isinstance(result, bool)
+        assert result is True  # PRAGMA optimize não deve falhar em BD válida

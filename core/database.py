@@ -65,6 +65,74 @@ def wal_checkpoint() -> None:
         log.exception("wal_checkpoint: falha ao executar checkpoint")
 
 
+def db_file_size_bytes() -> int:
+    """Devolve tamanho actual da BD em bytes (0 se ficheiro ainda não existe)."""
+    import os
+
+    try:
+        return os.path.getsize(core.constants.BASE_DADOS)
+    except OSError:
+        return 0
+
+
+def vacuum_database() -> tuple[int, int]:
+    """Reclama espaço de páginas livres (PRAGMA VACUUM) e devolve (antes, depois).
+
+    VACUUM não pode correr dentro de uma transacção e adquire um lock
+    exclusivo — corre numa conexão isolada, fora do contexto de request.
+    Em WAL mode, fazemos primeiro `wal_checkpoint(TRUNCATE)` para libertar
+    o WAL e depois VACUUM para reorganizar páginas do .db principal.
+
+    Operação cara para BDs grandes (cópia inteira) — agendar em janela
+    de baixo tráfego (ex.: 03:00 mensal). `busy_timeout` controla espera
+    por outras conexões.
+
+    Devolve `(size_before, size_after)` em bytes. Se algo falhar, devolve
+    `(size_before, size_before)` e regista exception (não levanta).
+    """
+    size_before = db_file_size_bytes()
+    conn = None
+    try:
+        conn = _new_conn()
+        # Liberta WAL primeiro — VACUUM precisa de single-writer lock.
+        conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+        # VACUUM: rebuild completo do ficheiro, reclama espaço de páginas livres.
+        conn.execute("VACUUM")
+    except Exception:
+        log.exception("vacuum_database: falha durante VACUUM")
+        return size_before, size_before
+    finally:
+        if conn is not None:
+            try:
+                conn.close()
+            except Exception:
+                pass
+    return size_before, db_file_size_bytes()
+
+
+def optimize_database() -> bool:
+    """Corre `PRAGMA optimize` (barato — analyse selectivo das tabelas grandes).
+
+    Pode correr semanal/diário sem custo significativo. SQLite decide
+    internamente o que vale a pena reanalisar com base em heurísticas.
+    Devolve True se executou sem erro, False caso contrário.
+    """
+    conn = None
+    try:
+        conn = _new_conn()
+        conn.execute("PRAGMA optimize")
+        return True
+    except Exception:
+        log.exception("optimize_database: falha em PRAGMA optimize")
+        return False
+    finally:
+        if conn is not None:
+            try:
+                conn.close()
+            except Exception:
+                pass
+
+
 def sqlite_quick_check() -> bool:
     try:
         with db() as conn:

@@ -20,6 +20,7 @@ from flask import (
     url_for,
 )
 
+import config as cfg
 from core.database import wal_checkpoint
 
 # ── Métricas básicas (in-memory, thread-safe) ────────────────────────────
@@ -143,6 +144,16 @@ def register_middleware(app: Flask) -> None:
             " frame-ancestors 'none';"
             " base-uri 'self'",
         )
+        # HSTS — só em produção (em dev sem HTTPS o header é inócuo mas pode
+        # causar surpresas se o browser cachear e depois mudares de domínio).
+        # max-age=1 ano + includeSubDomains. SEM `preload` — preload é uma
+        # commitment permanente (browser-baked-in), só activar após validar
+        # 6+ meses de HTTPS estável + opt-in explícito em hstspreload.org.
+        if cfg.is_production:
+            r.headers.setdefault(
+                "Strict-Transport-Security",
+                "max-age=31536000; includeSubDomains",
+            )
         t0 = getattr(g, "_t0", None)
         if t0 is not None:
             dt_ms = (time.perf_counter() - t0) * 1000
