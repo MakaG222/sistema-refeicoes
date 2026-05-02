@@ -7,11 +7,12 @@ Procedimentos operacionais comuns. Para arquitectura, ver
 
 1. [Restart](#restart)
 2. [Logs](#logs)
-3. [Backup e restore](#backup-e-restore)
-4. [Rotação de tokens e segredos](#rotação-de-tokens-e-segredos)
-5. [Cron jobs](#cron-jobs)
-6. [Erros comuns](#erros-comuns)
-7. [Verificação pós-deploy](#verificação-pós-deploy)
+3. [Sentry (error tracking)](#sentry-error-tracking)
+4. [Backup e restore](#backup-e-restore)
+5. [Rotação de tokens e segredos](#rotação-de-tokens-e-segredos)
+6. [Cron jobs](#cron-jobs)
+7. [Erros comuns](#erros-comuns)
+8. [Verificação pós-deploy](#verificação-pós-deploy)
 
 ---
 
@@ -79,6 +80,69 @@ Cada linha é um JSON com campos:
 - `ts`, `level`, `logger`, `msg` — padrão
 - `request_id` — UUID por request HTTP (gerado em `core/middleware.py`)
 - `user_nii`, `user_role` — `null` para anónimo/cron, NII do utilizador autenticado caso contrário
+
+---
+
+## Sentry (error tracking)
+
+**Opcional.** Sem `SENTRY_DSN` definido, a feature é completamente no-op
+(zero overhead, zero conexões — `configure_sentry()` devolve `False`
+imediatamente).
+
+### Activar
+
+1. Criar projecto em [sentry.io](https://sentry.io) → tipo **Flask** /
+   **Python**.
+2. Copiar o DSN: Project → Settings → Client Keys (DSN).
+3. Definir env vars (Docker / Railway / systemd):
+
+```bash
+SENTRY_DSN=https://<key>@oXXXXX.ingest.sentry.io/<project>
+SENTRY_RELEASE=<git-sha>          # opcional, mas recomendado
+SENTRY_TRACES_SAMPLE_RATE=0.05    # opcional (0.0 default = só erros)
+```
+
+4. Restart. Verificar nos logs:
+
+```bash
+docker compose logs app | grep -i sentry
+# → "Sentry activo — env=production release=abc123"
+```
+
+### Garantias de privacidade (RGPD)
+
+Os alunos são **menores** — política de defesa em profundidade:
+
+- `send_default_pii=False` — Sentry **não** envia IP, cookies, headers de auth.
+- `before_send` hook (`config._scrub_event`) substitui por `[Filtered]`:
+  - Credenciais: `password`, `pw`, `old_password`, `new_password`,
+    `csrf_token`, `_csrf_token`
+  - Identificadores: `nii`, `ni`, `Palavra_chave`, `reset_code`
+  - Tokens: `Authorization`, `Cookie`, `Set-Cookie`
+- O scrub é case-insensitive e nunca crasha o envio (try/except interno).
+
+Para validar localmente:
+```bash
+source .venv/bin/activate
+python -m pytest tests/test_sentry.py -v
+```
+
+### Verificar que está a funcionar
+
+Disparar um erro de teste (em ambiente de staging, **não** em produção):
+```python
+# numa rota qualquer protegida, temporariamente:
+raise RuntimeError("teste sentry")
+```
+
+Esperar 30s e verificar em sentry.io → Issues. Apagar o teste após confirmar.
+
+### Desactivar
+
+```bash
+unset SENTRY_DSN  # ou comentar no .env
+docker compose restart app
+```
 
 ---
 
@@ -217,11 +281,102 @@ Resumo dos schedules recomendados:
 | `/api/backup-cron`       | cada 6h                | Backup rolado            |
 | `/api/export-cron`       | 1º do mês 06:00        | Export CSV+PDF mensal    |
 | `/api/unlock-expired`    | diário 03:00           | Cleanup login_eventos    |
+| `/api/vacuum-cron`       | 1º do mês 03:30        | VACUUM + PRAGMA optimize |
 
 Validar que os crons estão a correr:
 ```bash
 grep '"cron' /var/log/refeicoes/cron-*.log | tail -20
 ```
+
+### Slow query log (opt-in)
+
+Sem instrumentação, a única pista de queries lentas é o "Slow request"
+no log (>500ms total HTTP). Para identificar a *query* responsável,
+activar:
+
+```bash
+SLOW_QUERY_THRESHOLD_MS=500 docker compose up -d app
+```
+
+Logs vão ficar com entradas:
+```
+[slow_query] 612.4ms | SELECT * FROM refeicoes WHERE utilizador_id=...
+```
+
+`SLOW_QUERY_THRESHOLD_MS=0` (default) desliga completamente — zero
+overhead, a subclass `_TracingConnection` nem sequer é instalada.
+
+Threshold recomendado:
+- **dev**: 100 (vê tudo o que demora mais de 0.1s)
+- **prod**: 500 (só queries verdadeiramente problemáticas)
+
+Após identificar e optimizar (`EXPLAIN QUERY PLAN`, adicionar índice,
+reescrever JOIN), voltar a desligar para evitar ruído nos logs.
+
+### Métricas Prometheus (`GET /metrics`)
+
+Endpoint padrão Prometheus em formato `text/plain` — sem auth (pattern
+standard: scrape de dentro da rede privada). Para expor publicamente,
+envolver com Basic Auth no proxy/ingress.
+
+Exposição: counters, gauges + per-route (top 20 por contagem). Sem
+dependência externa em `prometheus_client` — formato hand-rolled.
+
+```bash
+curl http://localhost:5000/metrics
+# # HELP http_requests_total Total HTTP requests processed.
+# # TYPE http_requests_total counter
+# http_requests_total 12453
+# # TYPE http_request_errors_total counter
+# http_request_errors_total 3
+# ...
+# db_size_bytes 14523904
+```
+
+Configuração mínima do Prometheus scraper:
+```yaml
+scrape_configs:
+  - job_name: 'refeicoes'
+    scrape_interval: 30s
+    static_configs:
+      - targets: ['refeicoes:5000']
+```
+
+### Manutenção da BD (`/api/vacuum-cron`)
+
+`PRAGMA wal_checkpoint(TRUNCATE)` corre a cada 5 min via middleware
+(liberta o ficheiro `.db-wal`), mas **não** reclama o espaço de páginas
+livres dentro do `.db` principal — esse acumula-se com DELETEs e UPDATEs.
+Após meses, a BD pode estar 30-50% fragmentada.
+
+`/api/vacuum-cron` faz:
+1. `wal_checkpoint(TRUNCATE)` (liberta WAL)
+2. `VACUUM` (rebuild completo, devolve espaço ao SO)
+3. `PRAGMA optimize` (reanalisa estatísticas das tabelas para o query planner)
+
+VACUUM adquire **lock exclusivo** — agendar em janela de baixo tráfego
+(03:30 do 1º de cada mês). Pedidos concorrentes esperam até 8s
+(`busy_timeout`) antes de falhar com `database is locked`.
+
+```bash
+curl -X POST -H "Authorization: Bearer $CRON_API_TOKEN" \
+     http://localhost:5000/api/vacuum-cron | jq
+
+# Response:
+# {
+#   "status": "ok",
+#   "size_before_bytes": 12345678,
+#   "size_after_bytes":   9876543,
+#   "freed_bytes":        2469135,
+#   "freed_pct":          20.0,
+#   "optimize_ok":        true
+# }
+```
+
+Se `freed_pct > 30%` regular → considera baixar a frequência da causa
+(DELETEs em massa, exports). Se `freed_pct ≈ 0%` ao fim de 1 ano →
+maintenance está a correr suficientemente bem, podes baixar para
+trimestral.
 
 ---
 

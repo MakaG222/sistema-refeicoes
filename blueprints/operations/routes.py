@@ -49,6 +49,7 @@ from utils.business import (
 )
 from utils.constants import ABREV_DIAS, MSG_ID_INVALIDO, NOMES_DIAS
 from utils.helpers import (
+    _client_ip,
     _get_anos_disponiveis,
     _parse_date,
     _refeicao_set,
@@ -583,7 +584,10 @@ def checkin_token(token: str):
     else:
         tipo_resolvido = tipo_token
 
-    ip = request.headers.get("X-Forwarded-For", request.remote_addr)
+    # Usa o helper standard (respeita ProxyFix; `_client_ip` lê
+    # `request.access_route[0]`, evitando colocar a chain inteira da
+    # X-Forwarded-For na BD).
+    ip = _client_ip()
     ua = (request.headers.get("User-Agent") or "")[:200]
 
     ok, msg = consumir_token(token, aluno_id, tipo_resolvido, ip=ip, user_agent=ua)
@@ -601,7 +605,24 @@ def checkin_token(token: str):
             )
             icon, label = "🚪", "saída"
     except Exception as exc:
+        # Registo de presença falhou — apaga a entrada de checkin_log para
+        # permitir retry (a UNIQUE(utilizador_id,token) bloquearia o aluno
+        # de tentar com o mesmo token, mas como o oficial gera um QR novo
+        # cada ~45s, o aluno pode esperar e tentar com o seguinte). Apagar
+        # mantém a tabela coerente: só fica logado o que efectivamente foi
+        # registado em ausencias/licencas.
         log.exception("checkin_token: falha a registar presença: %s", exc)
+        try:
+            from core.database import db as _db
+
+            with _db() as conn:
+                conn.execute(
+                    "DELETE FROM checkin_log WHERE utilizador_id=? AND token=?",
+                    (aluno_id, token),
+                )
+                conn.commit()
+        except Exception:
+            log.exception("checkin_token: falha a reverter checkin_log")
         flash("Erro ao registar a presença. Avisa o Oficial de Dia.", "error")
         return redirect(url_for("aluno.aluno_perfil"))
 

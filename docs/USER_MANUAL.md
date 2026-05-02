@@ -34,6 +34,28 @@
 Menu → **📜 Histórico**. Lista das últimas refeições marcadas com filtros
 por mês.
 
+### Exportar para Calendar (.ics)
+
+No perfil, botão **📅 Exportar para Calendar (30d)**. Descarrega um
+ficheiro `.ics` com as refeições marcadas para os próximos 30 dias.
+
+**Como importar:**
+- **Google Calendar**: Settings → Import & Export → seleccionar o `.ics`
+- **Apple Calendar**: File → Import → escolher o `.ics`
+- **Outlook**: File → Open → Import → iCalendar (.ics)
+
+Cada refeição vira um evento no horário correspondente:
+- Pequeno-Almoço: 07:00–09:30
+- Almoço: 12:00–14:00 (com variante: Normal/Vegetariano/Dieta + ♨ se estufa)
+- Lanche: 16:00–17:30
+- Jantar: 19:00–21:00 (idem variantes; "sai da unidade" se aplicável)
+
+**Janela personalizada:** adicionar `?days=N` ao URL (1-90). Ex:
+`/aluno/refeicoes.ics?days=14` para 2 semanas.
+
+**Re-importar actualiza** os mesmos events (UIDs estáveis) — não duplica.
+Para subscrição contínua (calendar app a refrescar automaticamente), v2.
+
 ### QR pessoal
 
 No perfil, botão **📱 Mostrar QR**. Usado no kiosk de check-in no refeitório

@@ -149,6 +149,81 @@ curl -X POST \
 
 Schedule sugerido: **diário, 03:00**.
 
+### `GET /metrics` — Prometheus
+
+Métricas in-memory em formato `text/plain` (Prometheus exposition
+format v0.0.4). **Sem auth** — pattern standard de Prometheus, scrape
+de dentro da rede privada. Para expor publicamente, proteger no
+proxy/ingress.
+
+Counters expostos:
+- `http_requests_total` — requests servidos desde o startup
+- `http_request_errors_total` — responses ≥500
+- `http_request_duration_milliseconds_total` — soma de durações
+- `http_request_duration_milliseconds_avg` — gauge derivado
+- `http_requests_per_route_total{route="..."}` — top 20 por contagem
+- `http_request_errors_per_route_total{route="..."}` — top 20 por count
+- `db_size_bytes` — gauge do tamanho do `.db`
+
+Sem `prometheus_client` lib — formatador hand-rolled em
+`core.middleware.to_prometheus_text`. Reset ao restart (in-memory).
+
+**Resposta (excerto):**
+```
+# HELP http_requests_total Total HTTP requests processed.
+# TYPE http_requests_total counter
+http_requests_total 12453
+# HELP db_size_bytes SQLite database file size in bytes.
+# TYPE db_size_bytes gauge
+db_size_bytes 14523904
+```
+
+**Scrape config mínimo:**
+```yaml
+scrape_configs:
+  - job_name: 'refeicoes'
+    scrape_interval: 30s
+    static_configs:
+      - targets: ['refeicoes:5000']
+```
+
+### `POST /api/vacuum-cron`
+
+Manutenção da base de dados:
+1. `PRAGMA wal_checkpoint(TRUNCATE)` — liberta o ficheiro `.db-wal`.
+2. `VACUUM` — rebuild do `.db` principal, devolve ao SO o espaço de
+   páginas livres acumulado por DELETEs/UPDATEs.
+3. `PRAGMA optimize` — re-analisa estatísticas das tabelas grandes
+   para o query planner.
+
+**Operação cara** (cópia inteira do `.db`) — agendar em janela de baixo
+tráfego. Adquire **lock exclusivo**; pedidos concorrentes esperam até
+8s (`busy_timeout`) antes de falhar.
+
+Rate limit: **5/min** (mais restritivo que outros crons — VACUUM é pesado).
+
+**Resposta:**
+```json
+{
+  "status": "ok",
+  "ts": "...",
+  "size_before_bytes": 12345678,
+  "size_after_bytes":   9876543,
+  "freed_bytes":        2469135,
+  "freed_pct":          20.0,
+  "optimize_ok":        true
+}
+```
+
+**Exemplo:**
+```bash
+curl -X POST \
+  -H "Authorization: Bearer $CRON_API_TOKEN" \
+  https://refeicoes.exemplo.pt/api/vacuum-cron
+```
+
+Schedule sugerido: **mensal, 1º dia 03:30**.
+
 ## Códigos de erro
 
 | Status | Significado                                            |
@@ -185,6 +260,7 @@ case "${1:?usage: cron.sh {backup|autofill|export|unlock}}" in
   autofill)  ep="/api/autopreencher-cron" ;;
   export)    ep="/api/export-cron" ;;
   unlock)    ep="/api/unlock-expired" ;;
+  vacuum)    ep="/api/vacuum-cron" ;;
 esac
 
 curl --fail-with-body -sS -X POST \

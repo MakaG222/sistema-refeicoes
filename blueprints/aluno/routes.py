@@ -673,6 +673,52 @@ def exportar_historico_aluno():
     )
 
 
+@aluno_bp.route("/aluno/refeicoes.ics")
+@login_required
+def aluno_refeicoes_ics():
+    """Exporta as refeições marcadas para formato iCalendar (.ics).
+
+    Janela: hoje → hoje + N dias (default 30, max 90 — alinhado com
+    `DIAS_ANTECEDENCIA` mas tolerante a configs maiores).
+
+    Download-only (auth via session cookie). Subscrição contínua (calendar
+    app a refrescar periodicamente) ficaria para v2 — exigia URL com token
+    per-user pois calendar apps não enviam cookies.
+    """
+    from utils.ical import build_meals_ics
+
+    u = current_user()
+    uid = user_id_by_nii(u["nii"])
+    if not uid:
+        abort(404)
+
+    try:
+        days = int(request.args.get("days", "30"))
+    except ValueError:
+        days = 30
+    days = max(1, min(days, 90))  # clamp [1, 90]
+
+    hoje = date.today()
+    d_ate = hoje + timedelta(days=days)
+    refeicoes_por_data, _defaults = refeicoes_batch(uid, hoje, d_ate)
+
+    body = build_meals_ics(
+        uid_aluno=uid,
+        nome=u.get("nome") or u["nii"],
+        refeicoes_por_data=refeicoes_por_data,
+    )
+    nome_ficheiro = f"refeicoes_{u['nii']}_{hoje.isoformat()}.ics"
+    return Response(
+        body,
+        headers={
+            "Content-Type": "text/calendar; charset=utf-8",
+            "Content-Disposition": f"attachment; filename={nome_ficheiro}",
+            # Calendar apps não devem cachear (próxima edição muda o ficheiro)
+            "Cache-Control": "private, no-store",
+        },
+    )
+
+
 @aluno_bp.route("/aluno/qr")
 @login_required
 def aluno_qr():

@@ -15,3 +15,12 @@ omit = ["tests/*", "test_*.py"]
 [tool.coverage.report]
 show_missing = true
 fail_under = 90
+
+[tool.pytest.ini_options]
+# Sem isto, `pytest` standalone falha a importar `tests.conftest` (alguns
+# testes usam `from tests.conftest import …`, outros `from conftest import …`).
+# Adicionar a raiz ao pythonpath faz ambos funcionarem, alinhando com o que
+# `python -m pytest` (e portanto a CI via `coverage run -m pytest`) já obtinha
+# implicitamente por o Python adicionar CWD ao sys.path em modo `-m`.
+pythonpath = ["."]
+testpaths = ["tests"]

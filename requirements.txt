@@ -18,6 +18,11 @@ qrcode>=7.4,<9.0          # geração de QR codes SVG (opcional — fallback tex
 Flask-Limiter>=3.5,<4.0   # rate-limit HTTP em /auth/login e /api/* (memory backend)
 # secrets, sqlite3, csv, shutil, pathlib, datetime — stdlib, não precisam de pip
 
+# ── Observabilidade ───────────────────────────────────────────────────────────
+sentry-sdk[flask]>=2.0,<3.0   # error tracking + breadcrumbs; OPCIONAL — só
+                              # activa se SENTRY_DSN estiver definido. Sem DSN
+                              # é completamente no-op (zero overhead).
+
 # ── Desenvolvimento / qualidade (não instalar em produção) ────────────────────
 # ruff                    # linter rápido (P3)
 # pip-audit               # auditoria de vulnerabilidades (P3)

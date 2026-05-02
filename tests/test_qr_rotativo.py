@@ -298,6 +298,44 @@ class TestRotaAluno:
         # Mensagem indicando que oficiais usam o quiosque
         assert b"quiosque" in r.data.lower() or b"alunos" in r.data.lower()
 
+    def test_checkin_falha_no_registar_faz_rollback_do_log(
+        self, app, client, monkeypatch
+    ):
+        """Se registar_*_presenca falha, checkin_log NÃO deve ficar com a
+        entrada — caso contrário a UNIQUE(utilizador_id, token) bloqueia o
+        aluno de retentar com o mesmo token e o registo fica perdido.
+
+        Esta regressão protege a invariante: cada linha em checkin_log
+        corresponde a uma entrada/saída efectivamente persistida em
+        ausencias/licencas.
+        """
+        self._setup(client)
+        login_as(client, "alu_qr_a1", pw="alu_qr_a1")
+        token = self._gerar_token(app, tipo="saida")
+
+        # Provoca falha no registar_saida_presenca após o INSERT em checkin_log
+        from blueprints.operations import routes as ops_routes
+
+        def _boom(*_a, **_k):
+            raise RuntimeError("falha simulada de DB")
+
+        monkeypatch.setattr(ops_routes, "registar_saida_presenca", _boom)
+
+        r = client.get(f"/checkin/t/{token}", follow_redirects=True)
+        assert r.status_code == 200
+        assert b"erro" in r.data.lower() or b"avisa" in r.data.lower()
+
+        # Verifica que NÃO ficou linha em checkin_log → permite retry com
+        # novo QR sem ficar bloqueado pela UNIQUE.
+        from core.database import db
+
+        with app.app_context():
+            with db() as conn:
+                row = conn.execute(
+                    "SELECT 1 FROM checkin_log WHERE token=?", (token,)
+                ).fetchone()
+        assert row is None, "checkin_log devia ter sido revertido após falha"
+
 
 # ══════════════════════════════════════════════════════════════════════════
 # Login: parâmetro `next=` honrado (anti open-redirect)

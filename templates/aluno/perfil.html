@@ -67,6 +67,11 @@
         <div class="gap-btn">
           <a class="btn btn-ghost" href="{{ url_for(".aluno_ausencias") }}">🚫 Gerir ausências</a>
           <a class="btn btn-ghost" href="{{ url_for(".aluno_historico") }}">🕘 Histórico de refeições</a>
+          <a class="btn btn-ghost" href="{{ url_for(".aluno_refeicoes_ics", days=30) }}"
+             title="Descarrega um ficheiro .ics para importar no Google/Apple Calendar"
+             aria-label="Exportar próximos 30 dias para o calendário (.ics)">
+            📅 Exportar para Calendar (30d)
+          </a>
           <a class="btn btn-ghost" href="{{ url_for(".aluno_password") }}">🔑 Alterar password</a>
         </div>
       </div>

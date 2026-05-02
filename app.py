@@ -110,6 +110,15 @@ app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1)
 app.config.from_object(cfg.Config)
 cfg.configure_logging(app)
 
+# ── Error tracking (Sentry) — opt-in via SENTRY_DSN env var ─────────────────
+# Deve ser inicializado o mais cedo possível para apanhar erros de bootstrap.
+# Sem SENTRY_DSN é no-op completo (zero overhead, zero conexões).
+_sentry_active = cfg.configure_sentry()
+if _sentry_active:
+    app.logger.info(
+        "Sentry activo — env=%s release=%s", cfg.ENV, cfg.SENTRY_RELEASE or "(none)"
+    )
+
 # ── Rate limiter (defesa em profundidade no HTTP layer) ─────────────────
 # Decorators `@limiter.limit(...)` aplicados nas rotas sensíveis por blueprint
 # (/auth/login, /api/*-cron, /api/unlock-expired). Desactivável em testes via
