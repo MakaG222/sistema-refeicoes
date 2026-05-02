@@ -314,6 +314,96 @@ def test_restore_backup_success(tmp_path, monkeypatch):
     assert len(safety) == 1
 
 
+def test_restore_backup_post_restore_integrity(tmp_path, monkeypatch):
+    """Pós-restore: PRAGMA quick_check + foreign_key_check + contagens batem.
+
+    Garante que um restore "bem sucedido" (ok=True) não nos deixou com uma
+    BD com FKs partidas, índices corruptos ou contagens inesperadas — esses
+    bugs silenciosos são o pior cenário (parece OK até falhar em produção).
+    """
+    backup_dir = tmp_path / "backups"
+    backup_dir.mkdir()
+    monkeypatch.setattr("core.backup.BACKUP_DIR", str(backup_dir))
+
+    db_path = tmp_path / "sistema.db"
+    monkeypatch.setattr("core.constants.BASE_DADOS", str(db_path))
+
+    # DB actual (vai ser substituída) — esquema mínimo
+    conn = sqlite3.connect(str(db_path))
+    conn.execute("CREATE TABLE utilizadores (id INTEGER PRIMARY KEY, NII TEXT)")
+    conn.commit()
+    conn.close()
+
+    # Backup com schema realista: 2 tabelas + FK + índice + 5 registos
+    backup = tmp_path / "backup_realista.db"
+    conn = sqlite3.connect(str(backup))
+    conn.execute("PRAGMA foreign_keys=ON")
+    conn.executescript("""
+        CREATE TABLE utilizadores (
+            id INTEGER PRIMARY KEY,
+            NII TEXT NOT NULL,
+            perfil TEXT NOT NULL
+        );
+        CREATE TABLE refeicoes (
+            id INTEGER PRIMARY KEY,
+            utilizador_id INTEGER NOT NULL REFERENCES utilizadores(id),
+            data TEXT NOT NULL,
+            UNIQUE(utilizador_id, data)
+        );
+        CREATE INDEX idx_refeicoes_uid_data ON refeicoes(utilizador_id, data);
+
+        INSERT INTO utilizadores VALUES
+            (1, 'admin1', 'admin'),
+            (2, 'aluno1', 'aluno'),
+            (3, 'aluno2', 'aluno');
+        INSERT INTO refeicoes VALUES
+            (1, 2, '2026-04-20'),
+            (2, 3, '2026-04-20');
+    """)
+    conn.commit()
+    conn.close()
+
+    ok, msg = restore_backup(str(backup))
+    assert ok is True, f"restore falhou: {msg}"
+
+    # ── Pós-restore: bateria de verificações de integridade ─────────────────
+    conn = sqlite3.connect(str(db_path))
+    conn.execute("PRAGMA foreign_keys=ON")
+
+    # 1. quick_check: sem corrupção física do ficheiro
+    qc = conn.execute("PRAGMA quick_check").fetchone()
+    assert qc[0] == "ok", f"quick_check falhou: {qc[0]}"
+
+    # 2. foreign_key_check: sem FKs partidas (lista vazia = OK)
+    fk_violations = conn.execute("PRAGMA foreign_key_check").fetchall()
+    assert fk_violations == [], f"FK violations: {fk_violations}"
+
+    # 3. integrity_check completa: estruturas internas OK
+    ic = conn.execute("PRAGMA integrity_check").fetchone()
+    assert ic[0] == "ok", f"integrity_check falhou: {ic[0]}"
+
+    # 4. Contagens batem com o que foi inserido no backup
+    n_users = conn.execute("SELECT COUNT(*) FROM utilizadores").fetchone()[0]
+    n_meals = conn.execute("SELECT COUNT(*) FROM refeicoes").fetchone()[0]
+    assert n_users == 3, f"esperava 3 utilizadores, encontrou {n_users}"
+    assert n_meals == 2, f"esperava 2 refeições, encontrou {n_meals}"
+
+    # 5. Pelo menos 1 admin existe (sistema sem admin = sistema bloqueado)
+    n_admins = conn.execute(
+        "SELECT COUNT(*) FROM utilizadores WHERE perfil='admin'"
+    ).fetchone()[0]
+    assert n_admins >= 1, "Restore sem nenhum admin — sistema fica inacessível"
+
+    # 6. Índice presente e utilizável (não foi perdido no restore)
+    idx_rows = conn.execute(
+        "SELECT name FROM sqlite_master WHERE type='index'"
+        " AND name='idx_refeicoes_uid_data'"
+    ).fetchall()
+    assert len(idx_rows) == 1, "índice perdido após restore"
+
+    conn.close()
+
+
 def test_restore_backup_invalid_file(tmp_path, monkeypatch):
     """restore_backup rejects invalid backup files."""
     monkeypatch.setattr("core.constants.BASE_DADOS", str(tmp_path / "sistema.db"))
