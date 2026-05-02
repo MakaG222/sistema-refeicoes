@@ -7,11 +7,12 @@ Procedimentos operacionais comuns. Para arquitectura, ver
 
 1. [Restart](#restart)
 2. [Logs](#logs)
-3. [Backup e restore](#backup-e-restore)
-4. [Rotação de tokens e segredos](#rotação-de-tokens-e-segredos)
-5. [Cron jobs](#cron-jobs)
-6. [Erros comuns](#erros-comuns)
-7. [Verificação pós-deploy](#verificação-pós-deploy)
+3. [Sentry (error tracking)](#sentry-error-tracking)
+4. [Backup e restore](#backup-e-restore)
+5. [Rotação de tokens e segredos](#rotação-de-tokens-e-segredos)
+6. [Cron jobs](#cron-jobs)
+7. [Erros comuns](#erros-comuns)
+8. [Verificação pós-deploy](#verificação-pós-deploy)
 
 ---
 
@@ -79,6 +80,69 @@ Cada linha é um JSON com campos:
 - `ts`, `level`, `logger`, `msg` — padrão
 - `request_id` — UUID por request HTTP (gerado em `core/middleware.py`)
 - `user_nii`, `user_role` — `null` para anónimo/cron, NII do utilizador autenticado caso contrário
+
+---
+
+## Sentry (error tracking)
+
+**Opcional.** Sem `SENTRY_DSN` definido, a feature é completamente no-op
+(zero overhead, zero conexões — `configure_sentry()` devolve `False`
+imediatamente).
+
+### Activar
+
+1. Criar projecto em [sentry.io](https://sentry.io) → tipo **Flask** /
+   **Python**.
+2. Copiar o DSN: Project → Settings → Client Keys (DSN).
+3. Definir env vars (Docker / Railway / systemd):
+
+```bash
+SENTRY_DSN=https://<key>@oXXXXX.ingest.sentry.io/<project>
+SENTRY_RELEASE=<git-sha>          # opcional, mas recomendado
+SENTRY_TRACES_SAMPLE_RATE=0.05    # opcional (0.0 default = só erros)
+```
+
+4. Restart. Verificar nos logs:
+
+```bash
+docker compose logs app | grep -i sentry
+# → "Sentry activo — env=production release=abc123"
+```
+
+### Garantias de privacidade (RGPD)
+
+Os alunos são **menores** — política de defesa em profundidade:
+
+- `send_default_pii=False` — Sentry **não** envia IP, cookies, headers de auth.
+- `before_send` hook (`config._scrub_event`) substitui por `[Filtered]`:
+  - Credenciais: `password`, `pw`, `old_password`, `new_password`,
+    `csrf_token`, `_csrf_token`
+  - Identificadores: `nii`, `ni`, `Palavra_chave`, `reset_code`
+  - Tokens: `Authorization`, `Cookie`, `Set-Cookie`
+- O scrub é case-insensitive e nunca crasha o envio (try/except interno).
+
+Para validar localmente:
+```bash
+source .venv/bin/activate
+python -m pytest tests/test_sentry.py -v
+```
+
+### Verificar que está a funcionar
+
+Disparar um erro de teste (em ambiente de staging, **não** em produção):
+```python
+# numa rota qualquer protegida, temporariamente:
+raise RuntimeError("teste sentry")
+```
+
+Esperar 30s e verificar em sentry.io → Issues. Apagar o teste após confirmar.
+
+### Desactivar
+
+```bash
+unset SENTRY_DSN  # ou comentar no .env
+docker compose restart app
+```
 
 ---
 

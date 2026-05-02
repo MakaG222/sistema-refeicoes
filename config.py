@@ -57,6 +57,16 @@ REFEICAO_HORARIOS: dict[str, tuple[str, str]] = {
 PORT: int = int(os.environ.get("PORT", "8080"))
 DEBUG: bool = os.environ.get("DEBUG", "false").lower() == "true"
 
+# ── Observabilidade (Sentry) ─────────────────────────────────────────────────
+# Vazio = desligado (no-op completo). Sem DSN não há overhead, conexões, nada.
+SENTRY_DSN: str = os.environ.get("SENTRY_DSN", "").strip()
+# Sample rate de tracing: 0.0 = só erros, 1.0 = tudo (caro). Recomendado 0.05-0.10.
+SENTRY_TRACES_SAMPLE_RATE: float = float(
+    os.environ.get("SENTRY_TRACES_SAMPLE_RATE", "0.0")
+)
+# Release (commit SHA). Permite ver "este erro só aparece desde a release X".
+SENTRY_RELEASE: str = os.environ.get("SENTRY_RELEASE", "").strip()
+
 
 # ── Flask config dict ────────────────────────────────────────────────────────
 class Config:
@@ -127,6 +137,100 @@ def configure_logging(flask_app) -> None:
     logging.getLogger("sqlite3").setLevel(logging.WARNING)
 
 
+# ── Sentry (error tracking) ──────────────────────────────────────────────────
+# Scrub fields que podem conter dados pessoais sensíveis ou credenciais. Aplica-se
+# a request.form, request.cookies, headers e session. Estes nunca chegam ao Sentry.
+_SENTRY_SCRUB_FIELDS = frozenset(
+    {
+        # Credenciais
+        "password",
+        "pw",
+        "old_password",
+        "new_password",
+        "csrf_token",
+        "_csrf_token",
+        # Identificadores pessoais (RGPD — alunos são menores)
+        "nii",
+        "ni",
+        "Palavra_chave",
+        "reset_code",
+        # Tokens secretos
+        "Authorization",
+        "authorization",
+        "cookie",
+        "Cookie",
+        "set-cookie",
+        "Set-Cookie",
+    }
+)
+
+
+def _scrub_event(event, _hint):
+    """before_send hook: remove campos sensíveis de requests/sessões/extras
+    antes de enviar para o Sentry. Defesa em profundidade — mesmo que
+    `send_default_pii=False` esteja activo.
+    """
+    try:
+        # Scrub form/query/headers do request
+        req = event.get("request") or {}
+        for key in ("data", "headers", "cookies", "query_string"):
+            v = req.get(key)
+            if isinstance(v, dict):
+                for f in list(v):
+                    if f in _SENTRY_SCRUB_FIELDS or f.lower() in _SENTRY_SCRUB_FIELDS:
+                        v[f] = "[Filtered]"
+        # Scrub extras top-level que possam ter sido injectados
+        extras = event.get("extra") or {}
+        for f in list(extras):
+            if f in _SENTRY_SCRUB_FIELDS or f.lower() in _SENTRY_SCRUB_FIELDS:
+                extras[f] = "[Filtered]"
+    except Exception:
+        # Nunca falhar o envio por causa do scrub — pior que dados a mais
+        # é perder o evento por completo.
+        pass
+    return event
+
+
+def configure_sentry() -> bool:
+    """Inicializa Sentry se SENTRY_DSN estiver definido. No-op caso contrário.
+
+    Returns:
+        True se o Sentry foi activado, False se SENTRY_DSN está vazio.
+
+    Defaults seguros:
+      - send_default_pii=False (não envia IP, cookies, headers de auth)
+      - traces_sample_rate=0.0 (só erros, sem performance overhead)
+      - before_send scruba campos sensíveis adicionais
+      - environment marcado consoante ENV
+    """
+    if not SENTRY_DSN:
+        return False
+    try:
+        import sentry_sdk
+        from sentry_sdk.integrations.flask import FlaskIntegration
+        from sentry_sdk.integrations.logging import LoggingIntegration
+
+        sentry_sdk.init(
+            dsn=SENTRY_DSN,
+            environment=ENV,
+            release=SENTRY_RELEASE or None,
+            traces_sample_rate=SENTRY_TRACES_SAMPLE_RATE,
+            send_default_pii=False,
+            integrations=[
+                FlaskIntegration(),
+                # ERROR e acima vão como events; INFO como breadcrumbs.
+                LoggingIntegration(level=logging.INFO, event_level=logging.ERROR),
+            ],
+            before_send=_scrub_event,
+        )
+        return True
+    except Exception as exc:  # noqa: BLE001 — Sentry nunca deve crashar a app
+        logging.getLogger(__name__).warning(
+            "Sentry init falhou (continuando sem error tracking): %s", exc
+        )
+        return False
+
+
 # ── Startup info ─────────────────────────────────────────────────────────────
 def print_startup_banner(db_path: str) -> None:
     """Imprime banner de arranque com informação de configuração."""
@@ -140,10 +244,15 @@ def print_startup_banner(db_path: str) -> None:
         print("  ⚠️  MODO DESENVOLVIMENTO — contas de teste ativas")
     if not CRON_API_TOKEN:
         print("  ⚠️  CRON_API_TOKEN não definido — endpoints de cron desprotegidos")
+    print(f"  Sentry:    {'activo' if SENTRY_DSN else 'desligado (sem SENTRY_DSN)'}")
     print(sep)
     print("  Variáveis de ambiente necessárias em produção:")
     print("    SECRET_KEY=<random 32+ chars>")
     print("    CRON_API_TOKEN=<random 32+ chars>")
     print("    ENV=production")
     print("    DB_PATH=/mnt/data/sistema.db  # volume persistente (Railway)")
+    print("  Variáveis opcionais:")
+    print("    SENTRY_DSN=<url do projecto>           # error tracking")
+    print("    SENTRY_TRACES_SAMPLE_RATE=0.05         # opcional, perf tracing")
+    print("    SENTRY_RELEASE=$GIT_SHA                # opcional, versionamento")
     print(sep)
