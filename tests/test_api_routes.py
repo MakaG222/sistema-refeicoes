@@ -461,3 +461,101 @@ class TestDatabaseMaintenance:
         result = optimize_database()
         assert isinstance(result, bool)
         assert result is True  # PRAGMA optimize não deve falhar em BD válida
+
+
+# ── /metrics — Prometheus text exposition ─────────────────────────────────────
+
+
+class TestPrometheusMetrics:
+    """Endpoint Prometheus em `/metrics`. Sem auth (pattern standard)."""
+
+    def test_metrics_endpoint_returns_200(self, client):
+        resp = client.get("/metrics")
+        assert resp.status_code == 200
+
+    def test_metrics_uses_prometheus_mimetype(self, client):
+        """Content-Type deve ser text/plain com `version=0.0.4` (spec Prometheus)."""
+        resp = client.get("/metrics")
+        ct = resp.headers["Content-Type"]
+        assert ct.startswith("text/plain")
+        assert "version=0.0.4" in ct
+
+    def test_metrics_includes_required_counters(self, client):
+        """Mínimo de counters esperados no body."""
+        # Faz pelo menos 1 request para haver dados
+        client.get("/health")
+        resp = client.get("/metrics")
+        body = resp.data.decode("utf-8")
+        # Counters obrigatórios
+        for name in (
+            "http_requests_total",
+            "http_request_errors_total",
+            "http_request_duration_milliseconds_total",
+            "http_request_duration_milliseconds_avg",
+            "db_size_bytes",
+        ):
+            assert f"# TYPE {name}" in body, f"falta # TYPE {name}"
+            assert f"# HELP {name}" in body, f"falta # HELP {name}"
+
+    def test_metrics_format_complies_with_prometheus_spec(self, client):
+        """Cada métrica deve ter # HELP, # TYPE e linha de valor."""
+        client.get("/health")
+        resp = client.get("/metrics")
+        lines = resp.data.decode("utf-8").splitlines()
+
+        # Deve haver pelo menos 1 # HELP e 1 # TYPE
+        helps = [le for le in lines if le.startswith("# HELP")]
+        types = [le for le in lines if le.startswith("# TYPE")]
+        assert len(helps) >= 4
+        assert len(types) >= 4
+
+        # Cada linha não-comentário deve ter formato `<name> <number>`
+        # (ou `<name>{labels} <number>`)
+        import re
+
+        value_pattern = re.compile(
+            r"^[a-zA-Z_][a-zA-Z0-9_]*(\{[^}]*\})?\s+[\d.eE+\-]+$"
+        )
+        non_comment = [le for le in lines if le and not le.startswith("#")]
+        for line in non_comment:
+            assert value_pattern.match(line), f"linha não-conforme: {line!r}"
+
+    def test_metrics_per_route_label_present(self, client):
+        """Após requests, deve haver linhas com label `route="..."`."""
+        # Disparar requests para popular per-route metrics
+        for _ in range(3):
+            client.get("/health")
+
+        resp = client.get("/metrics")
+        body = resp.data.decode("utf-8")
+        # Pelo menos 1 série per-route
+        assert "http_requests_per_route_total{route=" in body
+
+    def test_to_prometheus_text_handles_zero_requests(self):
+        """Gerador funciona mesmo sem requests (avg=0, sem ZeroDivisionError)."""
+        from core.middleware import (
+            to_prometheus_text,
+            _metrics,
+            _metrics_lock,
+            _route_metrics,
+        )
+
+        # Reset do estado in-memory para isolar este teste
+        with _metrics_lock:
+            _metrics["request_count"] = 0
+            _metrics["error_count"] = 0
+            _metrics["total_latency_ms"] = 0.0
+            _route_metrics.clear()
+
+        body = to_prometheus_text()
+        assert "http_requests_total 0" in body
+        assert "http_request_duration_milliseconds_avg 0" in body
+        # Não levanta
+
+    def test_prom_label_value_escaping(self):
+        """Caracteres especiais em label values são escapados."""
+        from core.middleware import _prom_escape_label_value
+
+        assert _prom_escape_label_value('a"b') == 'a\\"b'
+        assert _prom_escape_label_value("a\\b") == "a\\\\b"
+        assert _prom_escape_label_value("a\nb") == "a\\nb"

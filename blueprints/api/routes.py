@@ -145,6 +145,32 @@ def health_metrics():
     )
 
 
+@api_bp.route("/metrics")
+def metrics_prometheus():
+    """Métricas em formato Prometheus text exposition (RFC text/plain).
+
+    Endpoint padrão `GET /metrics` — Prometheus configs scrapeiam esta
+    URL sem auth (pattern standard: scrape de dentro da rede privada,
+    não exposto externamente). Se for necessário proteger, envolver com
+    Basic Auth no proxy/ingress.
+
+    Sem dependência externa em `prometheus_client` — formatador hand-rolled
+    em `core.middleware.to_prometheus_text`. Suficiente para os counters
+    que mantemos in-memory + db_size_bytes derivado.
+
+    Cardinalidade: per-route limitada a top 20 rotas (evita explosão em
+    apps com muitos endpoints dinâmicos — Flask `endpoint` é o bp+view,
+    não o path com placeholders, mas mesmo assim convém limitar).
+    """
+    from core.middleware import to_prometheus_text
+
+    body = to_prometheus_text(top_routes=20)
+    return current_app.response_class(
+        body,
+        mimetype="text/plain; version=0.0.4; charset=utf-8",
+    )
+
+
 @api_bp.route("/api/backup-cron", methods=["POST"])
 @limiter.limit("30 per minute")
 def api_backup_cron():

@@ -288,6 +288,60 @@ Validar que os crons estão a correr:
 grep '"cron' /var/log/refeicoes/cron-*.log | tail -20
 ```
 
+### Slow query log (opt-in)
+
+Sem instrumentação, a única pista de queries lentas é o "Slow request"
+no log (>500ms total HTTP). Para identificar a *query* responsável,
+activar:
+
+```bash
+SLOW_QUERY_THRESHOLD_MS=500 docker compose up -d app
+```
+
+Logs vão ficar com entradas:
+```
+[slow_query] 612.4ms | SELECT * FROM refeicoes WHERE utilizador_id=...
+```
+
+`SLOW_QUERY_THRESHOLD_MS=0` (default) desliga completamente — zero
+overhead, a subclass `_TracingConnection` nem sequer é instalada.
+
+Threshold recomendado:
+- **dev**: 100 (vê tudo o que demora mais de 0.1s)
+- **prod**: 500 (só queries verdadeiramente problemáticas)
+
+Após identificar e optimizar (`EXPLAIN QUERY PLAN`, adicionar índice,
+reescrever JOIN), voltar a desligar para evitar ruído nos logs.
+
+### Métricas Prometheus (`GET /metrics`)
+
+Endpoint padrão Prometheus em formato `text/plain` — sem auth (pattern
+standard: scrape de dentro da rede privada). Para expor publicamente,
+envolver com Basic Auth no proxy/ingress.
+
+Exposição: counters, gauges + per-route (top 20 por contagem). Sem
+dependência externa em `prometheus_client` — formato hand-rolled.
+
+```bash
+curl http://localhost:5000/metrics
+# # HELP http_requests_total Total HTTP requests processed.
+# # TYPE http_requests_total counter
+# http_requests_total 12453
+# # TYPE http_request_errors_total counter
+# http_request_errors_total 3
+# ...
+# db_size_bytes 14523904
+```
+
+Configuração mínima do Prometheus scraper:
+```yaml
+scrape_configs:
+  - job_name: 'refeicoes'
+    scrape_interval: 30s
+    static_configs:
+      - targets: ['refeicoes:5000']
+```
+
 ### Manutenção da BD (`/api/vacuum-cron`)
 
 `PRAGMA wal_checkpoint(TRUNCATE)` corre a cada 5 min via middleware

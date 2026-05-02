@@ -149,6 +149,44 @@ curl -X POST \
 
 Schedule sugerido: **diário, 03:00**.
 
+### `GET /metrics` — Prometheus
+
+Métricas in-memory em formato `text/plain` (Prometheus exposition
+format v0.0.4). **Sem auth** — pattern standard de Prometheus, scrape
+de dentro da rede privada. Para expor publicamente, proteger no
+proxy/ingress.
+
+Counters expostos:
+- `http_requests_total` — requests servidos desde o startup
+- `http_request_errors_total` — responses ≥500
+- `http_request_duration_milliseconds_total` — soma de durações
+- `http_request_duration_milliseconds_avg` — gauge derivado
+- `http_requests_per_route_total{route="..."}` — top 20 por contagem
+- `http_request_errors_per_route_total{route="..."}` — top 20 por count
+- `db_size_bytes` — gauge do tamanho do `.db`
+
+Sem `prometheus_client` lib — formatador hand-rolled em
+`core.middleware.to_prometheus_text`. Reset ao restart (in-memory).
+
+**Resposta (excerto):**
+```
+# HELP http_requests_total Total HTTP requests processed.
+# TYPE http_requests_total counter
+http_requests_total 12453
+# HELP db_size_bytes SQLite database file size in bytes.
+# TYPE db_size_bytes gauge
+db_size_bytes 14523904
+```
+
+**Scrape config mínimo:**
+```yaml
+scrape_configs:
+  - job_name: 'refeicoes'
+    scrape_interval: 30s
+    static_configs:
+      - targets: ['refeicoes:5000']
+```
+
 ### `POST /api/vacuum-cron`
 
 Manutenção da base de dados:
