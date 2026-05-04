@@ -203,3 +203,47 @@ def restore_command(backup_file: str, yes: bool) -> None:
     else:
         click.echo(f"✗ {msg}", err=True)
         raise SystemExit(1)
+
+
+@click.command("vacuum")
+def vacuum_command() -> None:
+    """Reclama espaço de páginas livres + reanalisa estatísticas (manutenção mensal).
+
+    Faz `wal_checkpoint(TRUNCATE)` → `VACUUM` → `PRAGMA optimize`.
+
+    VACUUM adquire lock exclusivo e re-escreve o ficheiro inteiro — operação
+    cara em BDs grandes. Correr em janela de baixo tráfego (ex.: 03:00,
+    1× por mês). Outras conexões esperam até 8s (`busy_timeout`) antes de
+    falhar com "database is locked".
+
+    Exemplos:
+      flask vacuum                              # local / Docker exec
+      docker compose exec app flask vacuum      # produção via docker
+    """
+    from core.database import (
+        db_file_size_bytes,
+        optimize_database,
+        vacuum_database,
+    )
+
+    size_before = db_file_size_bytes()
+    click.echo(
+        f"Tamanho antes: {size_before:,} bytes ({size_before / 1024 / 1024:.2f} MB)"
+    )
+    click.echo("A correr VACUUM (pode demorar)…")
+
+    before, after = vacuum_database()
+    freed = max(0, before - after)
+    freed_pct = (freed / before * 100) if before > 0 else 0.0
+
+    click.echo(f"Tamanho depois: {after:,} bytes ({after / 1024 / 1024:.2f} MB)")
+    click.echo(f"Libertado: {freed:,} bytes ({freed_pct:.2f}%)")
+
+    click.echo("A correr PRAGMA optimize…")
+    if optimize_database():
+        click.echo("✓ Optimize OK")
+    else:
+        click.echo("✗ Optimize falhou (ver logs)", err=True)
+        raise SystemExit(1)
+
+    click.echo("✓ Manutenção concluída.")

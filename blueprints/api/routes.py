@@ -12,7 +12,7 @@ from flask import abort, current_app, request
 import config as cfg
 from core.backup import ensure_daily_backup, limpar_backups_antigos
 from core.autofill import autopreencher_refeicoes_semanais
-from core.database import db, optimize_database, vacuum_database
+from core.database import db
 from core.rate_limit import limiter
 
 from blueprints.api import api_bp
@@ -142,32 +142,6 @@ def health_metrics():
             "avg_latency_ms": round(m["total_latency_ms"] / max(count, 1), 1),
             "routes": top_routes,
         }
-    )
-
-
-@api_bp.route("/metrics")
-def metrics_prometheus():
-    """Métricas em formato Prometheus text exposition (RFC text/plain).
-
-    Endpoint padrão `GET /metrics` — Prometheus configs scrapeiam esta
-    URL sem auth (pattern standard: scrape de dentro da rede privada,
-    não exposto externamente). Se for necessário proteger, envolver com
-    Basic Auth no proxy/ingress.
-
-    Sem dependência externa em `prometheus_client` — formatador hand-rolled
-    em `core.middleware.to_prometheus_text`. Suficiente para os counters
-    que mantemos in-memory + db_size_bytes derivado.
-
-    Cardinalidade: per-route limitada a top 20 rotas (evita explosão em
-    apps com muitos endpoints dinâmicos — Flask `endpoint` é o bp+view,
-    não o path com placeholders, mas mesmo assim convém limitar).
-    """
-    from core.middleware import to_prometheus_text
-
-    body = to_prometheus_text(top_routes=20)
-    return current_app.response_class(
-        body,
-        mimetype="text/plain; version=0.0.4; charset=utf-8",
     )
 
 
@@ -308,59 +282,4 @@ def api_unlock_expired():
         )
     except Exception as exc:
         current_app.logger.error(f"api_unlock_expired: {exc}")
-        return _api_error(str(exc))
-
-
-@api_bp.route("/api/vacuum-cron", methods=["POST"])
-@limiter.limit("5 per minute")
-def api_vacuum_cron():
-    """Cron — manutenção da BD: VACUUM + PRAGMA optimize.
-
-    Reclama espaço de páginas livres (que `wal_checkpoint` por si só não
-    devolve ao SO) e re-analisa as tabelas grandes para o query planner.
-
-    Operação cara em BDs grandes — agendar mensalmente em janela de
-    baixo tráfego (recomendado: 1º dia do mês 03:00). VACUUM adquire
-    lock exclusivo; com `busy_timeout=8000` pedidos concorrentes esperam
-    até 8s antes de falhar.
-
-    Uso:
-      curl -X POST -H "Authorization: Bearer <TOKEN>" http://host/api/vacuum-cron
-
-    Response:
-      {
-        "status": "ok",
-        "size_before_bytes": 12345678,
-        "size_after_bytes":   9876543,
-        "freed_bytes":        2469135,
-        "freed_pct":          20.0,
-        "optimize_ok":        true
-      }
-    """
-    if not _verify_cron_token():
-        abort(403)
-    try:
-        size_before, size_after = vacuum_database()
-        optimize_ok = optimize_database()
-        freed = max(0, size_before - size_after)
-        freed_pct = round((freed / size_before) * 100, 2) if size_before > 0 else 0.0
-        current_app.logger.info(
-            "vacuum-cron: before=%dB after=%dB freed=%dB (%.2f%%) optimize=%s",
-            size_before,
-            size_after,
-            freed,
-            freed_pct,
-            optimize_ok,
-        )
-        return _api_ok(
-            {
-                "size_before_bytes": size_before,
-                "size_after_bytes": size_after,
-                "freed_bytes": freed,
-                "freed_pct": freed_pct,
-                "optimize_ok": optimize_ok,
-            }
-        )
-    except Exception as exc:
-        current_app.logger.error(f"api_vacuum_cron: {exc}")
         return _api_error(str(exc))
