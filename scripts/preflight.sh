@@ -61,20 +61,30 @@ fi
 
 # ── 3. bandit security audit ─────────────────────────────────────────────────
 step "3/5 bandit (security)"
-if bandit -r core/ blueprints/ utils/ app.py -ll -q 2>&1 | grep -q "No issues identified"; then
+# Bandit retorna 0 se não há issues à severidade configurada (-ll = Low+).
+# Não usar `-q` aqui: suprime a linha "No issues identified" e os warnings
+# vão para stderr, o que torna grep frágil. Exit code é o sinal canónico.
+if bandit -r core/ blueprints/ utils/ app.py -ll >/tmp/bandit.log 2>&1; then
   ok "bandit clean"
 else
-  bandit -r core/ blueprints/ utils/ app.py -ll
+  echo "─── bandit output ───"
+  cat /tmp/bandit.log
+  echo "─── /bandit output ──"
   fail "bandit encontrou issues — revê antes de prosseguir"
 fi
 
 # ── 4. pip-audit (dependency vulns) ──────────────────────────────────────────
 step "4/5 pip-audit (dependency vulnerabilities)"
 if command -v pip-audit >/dev/null 2>&1; then
-  if pip-audit -r requirements.txt --strict --disable-pip 2>&1 | tee /tmp/pip-audit.log | grep -q "No known vulnerabilities found"; then
+  # Audita o venv activo (mais fiável que --disable-pip + --no-deps com -r).
+  # Exit 0 = sem vulns; >0 = encontrou vulns. Não bloqueante (warn-only) —
+  # vulns em deps transitivas são comuns e nem sempre aplicáveis.
+  if pip-audit --strict >/tmp/pip-audit.log 2>&1; then
     ok "pip-audit clean"
   else
+    echo "─── pip-audit output ───"
     cat /tmp/pip-audit.log
+    echo "─── /pip-audit output ──"
     warn "pip-audit encontrou vulnerabilidades — revê (não bloqueia preflight)"
   fi
 else
