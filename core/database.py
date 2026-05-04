@@ -3,9 +3,7 @@
 from __future__ import annotations
 
 import logging
-import os
 import sqlite3
-import time
 
 log = logging.getLogger(__name__)
 
@@ -13,68 +11,9 @@ import core.constants
 from core.schema import SCHEMA_SQL
 
 
-# ── Slow query logging (opt-in via env var) ──────────────────────────────────
-# Threshold em ms. 0 ou ausente = desligado (zero overhead — a subclass
-# nem sequer é instalada). Recomendado: 100 em dev, 500 em produção.
-def _slow_query_threshold_ms() -> float:
-    """Lê o threshold em runtime (permite mudar via monkeypatch nos testes)."""
-    try:
-        return float(os.environ.get("SLOW_QUERY_THRESHOLD_MS", "0"))
-    except ValueError:
-        return 0.0
-
-
-def _truncate_sql(sql: str, limit: int = 200) -> str:
-    """Trunca SQL longo para o log (evita poluir com SELECTs gigantes)."""
-    sql = " ".join(sql.split())  # collapse whitespace
-    return sql if len(sql) <= limit else sql[:limit] + "…"
-
-
-class _TracingConnection(sqlite3.Connection):
-    """Connection que loga queries lentas via app logger.
-
-    Apenas instalada quando `SLOW_QUERY_THRESHOLD_MS > 0`. Subclass
-    sqlite3.Connection: override execute() e executemany() para medir tempo.
-    cursor.execute() não é interceptado (raro neste codebase — quase tudo usa
-    `conn.execute(...)` directo).
-    """
-
-    def execute(self, sql, parameters=()):  # type: ignore[override]
-        t0 = time.perf_counter()
-        try:
-            return super().execute(sql, parameters)
-        finally:
-            dt_ms = (time.perf_counter() - t0) * 1000
-            threshold = _slow_query_threshold_ms()
-            if threshold > 0 and dt_ms >= threshold:
-                log.warning("[slow_query] %.1fms | %s", dt_ms, _truncate_sql(str(sql)))
-
-    def executemany(self, sql, parameters):  # type: ignore[override]
-        t0 = time.perf_counter()
-        try:
-            return super().executemany(sql, parameters)
-        finally:
-            dt_ms = (time.perf_counter() - t0) * 1000
-            threshold = _slow_query_threshold_ms()
-            if threshold > 0 and dt_ms >= threshold:
-                log.warning(
-                    "[slow_query/many] %.1fms | %s",
-                    dt_ms,
-                    _truncate_sql(str(sql)),
-                )
-
-
 def _new_conn() -> sqlite3.Connection:
-    """Cria uma nova conexão SQLite com pragmas de performance.
-
-    Se `SLOW_QUERY_THRESHOLD_MS > 0`, instala a subclass `_TracingConnection`
-    que loga queries lentas via WARNING. Sem o env var, usa a Connection
-    normal — zero overhead, zero alocação extra.
-    """
-    factory: type[sqlite3.Connection] = (
-        _TracingConnection if _slow_query_threshold_ms() > 0 else sqlite3.Connection
-    )
-    conn = sqlite3.connect(core.constants.BASE_DADOS, factory=factory)
+    """Cria uma nova conexão SQLite com pragmas de performance."""
+    conn = sqlite3.connect(core.constants.BASE_DADOS)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys=ON")
     conn.execute("PRAGMA busy_timeout=8000")

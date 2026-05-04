@@ -20,6 +20,7 @@ from core.bootstrap import (  # noqa: E402
     migrate_command,
     restore_command,
     seed_dev_command,
+    vacuum_command,
 )
 from core.constants import BASE_DADOS  # noqa: E402
 from core.database import close_request_db  # noqa: E402
@@ -167,6 +168,7 @@ app.cli.add_command(migrate_command)
 app.cli.add_command(backup_command)
 app.cli.add_command(backup_list_command)
 app.cli.add_command(restore_command)
+app.cli.add_command(vacuum_command)
 
 # Expor constantes de config usadas localmente
 CRON_API_TOKEN = cfg.CRON_API_TOKEN

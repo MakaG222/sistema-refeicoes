@@ -281,75 +281,21 @@ Resumo dos schedules recomendados:
 | `/api/backup-cron`       | cada 6h                | Backup rolado            |
 | `/api/export-cron`       | 1º do mês 06:00        | Export CSV+PDF mensal    |
 | `/api/unlock-expired`    | diário 03:00           | Cleanup login_eventos    |
-| `/api/vacuum-cron`       | 1º do mês 03:30        | VACUUM + PRAGMA optimize |
+| `flask vacuum` (CLI)     | 1º do mês 03:30        | VACUUM + PRAGMA optimize |
 
 Validar que os crons estão a correr:
 ```bash
 grep '"cron' /var/log/refeicoes/cron-*.log | tail -20
 ```
 
-### Slow query log (opt-in)
-
-Sem instrumentação, a única pista de queries lentas é o "Slow request"
-no log (>500ms total HTTP). Para identificar a *query* responsável,
-activar:
-
-```bash
-SLOW_QUERY_THRESHOLD_MS=500 docker compose up -d app
-```
-
-Logs vão ficar com entradas:
-```
-[slow_query] 612.4ms | SELECT * FROM refeicoes WHERE utilizador_id=...
-```
-
-`SLOW_QUERY_THRESHOLD_MS=0` (default) desliga completamente — zero
-overhead, a subclass `_TracingConnection` nem sequer é instalada.
-
-Threshold recomendado:
-- **dev**: 100 (vê tudo o que demora mais de 0.1s)
-- **prod**: 500 (só queries verdadeiramente problemáticas)
-
-Após identificar e optimizar (`EXPLAIN QUERY PLAN`, adicionar índice,
-reescrever JOIN), voltar a desligar para evitar ruído nos logs.
-
-### Métricas Prometheus (`GET /metrics`)
-
-Endpoint padrão Prometheus em formato `text/plain` — sem auth (pattern
-standard: scrape de dentro da rede privada). Para expor publicamente,
-envolver com Basic Auth no proxy/ingress.
-
-Exposição: counters, gauges + per-route (top 20 por contagem). Sem
-dependência externa em `prometheus_client` — formato hand-rolled.
-
-```bash
-curl http://localhost:5000/metrics
-# # HELP http_requests_total Total HTTP requests processed.
-# # TYPE http_requests_total counter
-# http_requests_total 12453
-# # TYPE http_request_errors_total counter
-# http_request_errors_total 3
-# ...
-# db_size_bytes 14523904
-```
-
-Configuração mínima do Prometheus scraper:
-```yaml
-scrape_configs:
-  - job_name: 'refeicoes'
-    scrape_interval: 30s
-    static_configs:
-      - targets: ['refeicoes:5000']
-```
-
-### Manutenção da BD (`/api/vacuum-cron`)
+### Manutenção da BD (`flask vacuum`)
 
 `PRAGMA wal_checkpoint(TRUNCATE)` corre a cada 5 min via middleware
 (liberta o ficheiro `.db-wal`), mas **não** reclama o espaço de páginas
 livres dentro do `.db` principal — esse acumula-se com DELETEs e UPDATEs.
 Após meses, a BD pode estar 30-50% fragmentada.
 
-`/api/vacuum-cron` faz:
+`flask vacuum` faz:
 1. `wal_checkpoint(TRUNCATE)` (liberta WAL)
 2. `VACUUM` (rebuild completo, devolve espaço ao SO)
 3. `PRAGMA optimize` (reanalisa estatísticas das tabelas para o query planner)
@@ -359,24 +305,32 @@ VACUUM adquire **lock exclusivo** — agendar em janela de baixo tráfego
 (`busy_timeout`) antes de falhar com `database is locked`.
 
 ```bash
-curl -X POST -H "Authorization: Bearer $CRON_API_TOKEN" \
-     http://localhost:5000/api/vacuum-cron | jq
+# Local
+flask vacuum
 
-# Response:
-# {
-#   "status": "ok",
-#   "size_before_bytes": 12345678,
-#   "size_after_bytes":   9876543,
-#   "freed_bytes":        2469135,
-#   "freed_pct":          20.0,
-#   "optimize_ok":        true
-# }
+# Docker
+docker compose exec app flask vacuum
+
+# Output:
+# Tamanho antes:  12,345,678 bytes (11.77 MB)
+# A correr VACUUM (pode demorar)…
+# Tamanho depois:  9,876,543 bytes (9.42 MB)
+# Libertado: 2,469,135 bytes (20.00%)
+# A correr PRAGMA optimize…
+# ✓ Optimize OK
+# ✓ Manutenção concluída.
 ```
 
-Se `freed_pct > 30%` regular → considera baixar a frequência da causa
-(DELETEs em massa, exports). Se `freed_pct ≈ 0%` ao fim de 1 ano →
-maintenance está a correr suficientemente bem, podes baixar para
-trimestral.
+Schedule via cron do SO (não precisa de endpoint HTTP — operação de
+manutenção interna):
+
+```cron
+30 3 1 * * cd /opt/refeicoes && /opt/refeicoes/.venv/bin/flask vacuum
+```
+
+Se "Libertado > 30%" regular → considera reduzir a causa (DELETEs em
+massa, exports). Se "Libertado ≈ 0%" ao fim de 1 ano → maintenance
+está a correr suficientemente bem, podes baixar para trimestral.
 
 ---
 
