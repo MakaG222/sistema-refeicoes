@@ -3,6 +3,22 @@
 Lista obrigatória antes de abrir o sistema aos utilizadores reais. Percorre
 **de cima para baixo** — cada linha um passo, cada caixa um ok manual.
 
+## Atalhos automatizados
+
+Para acelerar, dois scripts cobrem grande parte das verificações:
+
+```bash
+# Antes do push para staging — corre lint, bandit, pip-audit, pytest, docker build
+./scripts/preflight.sh
+
+# Após o deploy — valida 10 checks em <30s (health, CSRF, auth, headers, /metrics removido)
+./scripts/smoke_test.sh https://staging.refeicoes.pt
+```
+
+Os scripts NÃO substituem este checklist — algumas verificações exigem olhos
+humanos (ex: confirmar import CSV de alunos correu OK). Mas eliminam ~80%
+do trabalho repetitivo. Continua a percorrer abaixo para o resto.
+
 ## Pré-requisitos — Infra
 
 - [ ] Servidor Linux ≥ Python 3.11 OU Docker ≥ 24 OU Railway/plataforma equivalente
@@ -50,7 +66,7 @@ Criar `.env` (ou equivalente na plataforma) com:
       `docker volume inspect refeicoes_data`
 - [ ] Arrancar: `docker compose up -d`
 - [ ] Esperar ≥ 30s e verificar:
-      `curl -sf http://localhost:5000/health | jq '.status'` → `"ok"`
+      `curl -sf http://localhost:8080/health | jq '.status'` → `"ok"`
 
 ## Migrações
 
@@ -74,20 +90,29 @@ Criar `.env` (ou equivalente na plataforma) com:
 
 ## Verificação funcional (smoke test — ~10 min)
 
-Seguir os passos em [RUNBOOK.md § Verificação pós-deploy](RUNBOOK.md#verificação-pós-deploy)
-e confirmar cada:
+**Atalho automatizado** (cobre os 7 primeiros pontos):
+```bash
+./scripts/smoke_test.sh https://refeicoes.exemplo.pt
+```
 
-- [ ] `GET /health` → 200 com `"status": "ok"`
+Pontos cobertos pelo script:
+- [ ] `GET /health` → 200 com `status=ok`
 - [ ] `GET /login` → 200 com token CSRF
-- [ ] `curl -I -H "X-Forwarded-Proto: http" http://host/login` → 301 para HTTPS
-- [ ] `POST /api/unlock-expired` sem token → 403
-- [ ] `POST /api/unlock-expired` com token válido → 200 + JSON com contadores
+- [ ] `POST /api/{backup-cron,autopreencher-cron,unlock-expired}` sem token → 403
+- [ ] Headers presentes: `X-Frame-Options`, `Content-Security-Policy`,
+      `X-Content-Type-Options: nosniff`
+- [ ] HSTS presente (apenas em HTTPS)
+- [ ] `GET /static/css/app.css` → 200
+- [ ] `GET /metrics` NÃO existe (regressão check)
+
+Pontos que exigem olhos humanos (não automatizáveis sem browser):
 - [ ] Login com utilizador normal → dashboard
 - [ ] Tentar marcar refeição → guarda sem erros
 - [ ] Admin gera reset code para teste → user faz login com código → força change-password
 - [ ] Admin abre `/admin/auditoria?page=1` → paginação funciona
 - [ ] Toggle dark mode → UI escura, persiste F5
 - [ ] Pressionar `?` → overlay de shortcuts aparece
+- [ ] Aluno descarrega `/aluno/refeicoes.ics` → importa em Google Calendar OK
 
 ## Cron jobs (externos à app)
 
