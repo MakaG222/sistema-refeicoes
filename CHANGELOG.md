@@ -5,6 +5,126 @@ Todas as alterações notáveis ao Sistema de Refeições são documentadas aqui
 Formato baseado em [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/),
 versionamento segue [Semantic Versioning](https://semver.org/lang/pt-BR/).
 
+## [1.2.0] — 2026-05-04
+
+Hardening pré-produção: pré-UAT bug fixes, error tracking opt-in, segurança
+HTTPS, manutenção de BD, redesenho do check-in QR, e exportação iCalendar
+para alunos. Sem breaking changes — upgrade directo desde 1.1.0.
+
+### Added — Aluno
+
+- **Exportação para iCalendar** (`/aluno/refeicoes.ics`): cada refeição
+  marcada vira um VEVENT no horário correspondente. Importável em Google
+  Calendar, Apple Calendar e Outlook. UIDs estáveis → re-import actualiza
+  events em vez de duplicar. Botão "📅 Exportar para Calendar (30d)" no
+  perfil. Janela configurável via `?days=N` (1–90). Sem dependência externa
+  (gerador hand-rolled em `utils/ical.py`, RFC 5545).
+
+### Added — Segurança
+
+- **HSTS em produção** (`Strict-Transport-Security: max-age=31536000;
+  includeSubDomains`). Sem `preload` por defeito (commitment permanente —
+  opt-in só após validar 6+ meses estáveis em hstspreload.org). Em dev o
+  header não é enviado.
+- **Política de password reforçada** (`utils/passwords.py`): blacklist
+  de 28 passwords comuns (password, qwerty123, admin123, marinha1,
+  escolanaval1, …); rejeita `password == NII` e `password == NI`;
+  `_alterar_password` e `_criar_utilizador` propagam NI ao validador.
+- **QR rotativo URL-based para check-in**: oficial-dia mostra um QR
+  que codifica uma URL `/checkin/<token>` com TTL curto (15s) e
+  anti-replay (`UNIQUE` em `checkin_log`). Aluno scaneia com a câmara
+  do telemóvel — sem necessidade de app dedicada. Substitui o fluxo
+  anterior em que o aluno mostrava o QR estático ao kiosk.
+- **Rollback de `checkin_log` em falha**: se `registar_*_presenca`
+  levantar excepção depois do INSERT em `checkin_log`, o INSERT é
+  revertido para manter o invariante "linha em log ↔ presença efectiva".
+- **IP correcto via `_client_ip()`** em `/checkin/<token>`: usa
+  `request.access_route[0]` em vez do header bruto `X-Forwarded-For`
+  (evita gravar a chain inteira de proxies como IP do cliente).
+
+### Added — Observability
+
+- **Sentry error tracking opt-in via `SENTRY_DSN`**. RGPD-friendly por
+  defeito (alunos são menores): `send_default_pii=False` + `before_send`
+  hook (`config._scrub_event`) substitui campos sensíveis por `[Filtered]`
+  — credenciais (password, csrf_token), identificadores (NII, NI,
+  reset_code) e tokens (Authorization, Cookie). Sem `SENTRY_DSN` é no-op
+  completo (zero overhead, zero conexões). Env vars adicionais opcionais:
+  `SENTRY_TRACES_SAMPLE_RATE`, `SENTRY_RELEASE`.
+
+### Added — Operations
+
+- **`flask vacuum` CLI command** para manutenção mensal da BD:
+  `wal_checkpoint(TRUNCATE)` → `VACUUM` → `PRAGMA optimize`. Reclama
+  espaço de páginas livres que `wal_checkpoint` periódico não devolve
+  ao SO. Output mostra tamanho before/after, bytes libertados e %.
+  Schedule recomendado: 1× por mês via cron do SO em janela de baixo
+  tráfego.
+- **`scripts/seed_demo.py`**: popular a BD com dados realistas para
+  ambientes de UAT/staging (200 alunos + oficiais/cmd/admin/cozinha,
+  8 semanas de refeições, 4 semanas de ausências, dados de calendário).
+- **`docs/DEPLOYMENT_CHECKLIST.md`**: lista de verificação obrigatória
+  antes de promover para produção (env vars, segurança, backup,
+  smoke tests, rollback plan).
+- **Post-restore integrity tests** (`test_restore_backup_post_restore_integrity`):
+  após `restore_backup()` bem sucedido, valida `PRAGMA quick_check`,
+  `foreign_key_check`, `integrity_check`, contagens de tabelas, ≥1 admin
+  presente, e índices preservados. Apanha o pior cenário (restore que
+  diz "ok" mas deixou referencial integrity partida).
+
+### Changed — UAT bug fixes
+
+- **Cutoff específico para lanche** (até 10h do dia de prazo): novo
+  `CUTOFF_LANCHE_HORA=10`; `refeicao_editavel(d, tipo='lanche')` desliza
+  prazo de `d-2 00:00` para `d-2 10:00` (margem da manhã). Mantém 48h
+  de antecedência.
+- **Dark mode**: bug fix de consistência (toggle não persistia em
+  algumas páginas).
+- **Companhias** (gestão admin): feedback visual após acções (criar/
+  editar/eliminar) — antes era silencioso.
+
+### Removed — Bloat especulativo
+
+Adicionado e removido no mesmo release após auditoria honesta — features
+sem utilizador real ou infra para as suportar:
+
+- **Prometheus `/metrics` endpoint**: removido. Sem Prometheus infra,
+  e `/health/metrics` (JSON) já cobre o caso real (curl manual,
+  dashboards simples).
+- **Slow query log via `SLOW_QUERY_THRESHOLD_MS`**: removido. Defensivo
+  contra um problema hipotético; quando precisar de diagnóstico
+  ad-hoc, `set_trace_callback` numa branch temporária é trivial.
+- **`POST /api/vacuum-cron`**: convertido para `flask vacuum` CLI
+  (manutenção interna não precisa de superfície HTTP com token,
+  rate-limit, error handler).
+
+### Migrations
+
+- Sem migrações de schema novas. `008_add_reset_code` (de v1.1.0) é a
+  última.
+
+### Dependencies
+
+- Nova: `sentry-sdk[flask]>=2.0,<3.0` (totalmente opcional — só activa
+  com `SENTRY_DSN` definido; sem o env var é zero overhead).
+
+### Tests & Coverage
+
+- 864 → **956 testes** (+92), coverage ~90%.
+- Novos suites: `test_sentry.py` (12), `test_ical.py` (26),
+  TestHSTSHeader (3), TestVacuumCli (3), TestDatabaseMaintenance (3),
+  test_restore_backup_post_restore_integrity (1), checkin rollback
+  regression test, e expansões em test_security/test_api_routes.
+
+### Stats
+
+```
+43 files changed, 3563 insertions(+), 73 deletions(-)
+11 commits desde v1.1.0
+```
+
+---
+
 ## [1.1.0] — 2026-04-21
 
 Polish de produção: UX/a11y, hardening de segurança, observabilidade e

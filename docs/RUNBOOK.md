@@ -153,7 +153,7 @@ docker compose restart app
 ```bash
 curl -X POST \
   -H "Authorization: Bearer $CRON_API_TOKEN" \
-  http://localhost:5000/api/backup-cron
+  http://localhost:8080/api/backup-cron
 ```
 
 Ou via CLI:
@@ -181,7 +181,7 @@ flask restore backups/sistema_20260418_030000.db.gz
 docker compose up -d app
 
 # 5. Verificar
-curl http://localhost:5000/health | jq
+curl http://localhost:8080/health | jq
 ```
 
 ### Teste de restore (OBRIGATÓRIO antes de produção)
@@ -206,7 +206,7 @@ APP_PID=$!
 
 # 5. Fumar:
 #    a) GET /health → 200
-curl -sf http://localhost:5000/health | jq '.status'
+curl -sf http://localhost:8080/health | jq '.status'
 #    b) Login com um user conhecido do backup → dashboard carrega
 #    c) Listar 5 refeições em /aluno/historico → aparecem
 #    d) /admin/auditoria → log visível com entradas antigas
@@ -249,7 +249,7 @@ python -c "import secrets; print(secrets.token_urlsafe(32))"
 # 4. Actualizar crontab / scheduler externo com o novo token
 # 5. Testar:
 curl -X POST -H "Authorization: Bearer $NEW_TOKEN" \
-  http://localhost:5000/api/unlock-expired
+  http://localhost:8080/api/unlock-expired
 ```
 
 ### `SECRET_KEY`
@@ -418,7 +418,7 @@ template, a seguir ao `{% extends %}`.
 ### Health check degraded
 
 ```bash
-curl http://localhost:5000/health | jq
+curl http://localhost:8080/health | jq
 ```
 
 Consoante o check em erro:
@@ -475,17 +475,17 @@ Smoke test (~5min):
 
 ```bash
 # 1. Health
-curl -f http://localhost:5000/health | jq '.status' | grep -q '"ok"'
+curl -f http://localhost:8080/health | jq '.status' | grep -q '"ok"'
 
 # 2. Cron endpoints respondem com 403 sem token
-curl -o /dev/null -w "%{http_code}\n" http://localhost:5000/api/unlock-expired
+curl -o /dev/null -w "%{http_code}\n" http://localhost:8080/api/unlock-expired
 # → 403 ou 405 (GET vs POST — OK)
 
 # 3. Login page carrega com CSRF
-curl -s http://localhost:5000/login | grep -q 'csrf_token'
+curl -s http://localhost:8080/login | grep -q 'csrf_token'
 
 # 4. HTTPS redirect activo (em prod)
-curl -I -H "X-Forwarded-Proto: http" http://localhost:5000/login | head -1
+curl -I -H "X-Forwarded-Proto: http" http://localhost:8080/login | head -1
 # → HTTP/1.1 301 ...
 
 # 5. Logs JSON bem formados
@@ -493,7 +493,7 @@ docker compose logs app --tail=5 | tail -5 | jq -c .
 
 # 6. Backup cron funciona
 curl -X POST -H "Authorization: Bearer $CRON_API_TOKEN" \
-     http://localhost:5000/api/backup-cron | jq '.status'
+     http://localhost:8080/api/backup-cron | jq '.status'
 # → "ok"
 
 # 7. BD responde rápido (<10ms SELECT)

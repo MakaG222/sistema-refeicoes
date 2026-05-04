@@ -65,7 +65,7 @@ utils/                  Helpers partilhados
 
 templates/              Jinja2 templates (extends base.html)
 static/                 CSS e JS externos (app.css, meal-editor.css, app.js, etc.)
-tests/                  864 testes pytest (cobertura 90%)
+tests/                  956 testes pytest (cobertura 90%)
 docs/                   Documentação (arquitectura, API, runbook, manual, contributing)
 ```
 
